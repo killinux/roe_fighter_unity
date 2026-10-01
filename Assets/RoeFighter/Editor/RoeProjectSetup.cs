@@ -107,7 +107,8 @@ namespace RoeFighter.EditorTools
             Set(so, "m_MSAA", 4);
             Set(so, "m_RenderScale", 1f);
             Set(so, "m_RequireDepthTexture", true);
-            Set(so, "m_RequireOpaqueTexture", false);
+            Set(so, "m_RequireOpaqueTexture", true);             // the picture behind an effect: refraction particles read it
+            Set(so, "m_OpaqueDownsampling", 0);                  // at full size
             Set(so, "m_MainLightRenderingMode", 1);              // per pixel
             Set(so, "m_MainLightShadowsSupported", true);
             Set(so, "m_MainLightShadowmapResolution", 4096);

@@ -34,6 +34,13 @@ SHADER_MAP = {
     'Pinkcore/Heros/ErosLit/Environment': 'RoeEnvironment',
     'Pinkcore/Heros/SimpleLit/Environment': 'RoeEnvironment',
     'Pinkcore/Skybox/FogCubemap': 'RoeSkybox',
+    # effects (rebuilt from the disassembly of the game's shaders, see tools/shader_asm.py)
+    'Pinkcore/Particles/Default': 'RoeParticleDefault',
+    'Pinkcore/Particles/Dissolve': 'RoeParticleDissolve',
+    'Pinkcore/Particles/Unlit': 'RoeParticleUnlit',
+    'Pinkcore/Particles/Distortion': 'RoeParticleDistortion',
+    'Pinkcore/Particles/MutateDistortion': 'RoeParticleMutateDistortion',
+    'Pinkcore/Particles/UnlitMaster': 'RoeParticleUnlitMaster',
 }
 
 CLIP_ALIASES = {  # the game's own spelling slips

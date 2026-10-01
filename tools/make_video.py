@@ -1,8 +1,9 @@
-# Turn the frames written by RoeShowcase.Video into an mp4, with the game's own skill sounds
-# laid over the matching clips.
+# Turn the frames written by RoeShowcase.Video / RoeDuel.Run into an mp4 with the game's sounds.
 #   python make_video.py [video dir] [out.mp4]
-# Sound for clip skill_0N of character <id>: the file in Assets/ROE/<id>/sfx_* whose name
-# contains "skillN" / "skill0N" / "skill_N" and no "hit"; for die / hurt: "die".
+# timeline.json comes in two shapes:
+#   RoeDuel:     {"fps": 60, "frames": N, "sounds": [{"path": "Assets/ROE/...ogg", "frame": n, "volume": 1.0}, ...]}
+#   RoeShowcase: [{"id": "a08", "clip": "skill_01", "frame": n, "frames": m, "fps": 60}, ...] - the sound of clip
+#                skill_0N is the file in Assets/ROE/<id>/sfx_* named "skillN" / "skill0N" (no "hit"); die -> "die".
 import json
 import os
 import re
@@ -33,24 +34,31 @@ def main():
     vdir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(PROJECT, '_work', 'video')
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(vdir, 'showcase.mp4')
     timeline = json.load(open(os.path.join(vdir, 'timeline.json'), encoding='utf-8'))
-    manifest = json.load(open(os.path.join(PROJECT, 'Assets', 'ROE', 'roe_manifest.json'), encoding='utf-8'))
-    fps = timeline[0]['fps']
+    sounds = []     # (file, milliseconds, volume)
+    if isinstance(timeline, dict):
+        fps = timeline['fps']
+        total = timeline['frames'] / fps
+        for s in timeline['sounds']:
+            sounds.append((os.path.join(PROJECT, s['path']), int(s['frame'] * 1000 / fps), s.get('volume', 1.0)))
+    else:
+        manifest = json.load(open(os.path.join(PROJECT, 'Assets', 'ROE', 'roe_manifest.json'), encoding='utf-8'))
+        fps = timeline[0]['fps']
+        total = max(seg['frame'] + seg['frames'] for seg in timeline) / fps
+        for seg in timeline:
+            s = sfx_for(manifest, seg['id'], seg['clip'])
+            if s:
+                sounds.append((os.path.join(PROJECT, s), int(seg['frame'] * 1000 / fps), 1.0))
 
     cmd = [FFMPEG, '-y', '-loglevel', 'error', '-framerate', str(fps), '-i', os.path.join(vdir, 'frames', '%05d.jpg')]
-    delays = []
-    for seg in timeline:
-        s = sfx_for(manifest, seg['id'], seg['clip'])
-        if s:
-            cmd += ['-i', os.path.join(PROJECT, s)]
-            delays.append(int(seg['frame'] * 1000 / fps))
-            print(f"  {seg['id']} {seg['clip']} at {seg['frame'] / fps:6.2f} s: {os.path.basename(s)}")
-    total = max(seg['frame'] + seg['frames'] for seg in timeline) / fps
-    if delays:
+    for path, ms, volume in sounds:
+        cmd += ['-i', path]
+        print(f'  {ms / 1000:6.2f} s  x{volume:.2f}  {os.path.basename(path)}')
+    if sounds:
         parts = []
-        for i, d in enumerate(delays):
-            parts.append(f'[{i + 1}:a]adelay={d}|{d},volume=0.9[a{i}]')
-        mix = ''.join(f'[a{i}]' for i in range(len(delays)))
-        parts.append(f'{mix}amix=inputs={len(delays)}:normalize=0:dropout_transition=0,apad[aout]')
+        for i, (path, ms, volume) in enumerate(sounds):
+            parts.append(f'[{i + 1}:a]aresample=48000,aformat=channel_layouts=stereo,adelay={ms}|{ms},volume={0.9 * volume:.3f}[a{i}]')
+        mix = ''.join(f'[a{i}]' for i in range(len(sounds)))
+        parts.append(f'{mix}amix=inputs={len(sounds)}:normalize=0:dropout_transition=0,alimiter=limit=0.95,apad[aout]')
         cmd += ['-filter_complex', ';'.join(parts), '-map', '0:v', '-map', '[aout]', '-c:a', 'aac', '-b:a', '192k']
     cmd += ['-c:v', 'libx264', '-crf', '17', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-t', f'{total:.3f}', out]
     subprocess.run(cmd, check=True)

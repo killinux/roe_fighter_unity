@@ -115,72 +115,272 @@ namespace RoeFighter.EditorTools
             Debug.Log(sb.ToString());
         }
 
+        /// <summary>
+        /// Ray tests against the stage meshes.  The stages come without colliders, so every visible
+        /// mesh gets a temporary mesh collider (the scene is never saved; Dispose removes them again).
+        /// </summary>
+        public sealed class Sight : System.IDisposable
+        {
+            readonly List<MeshCollider> added = new List<MeshCollider>();
+            readonly HashSet<Collider> stage = new HashSet<Collider>();
+            readonly RaycastHit[] hits = new RaycastHit[64];
+            readonly bool backfaces;
+
+            public Sight()
+            {
+                foreach (var r in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
+                {
+                    if (!r.enabled)
+                        continue;
+                    var filter = r.GetComponent<MeshFilter>();
+                    if (filter == null || filter.sharedMesh == null)
+                        continue;
+                    var collider = r.GetComponent<MeshCollider>();
+                    if (collider == null)
+                    {
+                        collider = r.gameObject.AddComponent<MeshCollider>();
+                        added.Add(collider);
+                    }
+                    if (collider.sharedMesh == null)
+                        collider.sharedMesh = filter.sharedMesh;
+                    stage.Add(collider);
+                }
+                backfaces = Physics.queriesHitBackfaces;
+                Physics.queriesHitBackfaces = true;     // a prop seen from behind hides a fighter just as well
+                Physics.SyncTransforms();
+            }
+
+            public int Count => stage.Count;
+
+            /// <summary>Is there stage geometry between the two points?</summary>
+            public bool Blocked(Vector3 from, Vector3 to, float slack = 0.05f)
+            {
+                var d = to - from;
+                float length = d.magnitude - slack;
+                if (length <= 0f)
+                    return false;
+                int n = Physics.RaycastNonAlloc(from, d.normalized, hits, length, ~0, QueryTriggerInteraction.Ignore);
+                for (int i = 0; i < n; i++)
+                    if (stage.Contains(hits[i].collider))
+                        return true;
+                return false;
+            }
+
+            /// <summary>The highest stage surface under a point, looking down from <paramref name="above"/> metres over it.</summary>
+            public bool Ground(Vector3 point, float above, out float y)
+            {
+                y = 0f;
+                int n = Physics.RaycastNonAlloc(point + Vector3.up * above, Vector3.down, hits, above + 3f, ~0, QueryTriggerInteraction.Ignore);
+                bool found = false;
+                for (int i = 0; i < n; i++)
+                    if (stage.Contains(hits[i].collider) && (!found || hits[i].point.y > y))
+                    {
+                        y = hits[i].point.y;
+                        found = true;
+                    }
+                return found;
+            }
+
+            public void Dispose()
+            {
+                Physics.queriesHitBackfaces = backfaces;
+                foreach (var c in added)
+                    if (c != null)
+                        Object.DestroyImmediate(c);
+                added.Clear();
+                stage.Clear();
+            }
+        }
+
         /// <summary>Where the fight takes place on a stage and from where it is filmed.</summary>
         public class Layout
         {
             public Vector3 centre;      // on the ground, between the fighters
-            public Vector3 axis;        // unit vector from fighter 1 to fighter 2
+            public Vector3 axis;        // unit vector from fighter 1 to fighter 2 (= screen right)
             public Vector3 normal;      // unit vector from the fight line towards the camera
-            public int occluders;
+            public float halfLength;    // the fight line is free this far either way from the centre
+            public float blocked;       // share of the tested sight lines that hit a stage prop
+            public float floor;         // share of the fight area that is not flat, free floor
+            public float angle;         // degrees the view is turned away from the game's own view direction
+            public Vector2 shift;       // metres the centre is moved away from the game's battle centre (sideways, along the view)
+            public float score;
+
+            public override string ToString() =>
+                $"centre {centre}, fight axis {axis}, camera side {normal}, fight line {halfLength * 2f:F1} m, view turned {angle:F0} deg, " +
+                $"moved {shift.magnitude:F2} m, sight lines blocked {blocked * 100f:F1}%, floor not free {floor * 100f:F1}%, score {score:F3}";
         }
 
         /// <summary>
-        /// The game's battle layout gives the line the two sides stand on (FormationSetting).  A
-        /// fighting-game camera looks at that line from the side, so of the two sides and of a few
-        /// shifts along the line, take the one with the fewest stage props between camera and fighters.
+        /// How good is a fight line of <paramref name="halfLength"/> metres either way from
+        /// <paramref name="centre"/>, filmed by a camera that looks along <paramref name="view"/>?
         /// </summary>
-        public static Layout FindLayout(Info info, float cameraDistance = 7f)
+        static Layout Rate(Sight sight, Vector3 centre, Vector3 view, float halfLength)
         {
-            var layout = new Layout { axis = Vector3.forward };
-            layout.centre = new Vector3(info.bounds.center.x, info.bounds.min.y, info.bounds.center.z);
+            var layout = new Layout { centre = centre, axis = Vector3.Cross(Vector3.up, view).normalized, normal = -view, halfLength = halfLength };
+            // the floor the fighters use: the fight line and 1.2 m to both sides of it, flat and with
+            // nothing standing on it (a ray from 2.6 m up lands on a prop first)
+            int bad = 0, count = 0;
+            int steps = Mathf.CeilToInt(halfLength / 0.5f);
+            for (int i = -steps; i <= steps; i++)
+                for (float w = -1.2f; w <= 1.21f; w += 0.6f)
+                {
+                    count++;
+                    var p = centre + layout.axis * (halfLength * i / steps) + layout.normal * w;
+                    if (!sight.Ground(p, 2.6f, out float y) || Mathf.Abs(y - centre.y) > 0.12f)
+                        bad++;
+                }
+            layout.floor = bad / (float)count;
+            // what the camera has to see: it follows the fighters along the line (m) and backs off when
+            // they are far apart or jump (d); from every such spot the whole fight volume must be visible
+            int hit = 0, rays = 0;
+            foreach (float d in new[] { 6f, 8f, 10.5f, 13f })
+                foreach (float m in new[] { -0.5f, 0f, 0.5f })
+                {
+                    var eye = centre + layout.axis * (m * halfLength) + layout.normal * d + Vector3.up * (1.2f + d * 0.05f);
+                    foreach (float u in new[] { -1f, -0.5f, 0f, 0.5f, 1f })
+                        foreach (float h in new[] { 0.2f, 1f, 1.8f, 2.8f })
+                        {
+                            rays++;
+                            if (sight.Blocked(eye, centre + layout.axis * (u * halfLength) + Vector3.up * h))
+                                hit++;
+                        }
+                }
+            layout.blocked = hit / (float)rays;
+            return layout;
+        }
+
+        /// <summary>
+        /// The game's battle layout (FormationSetting) says where its two sides stand; its camera
+        /// looks from behind side 1 towards side 2, and that is the view the stage is dressed for.
+        /// A fighting-game camera needs more: a free strip of floor seen from the side with nothing
+        /// between camera and fighters.  So every spot near the game's battle centre and every view
+        /// direction is rated with real ray tests against the stage meshes, first for a long fight
+        /// line, then for shorter ones, until some spot is completely free; among the free ones the
+        /// one closest to the game's own centre and view wins.
+        /// </summary>
+        public static Layout FindLayout(Info info, Sight sight, bool log = true)
+        {
+            Layout best = null;
+            foreach (float halfLength in new[] { 6f, 5f, 4.25f, 3.5f, 3f, 2.6f })
+            {
+                var found = FindLayout(info, sight, halfLength, log);
+                if (best == null || found.score < best.score - 1e-4f)
+                    best = found;
+                if (found.blocked == 0f && found.floor == 0f)
+                    return found;
+            }
+            Debug.LogWarning($"[ROE] no completely free fight line on this stage; the least bad one: {best}");
+            return best;
+        }
+
+        static Layout FindLayout(Info info, Sight sight, float halfLength, bool log)
+        {
+            var home = new Vector3(info.bounds.center.x, info.bounds.min.y, info.bounds.center.z);
+            var gameView = Vector3.forward;
             var centreNode = info.formation.FirstOrDefault(t => t.name == "Center");
             var p1 = info.formation.FirstOrDefault(t => t.name == "Anchor1" && t.parent.name == "1" && t.parent.parent.name == "Player1");
             var p2 = info.formation.FirstOrDefault(t => t.name == "Anchor1" && t.parent.name == "1" && t.parent.parent.name == "Player2");
             if (centreNode != null)
-                layout.centre = centreNode.position;
+                home = centreNode.position;
             if (p1 != null && p2 != null && (p2.position - p1.position).sqrMagnitude > 0.01f)
             {
-                layout.axis = Vector3.ProjectOnPlane(p2.position - p1.position, Vector3.up).normalized;
+                gameView = Vector3.ProjectOnPlane(p2.position - p1.position, Vector3.up).normalized;
                 if (centreNode == null)
-                    layout.centre = (p1.position + p2.position) * 0.5f;
+                    home = (p1.position + p2.position) * 0.5f;
             }
+            if (sight.Ground(home, 2.6f, out float groundY) && Mathf.Abs(groundY - home.y) < 0.3f)
+                home.y = groundY;       // stand on the floor that is really there
 
-            var renderers = Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None)
-                .Where(r => r.enabled).ToArray();
-            var baseNormal = Vector3.Cross(Vector3.up, layout.axis).normalized;
-            Vector3 bestCentre = layout.centre;
-            Vector3 bestNormal = baseNormal;
-            int best = int.MaxValue;
-            float bestShift = 0f;
-            foreach (float shift in new[] { 0f, 0.75f, -0.75f, 1.5f, -1.5f, 2.25f, -2.25f, 3f, -3f })
+            var side = Vector3.Cross(Vector3.up, gameView).normalized;
+            var all = new List<Layout>();
+            for (int step = 0; step < 24; step++)
             {
-                foreach (float sign in new[] { 1f, -1f })
-                {
-                    var c = layout.centre + layout.axis * shift;
-                    var n = baseNormal * sign;
-                    // the volume the camera looks through: 7 m of fight line, from just in front of the fighters to the camera
-                    var corridor = new Bounds(c + Vector3.up * 1.3f, Vector3.zero);
-                    foreach (float u in new[] { -3.5f, 3.5f })
-                        foreach (float v in new[] { 0.9f, cameraDistance })
-                            foreach (float h in new[] { 0.35f, 2.4f })
-                                corridor.Encapsulate(c + layout.axis * u + n * v + Vector3.up * h);
-                    int count = renderers.Count(r => r.bounds.Intersects(corridor));
-                    if (count < best || (count == best && Mathf.Abs(shift) < Mathf.Abs(bestShift)))
+                float angle = step * 15f;
+                if (angle > 180f)
+                    angle -= 360f;
+                var view = Quaternion.AngleAxis(angle, Vector3.up) * gameView;
+                for (float dx = -3f; dx <= 3.01f; dx += 0.75f)
+                    for (float dz = -6f; dz <= 6.01f; dz += 0.75f)
                     {
-                        best = count;
-                        bestCentre = c;
-                        bestNormal = n;
-                        bestShift = shift;
+                        var layout = Rate(sight, home + side * dx + gameView * dz, view, halfLength);
+                        layout.angle = angle;
+                        layout.shift = new Vector2(dx, dz);
+                        // an occluded fighter or a prop in the ring is not acceptable, a short walk is cheap;
+                        // the game itself turns its camera 32.5 degrees either way, so that much costs next to nothing
+                        layout.score = layout.blocked * 30f + layout.floor * 30f + layout.shift.magnitude * 0.03f
+                                       + Mathf.Max(0f, Mathf.Abs(angle) - 30f) * 0.004f + Mathf.Abs(angle) * 0.0005f;
+                        all.Add(layout);
                     }
-                }
             }
-            layout.centre = bestCentre;
-            layout.normal = bestNormal;
-            layout.occluders = best;
-            return layout;
+            all.Sort((a, b) => a.score.CompareTo(b.score));
+            if (log)
+            {
+                Debug.Log($"[ROE] layout search, fight line {halfLength * 2f:F1} m: {sight.Count} stage meshes, {all.Count} candidates around {home}, " +
+                          $"game view {gameView}, {all.Count(l => l.blocked == 0f && l.floor == 0f)} completely free");
+                foreach (var l in all.Take(3))
+                    Debug.Log($"[ROE]   {l}");
+                var own = all.First(l => l.angle == 90f && l.shift == Vector2.zero);
+                Debug.Log($"[ROE]   the game's own line, filmed from the side: {own}");
+            }
+            return all[0];
         }
 
-        static void SampleAll(IList<GameObject> fighters, IList<AnimationClip> clips, IList<float> times)
+        public static Transform Bone(GameObject root, params string[] names)
+        {
+            var all = root.GetComponentsInChildren<Transform>(true);
+            foreach (var n in names)
+            {
+                var t = all.FirstOrDefault(x => string.Equals(x.name, n, System.StringComparison.OrdinalIgnoreCase));
+                if (t != null)
+                    return t;
+            }
+            return null;
+        }
+
+        /// <summary>Which way a left/right pair of bones faces: at right angles to the line between them.</summary>
+        public static Vector3 FacingOf(Transform left, Transform right)
+        {
+            if (left == null || right == null)
+                return Vector3.zero;
+            var across = Vector3.ProjectOnPlane(right.position - left.position, Vector3.up);
+            return across.sqrMagnitude > 1e-8f ? Vector3.Cross(across.normalized, Vector3.up) : Vector3.zero;
+        }
+
+        /// <summary>Where the face looks (from the eyeball bones), horizontally.</summary>
+        public static Vector3 FaceForward(GameObject character)
+        {
+            return FacingOf(Bone(character, "Bip001 Eyeball_L"), Bone(character, "Bip001 Eyeball_R"));
+        }
+
+        static string Facing(GameObject character)
+        {
+            var root = character.transform;
+            string Yaw(Vector3 v) => v == Vector3.zero ? "?" : Vector3.SignedAngle(root.forward, v, Vector3.up).ToString("F0");
+            return $"feet {Yaw(RoeShowcase.Forward(character))}, hips {Yaw(FacingOf(Bone(character, "Bip001 L Thigh"), Bone(character, "Bip001 R Thigh")))}, " +
+                   $"chest {Yaw(FacingOf(Bone(character, "Bip001 L UpperArm"), Bone(character, "Bip001 R UpperArm")))}, " +
+                   $"face {Yaw(FaceForward(character))}";
+        }
+
+        /// <summary>
+        /// Puts a fighter (already posed in its idle) on its spot.  The game's clips are made for a
+        /// root that looks straight at the enemy, so the root is aimed at the opponent - NOT the
+        /// feet: the idle stances stand sideways, hips turned 20 to 40 degrees.  That turn opens the
+        /// body towards the camera on one side of the screen only; on the other side the fighter is
+        /// mirrored, the way fighting games show both players from the front.
+        /// </summary>
+        public static void Place(GameObject fighter, Vector3 position, Vector3 towardsOpponent, Vector3 towardsCamera)
+        {
+            var t = fighter.transform;
+            t.localScale = Vector3.one;
+            t.position = position;
+            t.rotation = Quaternion.LookRotation(towardsOpponent, Vector3.up);
+            var hips = FacingOf(Bone(fighter, "Bip001 L Thigh"), Bone(fighter, "Bip001 R Thigh"));
+            bool turnedAway = Vector3.Dot(hips, towardsCamera) < -0.05f;
+            t.localScale = new Vector3(turnedAway ? -1f : 1f, 1f, 1f);
+            Debug.Log($"[ROE] {fighter.name}: at {position}, {(turnedAway ? "mirrored (the stance would show her back)" : "as authored")}");
+        }
+
+        public static void SampleAll(IList<GameObject> fighters, IList<AnimationClip> clips, IList<float> times)
         {
             // one batch for everybody: a new batch reverts whatever the previous one posed
             if (!AnimationMode.InAnimationMode())
@@ -192,185 +392,6 @@ namespace RoeFighter.EditorTools
             AnimationMode.EndSampling();
         }
 
-        /// <summary>
-        /// A choreographed exchange on the stage, filmed like a fighting game: the two fighters take
-        /// turns playing their skills, the other one flinches when the attacker is closest.  This is
-        /// NOT gameplay (no hit detection, no input) - it shows how characters, stage and camera will look.
-        /// Writes frames + timeline.json for tools/make_video.py.
-        /// Batch mode: -executeMethod RoeFighter.EditorTools.RoeStage.Duel [-roeStage s01] [-roeOut dir] [-roeSize 1920x1080]
-        /// </summary>
-        [MenuItem("ROE Fighter/Showcase/Stage duel video frames")]
-        public static void Duel()
-        {
-            string stage = RoeCapture.Arg("-roeStage", "s01");
-            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "duel"));
-            var size = RoeCapture.Arg("-roeSize", "1920x1080").Split('x');
-            int width = int.Parse(size[0]), height = int.Parse(size[1]);
-            const int fps = 60;
-            float gap = float.Parse(RoeCapture.Arg("-roeGap", "3.4"), System.Globalization.CultureInfo.InvariantCulture);
-
-            ShaderUtil.allowAsyncCompilation = false;
-            var info = Open(stage);
-            var layout = FindLayout(info);
-            Debug.Log("[ROE] " + info.report);
-            Debug.Log($"[ROE] duel layout: centre {layout.centre}, axis {layout.axis}, camera side {layout.normal}, {layout.occluders} props in the way");
-
-            var manifest = RoeManifest.Load();
-            var chars = manifest.WithModels.Take(2).ToArray();
-            var fighters = new List<GameObject>();
-            foreach (var c in chars)
-                fighters.Add((GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeFighterBuilder.PrefabPath(c.id))));
-            var idles = chars.Select(c => c.LoadClip("idle_01")).ToArray();
-            var hurts = chars.Select(c => c.LoadClip("hurt")).ToArray();
-            SampleAll(fighters, idles, new[] { 0f, 0f });
-            for (int i = 0; i < 2; i++)
-            {
-                float side = i == 0 ? -1f : 1f;
-                fighters[i].transform.position = layout.centre + layout.axis * (gap * 0.5f * side);
-                var forward = RoeShowcase.Forward(fighters[i]);
-                fighters[i].transform.rotation = Quaternion.FromToRotation(forward, -layout.axis * side) * fighters[i].transform.rotation;
-            }
-            var hips = fighters.Select(f => RoeShowcase.FindBone(f, "Bip001")).ToArray();
-
-            // ---- schedule: per frame, which clip and time each fighter shows
-            var clipOf = new[] { new List<AnimationClip>(), new List<AnimationClip>() };
-            var timeOf = new[] { new List<float>(), new List<float>() };
-            var timeline = new List<string>();
-            int total = 0;
-            void Idle(int frames)
-            {
-                for (int f = 0; f < frames; f++)
-                    for (int i = 0; i < 2; i++)
-                    {
-                        clipOf[i].Add(idles[i]);
-                        timeOf[i].Add(((total + f) / (float)fps) % idles[i].length);
-                    }
-                total += frames;
-            }
-            void Attack(int attacker, string skill)
-            {
-                var clip = chars[attacker].LoadClip(skill);
-                if (clip == null)
-                    return;
-                int victim = 1 - attacker;
-                int frames = Mathf.RoundToInt(clip.length * fps);
-                // the moment of impact: when the attacker's hips are furthest from where they started
-                int hit = 0;
-                float far = 0f;
-                Vector3 start = Vector3.zero;
-                for (int f = 0; f < frames; f += 2)
-                {
-                    var clips = new AnimationClip[2];
-                    clips[attacker] = clip;
-                    clips[victim] = idles[victim];
-                    SampleAll(fighters, clips, new[] { f / (float)fps, f / (float)fps });
-                    if (f == 0) start = hips[attacker].position;
-                    float d = Vector3.ProjectOnPlane(hips[attacker].position - start, Vector3.up).magnitude;
-                    if (d > far) { far = d; hit = f; }
-                }
-                int hurtFrames = hurts[victim] != null ? Mathf.RoundToInt(hurts[victim].length * fps) : 0;
-                timeline.Add($"{{\"id\":\"{chars[attacker].id}\",\"clip\":\"{skill}\",\"frame\":{total},\"frames\":{frames},\"fps\":{fps}}}");
-                timeline.Add($"{{\"id\":\"{chars[attacker].id}\",\"clip\":\"{skill}_hit\",\"frame\":{total + hit},\"frames\":1,\"fps\":{fps}}}");
-                for (int f = 0; f < frames; f++)
-                {
-                    clipOf[attacker].Add(clip);
-                    timeOf[attacker].Add(f / (float)fps);
-                    if (hurtFrames > 0 && f >= hit && f < hit + hurtFrames)
-                    {
-                        clipOf[victim].Add(hurts[victim]);
-                        timeOf[victim].Add((f - hit) / (float)fps);
-                    }
-                    else
-                    {
-                        clipOf[victim].Add(idles[victim]);
-                        timeOf[victim].Add(((total + f) / (float)fps) % idles[victim].length);
-                    }
-                }
-                total += frames;
-                Debug.Log($"[ROE] duel: {chars[attacker].id} {skill} {frames} frames, impact at frame {hit} ({far:F2} m lunge)");
-            }
-
-            Idle(75);
-            foreach (var skill in new[] { "skill_01", "skill_02", "skill_03" })
-            {
-                Attack(0, skill);
-                Idle(30);
-                Attack(1, skill);
-                Idle(30);
-            }
-            Idle(45);
-            timeline.Add($"{{\"id\":\"_total\",\"clip\":\"\",\"frame\":0,\"frames\":{total},\"fps\":{fps}}}");
-
-            // ---- camera
-            var camGo = new GameObject("Duel Camera");
-            var cam = camGo.AddComponent<Camera>();
-            cam.clearFlags = CameraClearFlags.Skybox;
-            cam.nearClipPlane = 0.1f;
-            cam.farClipPlane = 500f;
-            cam.allowHDR = true;
-            cam.allowMSAA = true;
-            const float fov = 30f;
-            cam.fieldOfView = fov;
-            var data = camGo.AddComponent<UniversalAdditionalCameraData>();
-            data.renderPostProcessing = true;
-            data.renderShadows = true;
-            data.requiresDepthTexture = true;
-            var volGo = new GameObject("Duel Volume");
-            var volume = volGo.AddComponent<Volume>();
-            volume.isGlobal = true;
-            volume.sharedProfile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(RoeProjectSetup.SettingsDir + "/RoeStudioVolume.asset");
-
-            // pass 1: where everybody's bones are, frame by frame, measured along the fight line and in height
-            var bones = fighters.SelectMany(f => f.GetComponentsInChildren<SkinnedMeshRenderer>(true)).SelectMany(r => r.bones)
-                .Where(b => b != null).Distinct().ToArray();
-            var mid = new float[total];
-            var midY = new float[total];
-            var dist = new float[total];
-            float tanHalf = Mathf.Tan(fov * 0.5f * Mathf.Deg2Rad);
-            float aspect = width / (float)height;
-            for (int f = 0; f < total; f++)
-            {
-                SampleAll(fighters, new[] { clipOf[0][f], clipOf[1][f] }, new[] { timeOf[0][f], timeOf[1][f] });
-                float lo = float.MaxValue, hi = float.MinValue, top = 0f;
-                foreach (var b in bones)
-                {
-                    float u = Vector3.Dot(b.position - layout.centre, layout.axis);
-                    lo = Mathf.Min(lo, u);
-                    hi = Mathf.Max(hi, u);
-                    top = Mathf.Max(top, b.position.y - layout.centre.y);
-                }
-                mid[f] = (lo + hi) * 0.5f;
-                float halfWidth = (hi - lo) * 0.5f + 0.7f;
-                float halfHeight = Mathf.Max(1.25f, (top + 0.45f) * 0.5f);
-                midY[f] = halfHeight - 0.12f;
-                dist[f] = Mathf.Max(halfWidth / aspect, halfHeight) / tanHalf;
-            }
-            int r = Mathf.RoundToInt(fps * 0.45f);
-            mid = RoeShowcase.Smooth(RoeShowcase.Smooth(mid, r), r);
-            midY = RoeShowcase.Smooth(RoeShowcase.Smooth(midY, r), r);
-            dist = RoeShowcase.Smooth(RoeShowcase.Smooth(RoeShowcase.SlidingMax(dist, r), r), r);
-
-            // pass 2: render
-            string warm = Path.Combine(outDir, "_warmup.jpg");
-            for (int f = 0; f < total; f++)
-            {
-                SampleAll(fighters, new[] { clipOf[0][f], clipOf[1][f] }, new[] { timeOf[0][f], timeOf[1][f] });
-                var target = layout.centre + layout.axis * mid[f] + Vector3.up * midY[f];
-                cam.transform.position = target + layout.normal * dist[f] + Vector3.up * 0.25f;
-                cam.transform.LookAt(target, Vector3.up);
-                if (f == 0)
-                {
-                    RoeCapture.Render(cam, 320, 180, warm, 80);
-                    RoeCapture.Render(cam, 320, 180, warm, 80);
-                }
-                RoeCapture.Render(cam, width, height, Path.Combine(outDir, "frames", $"{f:D5}.jpg"), 95);
-            }
-            RoeCapture.EndPosing();
-            Directory.CreateDirectory(outDir);
-            File.WriteAllText(Path.Combine(outDir, "timeline.json"), "[" + string.Join(", ", timeline) + "]");
-            Debug.Log($"[ROE] duel: {total} frames written to {outDir}");
-        }
-
         [MenuItem("ROE Fighter/Showcase/Stage stills")]
         public static void Stills()
         {
@@ -380,23 +401,12 @@ namespace RoeFighter.EditorTools
             var info = Open(stage);
             Debug.Log("[ROE] " + info.report);
 
-            // where the fight happens: the middle of the formation nodes if the scene has them, else the middle of the stage
-            Vector3 centre = info.formation.Count > 0
-                ? info.formation.Aggregate(Vector3.zero, (a, t) => a + t.position) / info.formation.Count
-                : new Vector3(info.bounds.center.x, info.bounds.min.y, info.bounds.center.z);
-            Vector3 axis = Vector3.right;       // the line the two fighters stand on
-            // The game's battle layout: FormationSetting/Center, and one anchor per side for a 1-vs-1 fight.
-            var centreNode = info.formation.FirstOrDefault(t => t.name == "Center");
-            var p1 = info.formation.FirstOrDefault(t => t.name == "Anchor1" && t.parent.name == "1" && t.parent.parent.name == "Player1");
-            var p2 = info.formation.FirstOrDefault(t => t.name == "Anchor1" && t.parent.name == "1" && t.parent.parent.name == "Player2");
-            if (centreNode != null)
-                centre = centreNode.position;
-            if (p1 != null && p2 != null && (p2.position - p1.position).sqrMagnitude > 0.01f)
-            {
-                axis = Vector3.ProjectOnPlane(p2.position - p1.position, Vector3.up).normalized;
-                if (centreNode == null)
-                    centre = (p1.position + p2.position) * 0.5f;
-            }
+            // where the fight happens and from where it is filmed
+            Layout layout;
+            using (var sight = new Sight())
+                layout = FindLayout(info, sight);
+            Debug.Log($"[ROE] stills layout: {layout}");
+            Vector3 centre = layout.centre, axis = layout.axis, normal = layout.normal;
 
             var manifest = RoeManifest.Load();
             var ids = manifest.WithModels.Select(c => c.id).Take(2).ToArray();
@@ -418,13 +428,11 @@ namespace RoeFighter.EditorTools
             }
             AnimationMode.EndSampling();
             for (int i = 0; i < ids.Length; i++)
+                Debug.Log($"[ROE] {ids[i]} idle stance, turned away from the root's forward (degrees, + = to her right): {Facing(fighters[i])}");
+            for (int i = 0; i < ids.Length; i++)
             {
-                var go = fighters[i];
                 float side = i == 0 ? -1f : 1f;
-                go.transform.position = centre + axis * (1.5f * side);
-                // turn the character so that its own forward points at the opponent
-                var forward = RoeShowcase.Forward(go);
-                go.transform.rotation = Quaternion.FromToRotation(forward, -axis * side) * go.transform.rotation;
+                Place(fighters[i], centre + axis * (1.7f * side), -axis * side, normal);
             }
 
             // camera + post processing
@@ -445,9 +453,6 @@ namespace RoeFighter.EditorTools
             volume.sharedProfile = AssetDatabase.LoadAssetAtPath<VolumeProfile>(RoeProjectSetup.SettingsDir + "/RoeStudioVolume.asset");
 
             Vector3 look = centre + Vector3.up * 1.0f;
-            Vector3 normal = Vector3.Cross(Vector3.up, axis).normalized;
-            if (info.hasGameCamera && Vector3.Dot(info.gameCameraPosition - centre, normal) < 0f)
-                normal = -normal;       // film from the side the game films from: the stage is dressed for that view
             void Shot(string name, Vector3 offset, float fov, Vector3 target, int w, int h)
             {
                 cam.transform.position = centre + offset;
@@ -459,12 +464,14 @@ namespace RoeFighter.EditorTools
             string warm = "_warmup.png";
             Shot(warm, normal * 6f + Vector3.up * 1.3f, 30f, look, 320, 180);
             Shot(warm, normal * 6f + Vector3.up * 1.3f, 30f, look, 320, 180);
-            Shot($"{stage}_1_fight_side.png", normal * 6.2f + Vector3.up * 1.25f, 30f, look, 1920, 1080);
-            Shot($"{stage}_2_fight_other_side.png", -normal * 6.2f + Vector3.up * 1.25f, 30f, look, 1920, 1080);
-            Shot($"{stage}_3_wide.png", normal * 14f + axis * 6f + Vector3.up * 5f, 40f, look, 1920, 1080);
-            Shot($"{stage}_4_close.png", normal * 3.2f - axis * 2.2f + Vector3.up * 1.45f, 32f, centre - axis * 1.5f + Vector3.up * 1.2f, 1920, 1080);
+            foreach (var old in Directory.Exists(outDir) ? Directory.GetFiles(outDir, $"{stage}_?_*.png") : new string[0])
+                File.Delete(old);
+            Shot($"{stage}_1_fight.png", normal * 6.4f + Vector3.up * 1.25f, 30f, look, 1920, 1080);
+            Shot($"{stage}_2_wide.png", normal * 12f + axis * 4f + Vector3.up * 4.5f, 40f, look, 1920, 1080);
+            Shot($"{stage}_3_close_left.png", normal * 3.2f - axis * 2.4f + Vector3.up * 1.45f, 32f, centre - axis * 1.7f + Vector3.up * 1.2f, 1920, 1080);
+            Shot($"{stage}_4_close_right.png", normal * 3.2f + axis * 2.4f + Vector3.up * 1.45f, 32f, centre + axis * 1.7f + Vector3.up * 1.2f, 1920, 1080);
             RoeCapture.EndPosing();
-            Debug.Log($"[ROE] stage stills written to {outDir}; fight centre {centre}, axis {axis}");
+            Debug.Log($"[ROE] stage stills written to {outDir}");
         }
     }
 }
