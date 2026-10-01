@@ -185,7 +185,7 @@ namespace RoeFighter.EditorTools
             }
         }
 
-        static Vector3[] Smooth(Vector3[] values, int radius)
+        public static Vector3[] Smooth(Vector3[] values, int radius)
         {
             var result = new Vector3[values.Length];
             for (int i = 0; i < values.Length; i++)
@@ -202,7 +202,7 @@ namespace RoeFighter.EditorTools
             return result;
         }
 
-        static float[] Smooth(float[] values, int radius)
+        public static float[] Smooth(float[] values, int radius)
         {
             var result = new float[values.Length];
             for (int i = 0; i < values.Length; i++)
@@ -219,7 +219,7 @@ namespace RoeFighter.EditorTools
             return result;
         }
 
-        static float[] SlidingMax(float[] values, int radius)
+        public static float[] SlidingMax(float[] values, int radius)
         {
             var result = new float[values.Length];
             for (int i = 0; i < values.Length; i++)

@@ -26,3 +26,7 @@
 # Working files: staged bundles, AssetRipper output, logs, renders
 /_work/
 /out/
+
+# Python
+__pycache__/
+*.pyc

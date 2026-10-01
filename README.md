@@ -120,6 +120,30 @@ UFE 自带的格斗动作是 Unity 的人形动作，要让 ROE 角色能用，�
   - 骨盆以上的节点（Root、Bip001）不再带曲线，挂在它们下面的东西和改挂过的武器按新父级重算曲线；
   - 转完自动和原动作逐帧比对所有蒙皮骨骼的位置，日志里每个动作一行。目前平均 0.03–1.1 厘米，最差 1–3 厘米（都在扭转辅助骨骼上）。
 
+### 战斗场景（游戏自己的舞台）
+
+游戏有 194 个战斗场景（`scene_battlefield_*.ab`），每个只有几十 KB，引用的模型、贴图、光照图在别的包里。
+
+```powershell
+# 取一个场景：只放场景包，依赖的包（这个场景是 107 个、76 MB）会自动补齐
+mkdir _work\bundles_stage_s01
+copy "<游戏>\RiseOfEros_Data\StreamingAssets\AssetBundles\scene_battlefield_level000_s01_day.ab" _work\bundles_stage_s01\
+python tools\rip.py --bundles _work\bundles_stage_s01 --out _work\ripped_stage_s01
+python tools\import_stage.py s01                                   # → Assets\ROE\stages\s01
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeStage.Report -Graphics   # 场景里有什么
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeStage.Stills -Graphics   # 两人站上去拍四张
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeStage.Duel -Graphics     # 轮流放技能的演示帧
+python tools\make_video.py _work\duel _work\duel\duel.mp4
+```
+
+- 场景文件、烘焙光照图（2 张）、光照探针、雾、天空盒、反射贴图都能原样带过来，Unity 打开场景后光照图自动生效。
+- 新写了两个着色器：`ROE/Environment`（和角色服装同一套表面模型，加上光照图）和 `ROE/Skybox`（立方体贴图 + 地平线雾）。
+- `RoeStage.Open` 会去掉工程里没有的游戏脚本、关掉游戏自己的相机、隐藏没有替代着色器的东西（这个场景是 11 个粒子特效）。
+- 场景里的 `BattleFieldSetting/FormationSetting` 是游戏的站位：`Center` 是中心，双方各在中心线两侧 3 米。
+- **没做好的地方**：`RoeStage.Duel`（两人在场景里轮流放技能，受击方在攻击方冲到最近时播受击）能出片，
+  但自动选的机位被场景里的尖塔挡住了右边的角色，`_work\duel\duel.mp4` 还不能看。`FindLayout` 现在用包围盒判断遮挡，不够准，
+  要改成对场景网格做射线检测，或者换一个开阔的场景。这段演示不是对战，没有判定和操作。
+
 ## 已知问题和待定的事
 
 - 套用别人的动作时：头发、裙子、胸不会动（要接布料物理）；扭转辅助骨骼没有驱动（要写一个按肢体旋转比例跟随的小脚本）。这两件等 UFE 的基础动作到手再做，才有东西可对照。

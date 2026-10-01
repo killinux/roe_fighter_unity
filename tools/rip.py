@@ -34,6 +34,8 @@ def main():
     ap.add_argument('--log', default=os.path.join(PROJECT, '_work', 'assetripper.log'))
     ap.add_argument('--index', default=os.path.join(PROJECT, '_work', 'cab_index.json'))
     a = ap.parse_args()
+    # the server resolves paths against its own working directory
+    a.bundles, a.out, a.log, a.index = (os.path.abspath(p) for p in (a.bundles, a.out, a.log, a.index))
 
     try:
         ar.get('/')

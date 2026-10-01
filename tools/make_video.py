@@ -16,11 +16,12 @@ FFMPEG = r'D:\Program Files\ffmpeg\bin\ffmpeg.exe'
 
 def sfx_for(manifest, cid, clip):
     files = manifest.get(cid, {}).get('sfx', [])
-    m = re.match(r'skill_0?(\d)', clip)
+    m = re.match(r'skill_0?(\d)(_hit)?$', clip)
     if m:
         n = m.group(1)
+        want_hit = bool(m.group(2))
         pat = re.compile(r'skill_?0?%s(?!\d)' % n, re.I)
-        cands = [f for f in files if pat.search(os.path.basename(f)) and 'hit' not in os.path.basename(f).lower()]
+        cands = [f for f in files if pat.search(os.path.basename(f)) and ('hit' in os.path.basename(f).lower()) == want_hit]
         return cands[0] if cands else None
     if clip == 'die':
         cands = [f for f in files if 'die' in os.path.basename(f).lower()]
@@ -43,7 +44,7 @@ def main():
             cmd += ['-i', os.path.join(PROJECT, s)]
             delays.append(int(seg['frame'] * 1000 / fps))
             print(f"  {seg['id']} {seg['clip']} at {seg['frame'] / fps:6.2f} s: {os.path.basename(s)}")
-    total = sum(seg['frames'] for seg in timeline) / fps
+    total = max(seg['frame'] + seg['frames'] for seg in timeline) / fps
     if delays:
         parts = []
         for i, d in enumerate(delays):

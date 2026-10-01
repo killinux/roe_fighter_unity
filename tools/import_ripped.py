@@ -31,6 +31,9 @@ SHADER_MAP = {
     'Pinkcore/Heros/SimpleLit/Hair': 'RoeHair',
     'Pinkcore/Heros/Eye': 'RoeEye',
     'Pinkcore/Heros/Eyebrow': 'RoeEyebrow',
+    'Pinkcore/Heros/ErosLit/Environment': 'RoeEnvironment',
+    'Pinkcore/Heros/SimpleLit/Environment': 'RoeEnvironment',
+    'Pinkcore/Skybox/FogCubemap': 'RoeSkybox',
 }
 
 CLIP_ALIASES = {  # the game's own spelling slips
