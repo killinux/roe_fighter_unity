@@ -184,6 +184,7 @@ Shader "ROE/Hair"
                 return color * radiance * s.occlusion;
             }
 
+            #define ROE_SURFACE_DIFFUSE(s) ((s).albedo)
             #include "RoeLightLoop.hlsl"
 
             half4 Frag(RoeVaryings input, FRONT_FACE_TYPE frontFace : FRONT_FACE_SEMANTIC) : SV_Target

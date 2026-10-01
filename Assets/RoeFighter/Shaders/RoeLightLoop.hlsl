@@ -2,8 +2,15 @@
 // (forward and forward+), calling the shader's own
 //     half3 RoeShadeLight(RoeSurface s, InputData inputData, Light light)
 // which must be defined before this file is included.
+// Point and spot lights are NOT shaded here: like in the game they are lit per vertex
+// (RoePunctualVertexLights in RoeCore.hlsl) and added as plain diffuse light.  The diffuse
+// colour of the surface is s.brdf.diffuse unless the shader defines ROE_SURFACE_DIFFUSE(s).
 #ifndef ROE_LIGHT_LOOP_INCLUDED
 #define ROE_LIGHT_LOOP_INCLUDED
+
+#ifndef ROE_SURFACE_DIFFUSE
+#define ROE_SURFACE_DIFFUSE(s) ((s).brdf.diffuse)
+#endif
 
 half3 RoeDirectLighting(RoeSurface s, InputData inputData, AmbientOcclusionFactor aoFactor)
 {
@@ -38,6 +45,10 @@ half3 RoeDirectLighting(RoeSurface s, InputData inputData, AmbientOcclusionFacto
     #endif
 
     LIGHT_LOOP_BEGIN(pixelLightCount)
+    #if !USE_CLUSTER_LIGHT_LOOP
+        if (!RoeLightIsDirectional(lightIndex))
+            continue;       // per vertex, see above
+    #endif
         Light light = GetAdditionalLight(lightIndex, inputData, shadowMask, aoFactor);
 #ifdef _LIGHT_LAYERS
         if (IsMatchingLightLayer(light.layerMask, meshRenderingLayers))
@@ -48,6 +59,7 @@ half3 RoeDirectLighting(RoeSurface s, InputData inputData, AmbientOcclusionFacto
     LIGHT_LOOP_END
 #endif
 
+    color += inputData.vertexLighting * ROE_SURFACE_DIFFUSE(s);
     return color;
 }
 

@@ -85,19 +85,35 @@ namespace RoeFighter.EditorTools
             var modelAnimator = unit.model.GetComponent<Animator>();
             if (modelAnimator != null)
                 modelAnimator.enabled = false;      // posed by copying, nothing else may move it
+            // Only bones that some clip animates are copied.  The two models share bone names, but the
+            // rest values of bones no clip touches differ (the low-detail head sits elsewhere on its
+            // neck); copying those would tear the high-detail head off.
+            var animated = new HashSet<string>();
+            foreach (var entry in info.clips)
+            {
+                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(entry.path);
+                if (clip == null)
+                    continue;
+                foreach (var binding in AnimationUtility.GetCurveBindings(clip))
+                    if (binding.type == typeof(Transform))
+                        animated.Add(binding.path);
+            }
             var byPath = new Dictionary<string, Transform>();
             foreach (var t in unit.model.GetComponentsInChildren<Transform>(true))
                 if (t != unit.model.transform)
                     byPath[RoeHumanoidClips.PathOf(t, unit.model.transform)] = t;
-            int unmatched = 0;
+            int unmatched = 0, still = 0;
             foreach (var t in unit.ghost.GetComponentsInChildren<Transform>(true))
             {
                 if (t == ghostTransform)
                     continue;
-                if (byPath.TryGetValue(RoeHumanoidClips.PathOf(t, ghostTransform), out var target))
+                string path = RoeHumanoidClips.PathOf(t, ghostTransform);
+                if (!byPath.TryGetValue(path, out var target))
+                    unmatched++;
+                else if (animated.Contains(path))
                     unit.pose.Add((t, target));
                 else
-                    unmatched++;
+                    still++;
             }
 
             foreach (var d in unit.rig.GetComponentsInChildren<PlayableDirector>(true))
@@ -106,9 +122,11 @@ namespace RoeFighter.EditorTools
                 d.timeUpdateMode = DirectorUpdateMode.Manual;
                 unit.directors[d.gameObject.name.ToLowerInvariant()] = d;
             }
+            unit.FreshSkinning();
             Debug.Log($"[ROE] unit {unit.sheet.unit}: {unit.directors.Count} timelines ({string.Join(", ", unit.directors.Keys.OrderBy(k => k))}), " +
                       $"{stripped} game scripts stripped, ghost: {hidden} character renderers hidden, {effects} effect renderers kept, " +
-                      $"{unit.pose.Count} bones follow the ghost, {unmatched} ghost nodes have no counterpart (effect anchors)");
+                      $"{unit.pose.Count} animated bones follow the ghost, {still} shared bones no clip animates are left alone, " +
+                      $"{unmatched} ghost nodes have no counterpart (effect anchors)");
             return unit;
         }
 
@@ -125,6 +143,7 @@ namespace RoeFighter.EditorTools
                     current.Stop();
                 current = director;
                 director.RebuildGraph();
+                FreshSkinning();    // the timeline may just have instantiated skinned effects (g04's tiger)
             }
             if (director.extrapolationMode == DirectorWrapMode.Loop && director.duration > 0.0)
                 time = (float)(time % director.duration);
@@ -138,6 +157,18 @@ namespace RoeFighter.EditorTools
             if (current != null)
                 current.Stop();
             current = null;
+        }
+
+        /// <summary>
+        /// Unity works out the bone matrices of a skinned mesh once per frame.  Rendering a whole
+        /// video inside one editor frame, posing by script in between, needs them redone at every
+        /// render - otherwise a renderer keeps drawing an earlier pose (the head of one frame on
+        /// the body of another).
+        /// </summary>
+        void FreshSkinning()
+        {
+            foreach (var r in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                r.forceMatrixRecalculationPerRender = true;
         }
 
         void CopyPose()

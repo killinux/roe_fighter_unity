@@ -17,6 +17,7 @@ import io
 import os
 import re
 import shutil
+import zlib
 import sys
 
 from import_ripped import PROJECT, SHADER_MAP, clean, read_guid, shader_guid
@@ -33,6 +34,41 @@ PACKAGES = {  # AssetRipper script folder (= assembly) -> package folders in Lib
     'Unity.TextMeshPro': ['com.unity.ugui@*', 'com.unity.textmeshpro@*'],
 }
 GUID_RE = re.compile(r'guid: ([0-9a-f]{32})')
+EXPOSED_USE_RE = re.compile(r'exposedName:\s*\n\s+id: (-?\d+)')
+EXPOSED_TABLE_RE = re.compile(r'(m_References:\n)((?:[ \t]+- -?\d+: \{[^}\n]*\}\n)+)')
+EXPOSED_ENTRY_RE = re.compile(r'^([ \t]+- )(-?\d+)(: \{)', re.M)
+
+
+def exposed_name(number):
+    return 'roe_' + number.replace('-', 'm')
+
+
+def property_id(name):
+    """Unity's id of a PropertyName: CRC32 of the name, as a signed 32-bit number."""
+    c = zlib.crc32(name.encode('utf-8'))
+    return c - (1 << 32) if c >= (1 << 31) else c
+
+
+def fix_exposed_names(text):
+    """
+    A timeline clip names the scene object it controls through an "exposed reference"; the
+    director holds the table name -> object.  A built game keeps only the hash of each name and
+    AssetRipper writes that number where Unity's text format expects the name itself, so nothing
+    resolves and every effect would be created at the world origin.  Any name works as long as
+    both sides use the same one: the number becomes the name.  The director looks names up by
+    binary search, so its table is written sorted by the hash of the new names.
+    """
+    text = EXPOSED_USE_RE.sub(lambda m: 'exposedName: ' + exposed_name(m.group(1)), text)
+
+    def table(m):
+        entries = []
+        for line in m.group(2).splitlines(keepends=True):
+            e = EXPOSED_ENTRY_RE.match(line)
+            name = exposed_name(e.group(2))
+            entries.append((property_id(name), e.group(1) + name + line[e.end(2):]))
+        return m.group(1) + ''.join(line for _id, line in sorted(entries))
+
+    return EXPOSED_TABLE_RE.sub(table, text)
 
 
 def script_remap(src):
@@ -182,6 +218,8 @@ def main():
                     name = shader_names.get(m.group(2), m.group(2))
                     unmapped_shaders.setdefault(name, []).append(os.path.basename(path))
             text = GUID_RE.sub(lambda m: 'guid: ' + remap.get(m.group(1), m.group(1)), text)
+            if ext in ('.prefab', '.playable', '.asset'):
+                text = fix_exposed_names(text)
             open(target, 'w', encoding='utf-8', newline='\n').write(text)
         else:
             shutil.copy2(path, target)

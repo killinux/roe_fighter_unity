@@ -165,6 +165,7 @@ Shader "ROE/Environment"
                 float4 shadowCoord : TEXCOORD5;
             #endif
                 DECLARE_LIGHTMAP_OR_SH(staticLightmapUV, vertexSH, 6);
+                half3  vertexLight : TEXCOORD7;
                 float4 positionCS : SV_POSITION;
                 UNITY_VERTEX_INPUT_INSTANCE_ID
                 UNITY_VERTEX_OUTPUT_STEREO
@@ -194,6 +195,7 @@ Shader "ROE/Environment"
             #endif
                 OUTPUT_LIGHTMAP_UV(input.staticLightmapUV, unity_LightmapST, output.staticLightmapUV);
                 OUTPUT_SH(output.normalWS.xyz, output.vertexSH);
+                output.vertexLight = RoePunctualVertexLights(vertexInput.positionWS, normalInput.normalWS);
                 output.positionCS = vertexInput.positionCS;
                 return output;
             }
@@ -243,6 +245,7 @@ Shader "ROE/Environment"
                 core.normalWS = input.normalWS;
                 core.tangentWS = input.tangentWS;
                 core.fogFactor = input.fogFactor;
+                core.vertexLight = input.vertexLight;
             #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
                 core.shadowCoord = input.shadowCoord;
             #endif

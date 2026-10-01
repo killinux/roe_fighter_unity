@@ -29,10 +29,51 @@ struct RoeVaryings
 #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
     float4 shadowCoord : TEXCOORD5;
 #endif
+    half3  vertexLight : TEXCOORD6;   // point and spot lights, see RoePunctualVertexLights
     float4 positionCS : SV_POSITION;
     UNITY_VERTEX_INPUT_INSTANCE_ID
     UNITY_VERTEX_OUTPUT_STEREO
 };
+
+// Is additional light number i of this object (the index of a URP light loop) a directional light?
+bool RoeLightIsDirectional(uint i)
+{
+#if USE_CLUSTER_LIGHT_LOOP
+    int index = i;
+#else
+    int index = GetPerObjectLightIndex(i);
+#endif
+#if USE_STRUCTURED_BUFFER_FOR_LIGHT_DATA
+    return _AdditionalLightsBuffer[index].position.w == 0.0;
+#else
+    return _AdditionalLightsPosition[index].w == 0.0;
+#endif
+}
+
+// Point and spot lights the way the game lights its characters and stages (read from its
+// shaders: every variant in the build has _ADDITIONAL_LIGHTS_VERTEX): per vertex, plain Lambert,
+// the attenuation capped at 1.  The lights in question are the flashes that skill effects carry
+// (particle systems with a Lights module, intensity 8 and more); per pixel they would flood
+// the floor, per vertex a sparse floor mesh hardly notices them while characters light up.
+// Extra directional lights (our studio's fill and rim) stay per pixel, see RoeLightLoop.hlsl -
+// unless the pipeline itself is set to per-vertex lights, then they are summed here as well.
+half3 RoePunctualVertexLights(float3 positionWS, half3 normalWS)
+{
+    half3 sum = half3(0, 0, 0);
+#if (defined(_ADDITIONAL_LIGHTS) || defined(_ADDITIONAL_LIGHTS_VERTEX)) && !USE_CLUSTER_LIGHT_LOOP
+    uint count = GetAdditionalLightsCount();
+    for (uint i = 0u; i < count; ++i)
+    {
+    #if !defined(_ADDITIONAL_LIGHTS_VERTEX)
+        if (RoeLightIsDirectional(i))
+            continue;
+    #endif
+        Light light = GetAdditionalLight(i, positionWS);
+        sum += light.color * (min(light.distanceAttenuation, 1.0) * saturate(dot(normalWS, light.direction)));
+    }
+#endif
+    return sum;
+}
 
 RoeVaryings RoeVert(RoeAttributes input)
 {
@@ -55,6 +96,7 @@ RoeVaryings RoeVert(RoeAttributes input)
     fogFactor = ComputeFogFactor(vertexInput.positionCS.z);
 #endif
     output.fogFactor = fogFactor;
+    output.vertexLight = RoePunctualVertexLights(vertexInput.positionWS, normalInput.normalWS);
 
 #if defined(REQUIRES_VERTEX_SHADOW_COORD_INTERPOLATOR)
     output.shadowCoord = GetShadowCoord(vertexInput);
@@ -95,7 +137,7 @@ void RoeInitInputData(RoeVaryings input, half3x3 tangentToWorld, half3 normalTS,
 #endif
 
     inputData.fogCoord = InitializeInputDataFog(float4(input.positionWS, 1.0), input.fogFactor);
-    inputData.vertexLighting = half3(0, 0, 0);
+    inputData.vertexLighting = input.vertexLight;
     inputData.normalizedScreenSpaceUV = GetNormalizedScreenSpaceUV(input.positionCS);
     inputData.bakedGI = SampleSH(inputData.normalWS);   // characters are dynamic: light probes / ambient only
     inputData.shadowMask = half4(1, 1, 1, 1);
