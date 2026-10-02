@@ -38,6 +38,9 @@ namespace RoeFighter.Fight
         public float roundSeconds = 60f;
         public string voiceLanguage = "2";           // the game's voice language: 2 Japanese, 1 English
         public int seed = 1;
+        public AudioClip music;                      // the stage's battle music, looped
+        public float musicVolume = 0.3f;
+        AudioSource musicSource;
 
         public const float Dt = 1f / 60f;
         public readonly Fighter[] f = new Fighter[2];
@@ -106,6 +109,19 @@ namespace RoeFighter.Fight
             frame = 0;
             clock = 0f;
             soundLog.Clear();
+            if (music != null && Application.isPlaying)
+            {
+                if (musicSource == null)
+                {
+                    musicSource = gameObject.AddComponent<AudioSource>();
+                    musicSource.loop = true;
+                    musicSource.playOnAwake = false;
+                    musicSource.spatialBlend = 0f;
+                }
+                musicSource.clip = music;
+                musicSource.volume = musicVolume;
+                musicSource.Play();
+            }
             if (hud != null)
                 hud.Build(this);
             StartRound();
@@ -225,6 +241,7 @@ namespace RoeFighter.Fight
             {
                 x.Place();
                 x.rig.Tick(dt);
+                x.AfterPose(dt);
             }
             if (phase == Phase.Fight)
                 CheckStrikes();

@@ -102,13 +102,19 @@ namespace RoeFighter.EditorTools
             (game.effects, game.hitEffect) = Effects(rigs);
             foreach (var m in game.moves)
                 m.hitSound = rigs[0].sounds.Any(s => s.name == "hit") ? "hit" : null;
+            // the stage's own battle music
+            var musicPath = Directory.Exists($"Assets/ROE/stages/{stage}")
+                ? Directory.GetFiles($"Assets/ROE/stages/{stage}", "*.ogg", SearchOption.AllDirectories)
+                    .Select(p => p.Replace('\\', '/')).OrderBy(p => Path.GetFileName(p).ToLowerInvariant().Contains("battle") ? 0 : 1).FirstOrDefault()
+                : null;
+            game.music = musicPath != null ? AssetDatabase.LoadAssetAtPath<AudioClip>(musicPath) : null;
 
             Directory.CreateDirectory(SceneDir);
             var scene = SceneManager_Active();
             string path = ScenePath(stage);
             EditorSceneManager.SaveScene(scene, path, false);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(path, true) };
-            Debug.Log($"[ROE] fight scene saved: {path} ({game.moves.Count} strikes, {game.specials.Count} specials, {game.effects.Count} effect prefabs, hit spark {game.hitEffect})");
+            Debug.Log($"[ROE] fight scene saved: {path} ({game.moves.Count} strikes, {game.specials.Count} specials, {game.effects.Count} effect prefabs, hit spark {game.hitEffect}, music {(musicPath ?? "none")})");
             return path;
         }
 
@@ -332,8 +338,11 @@ namespace RoeFighter.EditorTools
                 if (path != null)
                     rig.sounds.Add(new FighterRig.NamedSound { name = name, clip = AssetDatabase.LoadAssetAtPath<AudioClip>(path) });
             }
+            // strikes sound like the shortest of the skills' hit sounds (the first one found was a heavy one)
             var hit = c.sfx.Select(p => (p, n: Path.GetFileNameWithoutExtension(p).ToLowerInvariant()))
-                .FirstOrDefault(x => x.n.Contains("hit") || x.n.Contains("hurt"));
+                .Where(x => x.n.Contains("hit") || x.n.Contains("hurt"))
+                .OrderBy(x => AssetDatabase.LoadAssetAtPath<AudioClip>(x.p) is AudioClip ac ? ac.length : 99f)
+                .FirstOrDefault();
             if (hit.p != null)
                 rig.sounds.Add(new FighterRig.NamedSound { name = "hit", clip = AssetDatabase.LoadAssetAtPath<AudioClip>(hit.p) });
             rig.audioSource = root.AddComponent<AudioSource>();
@@ -458,7 +467,10 @@ namespace RoeFighter.EditorTools
                     continue;
                 lines.Add($"{{\"path\":\"{AssetDatabase.GetAssetPath(clip)}\",\"frame\":{e.frame / every},\"volume\":{e.volume.ToString("F2", CultureInfo.InvariantCulture)}}}");
             }
-            json.Append($"{{\"fps\":{60 / every},\"frames\":{shot},\"sounds\":[\n  {string.Join(",\n  ", lines)}\n]}}\n");
+            string music = game.music != null
+                ? $",\"music\":{{\"path\":\"{AssetDatabase.GetAssetPath(game.music)}\",\"volume\":{game.musicVolume.ToString("F2", CultureInfo.InvariantCulture)}}}"
+                : "";
+            json.Append($"{{\"fps\":{60 / every},\"frames\":{shot}{music},\"sounds\":[\n  {string.Join(",\n  ", lines)}\n]}}\n");
             File.WriteAllText(Path.Combine(outDir, "timeline.json"), json.ToString());
             Debug.Log($"[ROE] fight recorded: {shot} frames ({shot * every / 60f:F1} s), {lines.Count} sounds, rounds won {game.wins[0]}-{game.wins[1]}, " +
                       $"to {outDir}{states}");

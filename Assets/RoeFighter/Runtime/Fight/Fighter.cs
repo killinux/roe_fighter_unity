@@ -46,14 +46,19 @@ namespace RoeFighter.Fight
         float dieLength, downFor;
 
         public const float BodyRadius = 0.32f;
-        public const float WalkSpeed = 1.25f, BackSpeed = 0.95f, SideSpeed = 1.5f;
+        // the walk clips play at the rate that keeps a planted foot still (FighterRig.StrideSpeed)
+        public const float WalkSpeed = 1.15f, BackSpeed = 0.95f, SideSpeed = 1.5f;
 
         public Vector3 Forward => Quaternion.Euler(0f, yaw, 0f) * Vector3.forward;
         public bool Neutral => state == FightState.Idle || state == FightState.Walk || state == FightState.Side;
         public bool Hittable => state != FightState.Down && state != FightState.Getup && state != FightState.KO &&
                                 state != FightState.Intro && state != FightState.Win && state != FightState.Lose;
         public bool CanBlock => (Neutral || state == FightState.Block) && fwdHeld < 0;
-        public float SpecialRemaining => special != null && rig.sheet != null ? rig.sheet.Find(special.action).BodyEnd - t : 0f;
+        public float SpecialRemaining => special != null ? specialEnd - t : 0f;
+        // the game's skills go on for 1-5 s after their last hit (a pose, the way back): over here
+        // the body is free this long after the last hit, while the skill's effects play out
+        public const float SpecialTail = 0.8f;
+        float specialEnd;
 
         public void Reset(Vector3 position, float facing)
         {
@@ -125,6 +130,7 @@ namespace RoeFighter.Fight
         public void Step(float dt, int fwd, int up, Vector3 sideDir, FighterInput input)
         {
             t += dt;
+            var sideVelocity = Vector3.zero;
             fwdHeld = fwd;
             history.Add(Direction(fwd, up));
             if (history.Count > 40)
@@ -156,19 +162,21 @@ namespace RoeFighter.Fight
                         break;
                     if (sideDir.sqrMagnitude > 0.1f && fwd >= 0)
                     {
-                        if (state != FightState.Side || t == dt)
-                            state = FightState.Side;
-                        // which way the step goes for the fighter: its right or its left
-                        bool right = Vector3.Dot(sideDir, Quaternion.Euler(0f, yaw, 0f) * Vector3.right) > 0f;
-                        rig.Play(right ? "side_right" : "side_left", 1.1f, 0.12f, false);
-                        pos += sideDir.normalized * (SideSpeed * dt);
+                        state = FightState.Side;
+                        // the guard above, the legs step by themselves (FighterRig.SideStep)
+                        rig.Play("guard", 1f, 0.12f, false);
+                        sideVelocity = sideDir.normalized * SideSpeed;
+                        pos += sideVelocity * dt;
                     }
                     else if (fwd != 0)
                     {
                         state = FightState.Walk;
-                        float speed = fwd > 0 ? WalkSpeed : BackSpeed;
-                        rig.Play(fwd > 0 ? "walk" : "walk_back", fwd > 0 ? WalkSpeed / 0.93f : BackSpeed / 0.54f, 0.15f, false);
-                        pos += toFoe.normalized * (fwd * speed * dt);
+                        // played at the rate at which a planted foot keeps pace with the body; the body
+                        // itself moves after the pose, by what the planted foot pushed (AfterPose)
+                        string clip = fwd > 0 ? "walk" : "walk_back";
+                        walkSpeed = fwd > 0 ? WalkSpeed : BackSpeed;
+                        walkDir = toFoe.normalized * fwd;
+                        rig.Play(clip, walkSpeed / rig.StrideSpeed(clip), 0.15f, false);
                     }
                     else if (state != FightState.Idle)
                     {
@@ -219,6 +227,8 @@ namespace RoeFighter.Fight
                     StepSpecial(dt);
                     break;
             }
+            rig.SideStep(state == FightState.Side ? sideVelocity : Vector3.zero);
+            rig.LockFeet(state == FightState.Walk);
             Place();
         }
 
@@ -342,6 +352,10 @@ namespace RoeFighter.Fight
             specialRatios = hits.Select(h => total > 0f ? Mathf.Max(0f, h.ratio) / total : 1f / hits.Count).ToList();
             specialHitIndex = 0;
             specialOutcome = 0;
+            float lastMove = action.moves.Count > 0 ? action.moves.Max(m => m.end) : 0f;
+            specialEnd = specialHits.Count > 0
+                ? Mathf.Min(action.BodyEnd, Mathf.Max(specialHits[specialHits.Count - 1] + SpecialTail, Mathf.Min(lastMove, specialHits[specialHits.Count - 1] + 1.5f)))
+                : action.BodyEnd;
             var body = action.Body;
             rig.Play(s.clip, 1f, 0.05f, true, body != null ? body.clipIn : 0f);
             rig.ShowWeapons(true);
@@ -352,7 +366,7 @@ namespace RoeFighter.Fight
         void StepSpecial(float dt)
         {
             var action = rig.sheet.Find(special.action);
-            float end = action.BodyEnd;
+            float end = specialEnd;
             // the game's staging: slide up to the opponent and back
             float advance = 0f;
             float gap = Vector3.Distance(specialHome, foe.pos);
@@ -382,15 +396,37 @@ namespace RoeFighter.Fight
             }
             if (t >= end)
             {
-                rig.ShowTimeline(null, 0f);
+                rig.LingerTimeline(t);
                 special = null;
-                Enter(FightState.Idle);
+                state = FightState.Idle;
+                t = 0f;
+                rig.Play("guard", 1f, 0.3f, false);
+                rig.ShowWeapons(false);
             }
         }
 
         public void Place()
         {
             rig.transform.SetPositionAndRotation(pos, Quaternion.Euler(0f, yaw, 0f));
+        }
+
+        float walkSpeed;
+        Vector3 walkDir;
+
+        /// <summary>
+        /// After the pose: a walking fighter moves by as much as its planted foot moved back under it
+        /// in this step, so that foot stays put on the floor (the body surges and slows within each
+        /// step, as walking does).  Along the walking direction only, at most 2.5 times the set speed;
+        /// with no foot planted (crossfades) at the set speed.
+        /// </summary>
+        public void AfterPose(float dt)
+        {
+            if (state != FightState.Walk || dt <= 0f)
+                return;
+            float nominal = walkSpeed * dt;
+            float along = rig.HasContact ? Vector3.Dot(-rig.transform.TransformVector(rig.ContactDelta), walkDir) : nominal;
+            pos += walkDir * Mathf.Clamp(along, 0f, 2.5f * nominal);
+            Place();
         }
 
         public void Finish(bool won)
