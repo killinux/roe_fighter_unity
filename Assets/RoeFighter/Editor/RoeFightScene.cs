@@ -394,6 +394,9 @@ namespace RoeFighter.EditorTools
             foreach (var rig in game.rigs)
                 foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;     // many renders inside one editor update
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
             game.Setup();
 
             string frameDir = Path.Combine(outDir, "frames");

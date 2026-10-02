@@ -454,7 +454,10 @@ namespace RoeFighter.EditorTools
             EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
             var game = Object.FindFirstObjectByType<FightGame>();
             game.cpu = new[] { false, false };
-            var sb = new System.Text.StringBuilder("[ROE] foot slide:");
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            var sb = new System.Text.StringBuilder($"[ROE] foot slide ({game.Pack?.name}):");
             var tests = new (string name, int x, int y)[] { ("forward", 1, 0), ("back", -1, 0), ("side up", 0, 1), ("side down", 0, -1) };
             for (int who = 0; who < 2; who++)
             {
@@ -713,6 +716,52 @@ namespace RoeFighter.EditorTools
                           $"largest scale {big.b.name} {big.s:F2}, hips scale {hips.lossyScale.y:F2}");
             }
             Debug.Log($"[ROE] legs {id} {clipName} ({len:F2} s):" + sb);
+        }
+            /// <summary>
+        /// Where the pelvis points in humanoid clips: each clip posed on a fighter at a few times, the
+        /// pelvis bone's axes, the spine and thighs relative to world up, and the skirt's first bone.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.PelvisCheck [-roeChars a08] [-roeClips path1,path2]
+        /// </summary>
+        public static void PelvisCheck()
+        {
+            var ids = RoeCapture.Arg("-roeChars", "a08").Split(',');
+            var clips = RoeCapture.Arg("-roeClips", "Assets/RoeFighter/Generated/mocap/mc_guard.anim," +
+                                       "Assets/RoeFighter/Generated/motionpacks/accad_male2/guard.anim," +
+                                       "Assets/RoeFighter/Generated/motionpacks/accad_male2/walk.anim").Split(',');
+            foreach (var id in ids)
+            {
+                var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+                go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                var a = go.GetComponent<Animator>();
+                var pelvis = a.GetBoneTransform(HumanBodyBones.Hips);
+                var spine = a.GetBoneTransform(HumanBodyBones.Spine);
+                var thighL = a.GetBoneTransform(HumanBodyBones.LeftUpperLeg);
+                var thighR = a.GetBoneTransform(HumanBodyBones.RightUpperLeg);
+                var kneeL = a.GetBoneTransform(HumanBodyBones.LeftLowerLeg);
+                var kneeR = a.GetBoneTransform(HumanBodyBones.RightLowerLeg);
+                var skirt = go.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == "Skirt_L_00" || t.name == "Skirt_Back_01");
+                string Dir(Vector3 v) => $"({v.x:+0.00;-0.00} {v.y:+0.00;-0.00} {v.z:+0.00;-0.00})";
+                float Tilt(Vector3 v) => Vector3.Angle(v, Vector3.up);
+                var sb = new System.Text.StringBuilder($"[ROE] pelvis check {id}:");
+                foreach (var path in clips)
+                {
+                    var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+                    if (clip == null)
+                        continue;
+                    foreach (float t in new[] { 0f, clip.length * 0.5f })
+                    {
+                        RoeCapture.Pose(go, clip, t);
+                        var sp = spine.position - pelvis.position;
+                        var hipsAxis = thighR.position - thighL.position;
+                        sb.Append($"\n[ROE]   {System.IO.Path.GetFileName(System.IO.Path.GetDirectoryName(path))}/{clip.name} t={t:F2}: pelvis x{Dir(pelvis.right)} y{Dir(pelvis.up)} z{Dir(pelvis.forward)}; " +
+                                  $"spine tilt {Tilt(sp):F0} deg, hip axis {Dir(hipsAxis.normalized)}, thighs L{Dir((kneeL.position - thighL.position).normalized)} R{Dir((kneeR.position - thighR.position).normalized)}" +
+                                  (skirt != null && skirt.childCount > 0 ? $", {skirt.name} {Dir((skirt.GetChild(0).position - skirt.position).normalized)} local {skirt.localEulerAngles}" : ""));
+                    }
+                }
+                RoeCapture.EndPosing();
+                Object.DestroyImmediate(go);
+                Debug.Log(sb.ToString());
+            }
         }
     }
 }

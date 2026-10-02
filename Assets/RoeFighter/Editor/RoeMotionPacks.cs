@@ -103,15 +103,28 @@ namespace RoeFighter.EditorTools
             };
         }
 
-        static void Save(MotionPack pack, string name)
+        static MotionPack Save(MotionPack pack, string name)
         {
             Directory.CreateDirectory(Dir);
             string path = PackPath(name);
-            AssetDatabase.DeleteAsset(path);
-            AssetDatabase.CreateAsset(pack, path);
+            pack.name = name;
+            // an existing pack is updated in place, so scenes that hold it keep it
+            var existing = AssetDatabase.LoadAssetAtPath<MotionPack>(path);
+            if (existing != null)
+            {
+                EditorUtility.CopySerialized(pack, existing);
+                EditorUtility.SetDirty(existing);
+                pack = existing;
+            }
+            else
+            {
+                AssetDatabase.DeleteAsset(path);
+                AssetDatabase.CreateAsset(pack, path);
+            }
             AssetDatabase.SaveAssets();
             Debug.Log($"[ROE] motion pack {path}: {pack.title}; roles {string.Join(" ", pack.clips.Select(c => c.role + (c.loop ? "(loop)" : "")))}; strikes " +
                       string.Join(", ", pack.strikes.Select(m => $"{m.button} {m.name} ({m.bone}, reach {m.reach:F2} m, hit {m.hitStart:F2}-{m.hitEnd:F2} of {m.length:F2} s)")));
+            return pack;
         }
 
         // ---- any humanoid clips, from a JSON description
@@ -121,6 +134,8 @@ namespace RoeFighter.EditorTools
         {
             public string name, title, source, license, folder;
             public bool humanoid = true;
+            public float walkSpeed, backSpeed;  // m/s; 0: the fight's own (MotionPack)
+            public RoeMocap.Source bvh;         // motion capture to convert first (its segments become the clips)
             public RoleMap roles = new RoleMap();
             public List<StrikeSpec> strikes = new List<StrikeSpec>();
         }
@@ -157,11 +172,20 @@ namespace RoeFighter.EditorTools
                 specPath = EditorUtility.OpenFilePanel("Motion pack description", Application.dataPath, "json");
             if (string.IsNullOrEmpty(specPath))
                 return;
+            if (!Path.IsPathRooted(specPath))
+                specPath = Path.Combine(Path.GetDirectoryName(Application.dataPath), specPath);
             ImportSpec(JsonUtility.FromJson<Spec>(File.ReadAllText(specPath)));
         }
 
         public static MotionPack ImportSpec(Spec spec)
         {
+            if (spec.bvh != null && spec.bvh.segments != null && spec.bvh.segments.Count > 0)
+            {
+                // BVH: each segment becomes a humanoid clip named after it, then on as for any clips
+                spec.folder = $"{Dir}/{spec.name}/bvh";
+                spec.humanoid = false;
+                RoeMocap.ConvertAll(spec.bvh, n => $"{spec.folder}/{n}.anim");
+            }
             if (spec.humanoid)
                 MakeHumanoid(spec.folder);
             var found = FindClips(spec.folder);
@@ -188,6 +212,8 @@ namespace RoeFighter.EditorTools
             pack.title = string.IsNullOrEmpty(spec.title) ? spec.name : spec.title;
             pack.source = spec.source;
             pack.license = spec.license;
+            pack.walkSpeed = spec.walkSpeed;
+            pack.backSpeed = spec.backSpeed;
             foreach (var (role, key) in new[] { ("guard", spec.roles.guard), ("walk", spec.roles.walk), ("walk_back", spec.roles.walk_back), ("run", spec.roles.run) })
             {
                 var src = Find(key);
@@ -214,8 +240,7 @@ namespace RoeFighter.EditorTools
                 move.knockdown = s.knockdown;
                 pack.strikes.Add(move);
             }
-            Save(pack, spec.name);
-            return pack;
+            return Save(pack, spec.name);
         }
 
         /// <summary>The FBX files of a folder imported as Humanoid (an avatar made from each model).</summary>

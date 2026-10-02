@@ -175,7 +175,9 @@ namespace RoeFighter.Fight
                         // played at the rate at which a planted foot keeps pace with the body; the body
                         // itself moves after the pose, by what the planted foot pushed (AfterPose)
                         string clip = fwd > 0 ? "walk" : "walk_back";
-                        walkSpeed = fwd > 0 ? WalkSpeed : BackSpeed;
+                        var pack = rig.motions;
+                        walkSpeed = fwd > 0 ? (pack != null && pack.walkSpeed > 0f ? pack.walkSpeed : WalkSpeed)
+                                            : (pack != null && pack.backSpeed > 0f ? pack.backSpeed : BackSpeed);
                         walkDir = toFoe.normalized * fwd;
                         rig.Play(clip, walkSpeed / rig.StrideSpeed(clip), 0.15f, false);
                     }

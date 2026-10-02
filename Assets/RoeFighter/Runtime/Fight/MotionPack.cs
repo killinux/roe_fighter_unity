@@ -34,6 +34,7 @@ namespace RoeFighter.Fight
         public string title;             // shown when switched to
         public string source;            // where the motions come from
         public string license;           // and under which terms
+        public float walkSpeed, backSpeed;   // m/s the fight walks on / back with these clips; 0: the fight's own
         public List<Clip> clips = new List<Clip>();
         public List<Move> strikes = new List<Move>();   // Move.clip names a role in clips
 

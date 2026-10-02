@@ -1,12 +1,15 @@
 # Look inside a BVH clip: stick figures over time plus the speed of hands and feet, to find
 # where single punches / kicks start and end.
-#   python tools/bvh_preview.py <clip.bvh> [--out sheet.png] [--every 6] [--from 0] [--to -1]
+#   python tools/bvh_preview.py <clip.bvh> [--out sheet.png] [--every 6] [--from 0] [--to -1] [--scale 0]
 # Prints the speed peaks of each hand and foot (frame, m/s) and draws a sheet: side view (x/y)
 # of every n-th frame, numbered, with a speed plot underneath.
+# Joint names are recognised the way RoeMocap does it (Bandai "Hand_L", CMU / LAFAN1 / Mixamo
+# "LeftHand", 3ds Max "Bip01 L Hand", ASF "lwrist"); units from the leg length unless --scale.
 import argparse
 import io
 import math
 import os
+import re
 import sys
 
 import numpy as np
@@ -45,6 +48,79 @@ def parse_bvh(path):
     return joints, channels, data, dt
 
 
+SIDED = {'hipjoint', 'femur', 'tibia', 'foot', 'toes', 'toe', 'clavicle', 'humerus', 'radius', 'wrist', 'hand', 'fingers',
+         'thumb', 'shoulder', 'collar', 'arm', 'forearm', 'upleg', 'leg', 'hip', 'thigh', 'calf', 'knee', 'ankle', 'elbow'}
+
+
+def split_name(name):
+    """(side, core) of a joint name, as RoeMocap.Split: 'LeftUpLeg' -> ('L', 'upleg'), 'lfemur' -> ('L', 'femur')."""
+    n = name.rsplit(':', 1)[-1]
+    n = re.sub(r'^(bip0*1|mixamorig|def)[ _\-.]+', '', n, flags=re.I)
+    parts = [p.lower() for p in re.split(r'[ _\-.]+|(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])', n) if p]
+    side = ''
+    if len(parts) > 1:
+        if parts[0] in ('left', 'l', 'right', 'r'):
+            side = 'L' if parts.pop(0)[0] == 'l' else 'R'
+        elif parts[-1] in ('left', 'l', 'right', 'r'):
+            side = 'L' if parts.pop()[0] == 'l' else 'R'
+    core = ''.join(parts)
+    if not side and len(core) > 1 and core[0] in 'lr' and core[1:] in SIDED:
+        side, core = core[0].upper(), core[1:]
+    return side, core
+
+
+def find_bones(joints):
+    """Indices of the hips, hands and feet (keys Hips, Hand_L, Hand_R, Foot_L, Foot_R) and the thigh + shin joints."""
+    parts = [split_name(j['name']) if not j.get('end') else ('', '') for j in joints]
+
+    def find(side, *cores):
+        for c in cores:
+            hits = [i for i, p in enumerate(parts) if p == (side, c)]
+            if hits:
+                return hits[0]
+        return None
+
+    def up(i):
+        p = joints[i]['parent']
+        while p >= 0 and re.search('twist|roll', parts[p][1]):
+            p = joints[p]['parent']
+        return p
+
+    out = {}
+    for side in 'LR':
+        hand, foot = find(side, 'wrist', 'hand'), find(side, 'foot', 'ankle')
+        if hand is not None:
+            out['Hand_' + side] = hand
+        if foot is not None:
+            out['Foot_' + side] = foot
+            out['Shin_' + side] = up(foot)
+            out['Thigh_' + side] = up(up(foot))
+    chains = []
+    for k in ('Thigh_L', 'Thigh_R'):
+        if k in out:
+            c, i = [], out[k]
+            while i >= 0:
+                c.insert(0, i)
+                i = joints[i]['parent']
+            chains.append(c)
+    if len(chains) == 2:
+        common = [a for a, b in zip(*chains) if a == b]
+        out['Hips'] = common[-1]
+    return out, parts
+
+
+def auto_scale(joints, bones):
+    """Metres per BVH unit from thigh + shin: cm, m or inches when it fits, else a 0.84 m leg."""
+    leg = np.linalg.norm(joints[bones['Shin_L']]['offset']) + np.linalg.norm(joints[bones['Foot_L']]['offset'])
+    if 55 < leg < 130:
+        return 0.01
+    if 0.55 < leg < 1.3:
+        return 1.0
+    if 22 < leg < 51:
+        return 0.0254
+    return 0.84 / max(leg, 1e-6)
+
+
 def rot(axis, deg):
     a = math.radians(deg)
     c, s = math.cos(a), math.sin(a)
@@ -55,7 +131,7 @@ def rot(axis, deg):
     return np.array([[c, -s, 0], [s, c, 0], [0, 0, 1]])
 
 
-def forward_kinematics(joints, channels, row):
+def forward_kinematics(joints, channels, row, scale=0.01):
     """World positions (metres, BVH axes: y up) of every joint for one frame."""
     local_pos = [j['offset'].copy() if j['offset'] is not None else np.zeros(3) for j in joints]
     local_rot = [np.eye(3) for _ in joints]
@@ -74,7 +150,7 @@ def forward_kinematics(joints, channels, row):
             p = j['parent']
             world_rot[i] = world_rot[p] @ local_rot[i]
             world_pos[i] = world_pos[p] + world_rot[p] @ local_pos[i]
-    return np.array(world_pos) * 0.01
+    return np.array(world_pos) * scale
 
 
 def main():
@@ -85,19 +161,22 @@ def main():
     ap.add_argument('--every', type=int, default=6)
     ap.add_argument('--from', dest='start', type=int, default=0)
     ap.add_argument('--to', type=int, default=-1)
+    ap.add_argument('--scale', type=float, default=0, help='metres per BVH unit (0: from the leg length)')
     a = ap.parse_args()
     joints, channels, data, dt = parse_bvh(a.bvh)
+    bones, parts = find_bones(joints)
+    scale = a.scale or auto_scale(joints, bones)
     end = len(data) if a.to < 0 else min(a.to, len(data))
-    pos = np.array([forward_kinematics(joints, channels, data[f]) for f in range(len(data))])
-    names = [j['name'] for j in joints]
-    track = {k: names.index(k) for k in ('Hand_L', 'Hand_R', 'Foot_L', 'Foot_R', 'Hips') if k in names}
+    pos = np.array([forward_kinematics(joints, channels, data[f], scale) for f in range(len(data))])
+    track = {k: bones[k] for k in ('Hand_L', 'Hand_R', 'Foot_L', 'Foot_R', 'Hips') if k in bones}
     # speeds relative to the hips (strikes, not walking)
     speed = {}
     for k, ji in track.items():
         rel = pos[:, ji] - (pos[:, track['Hips']] if k != 'Hips' else 0)
         v = np.linalg.norm(np.diff(rel, axis=0), axis=1) / dt
         speed[k] = np.concatenate([[0], v])
-    print(f'{os.path.basename(a.bvh)}: {len(data)} frames at {1 / dt:.0f} fps, {len(joints)} joints')
+    print(f'{os.path.basename(a.bvh)}: {len(data)} frames at {1 / dt:.0f} fps, {len(joints)} joints, {scale:.4g} m/unit; '
+          + ' '.join(f'{k}={joints[i]["name"]}' for k, i in bones.items()))
     for k in ('Hand_L', 'Hand_R', 'Foot_L', 'Foot_R'):
         if k not in speed:
             continue
@@ -125,8 +204,7 @@ def main():
             if j['parent'] < 0 or j.get('end'):
                 continue
             q = p[j['parent']]
-            side = 'L' if j['name'].endswith('_L') else 'R' if j['name'].endswith('_R') else None
-            col = colours.get(side, (220, 220, 220))
+            col = colours.get(parts[i][0], (220, 220, 220))
             # side view: x right (BVH x), y up; also a faint front view z
             x0, y0 = ox + (q[2] - root[2]) * 90, oy - q[1] * 90
             x1, y1 = ox + (p[i][2] - root[2]) * 90, oy - p[i][1] * 90

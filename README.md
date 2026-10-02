@@ -23,7 +23,7 @@
 | 基础动作（走、退、跑、刺拳、直拳、踢、挥砍、防御架势）：公开动作捕捉数据转人形 | 完成；侧步改成程序化迈步（两节骨 IK，脚不滑） |
 | 手臂和腿：皮肤挂在辅助骨上，从游戏动作里拟合出辅助骨怎么跟随肢体，动捕动作时实时驱动；动捕着地；走路不滑 | 完成（10-02 下午），见"手臂和腿"一节 |
 | 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4` |
-| 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 框架完成，现在只有 `bandai1` 一个包 |
+| 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 两个包：`bandai1`（默认）和开源动捕做的 `accad_male2`（拳击架势、步法、前后腿回旋踢，10-02 晚）；对比视频 `out\motion_packs_demo.mp4`，用新包的整场对打 `out\fight_cpu_match_accad.mp4` |
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | UFE 对战 | 暂时买不了；先用自己的格斗逻辑 |
 
@@ -283,6 +283,7 @@ python tools\bvh_preview.py _work\mocap\bandai1\dataset-1_kick_normal_001.bvh --
 
 - 用到的段落：`punch_normal_001` 前手刺拳（也取它开头的拳击架势当防御姿势）、`punch_normal_002` 后手直拳、`kick_normal_001` 回旋踢、
   `slash_normal_001` 挥砍，走、退、跑用 feminine（女性化）风格。
+- 转换器 `RoeMocap` 现在是通用的（骨骼名自动识别、单位自动判断），别的 BVH 数据写一个动作包 JSON 就能用，见"动作包"一节的第二个包。
 - **T 姿势**：BVH 的零姿势是"每根骨头都沿自己的 x 轴"，不能直接建人形骨架。做法是取一帧自然站立，把骨盆转正，再把每根骨头用最小摆动
   （不加扭转）转到 T 姿势方向——脊柱朝上、手臂水平朝外、腿朝下、脚尖朝前——然后用这个姿势建 Unity 的人形映射。
 - 每帧把 BVH 摆到骨架上（右手系转左手系：x 取反，绕 y、z 的角度取反，厘米变米），用 `HumanPoseHandler` 读出肌肉值写成人形动作。
@@ -312,7 +313,8 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 |---|---|---|
 | 左右移动（朝对手走 / 后退，按住后退 = 防御） | A / D（或手柄摇杆） | ← / → |
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
-| A 刺拳、B 挥砍、C 直拳、D 回旋踢 | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
+| A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
+| 换动作包（比赛重新开始） | F3 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
 | 电脑接管 1P / 2P | F1 / F2 | |
 
@@ -468,7 +470,8 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
 
 ```powershell
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.BuildBandai                    # 现在的动捕动作 → bandai1
-.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','my_pack.json'   # 任何人形片段 → 一个包
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','my_pack.json'   # 任何人形片段（或 BVH 动捕）→ 一个包
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/accad_male2.json'   # 开源动捕 → accad_male2
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics -Extra '-roeMotions','my_pack'  # 用哪个包开局
 ```
 
@@ -497,12 +500,103 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
   - 没写的伤害、硬直按键位给默认值（A 轻、D 重）。
 
   步速、着地、脚步锁定、辅助骨、布料都是按每个角色身上的实际姿势实时算的，换包不用改别的。
+  包里还可以写 `"walkSpeed"`、`"backSpeed"`（米/秒）：这套动作原本走多快就让格斗按多快走，不写就用格斗默认的 1.15 / 0.95。
+- 重新导入同名的包时原地更新那个资源，场景里引用的还是它，不用重建场景。
+
+#### 第二个包：开源动捕 `accad_male2`
+
+先调研了十来个公开的动作数据，按"能不能直接下载、授权、有没有格斗动作"挑：
+
+| 来源 | 授权 | 格斗动作 | 结论 |
+|---|---|---|---|
+| **ACCAD Male 2**（俄亥俄州立大学） | CC BY 3.0，署名即可 | 格斗架势、拳击步法、各种拳、二十来种踢、防御、闪避、挑衅、胜利；每段一个动作 | **用它**：不用登录，一个 7 MB 的压缩包 |
+| Quaternius 通用动画库 1、2（免费版） | CC0 | 刺拳、直拳、勾拳、受击、倒地，**没有踢** | 留作备选（FBX，直接走 Humanoid 导入） |
+| CMU 动捕库 | 几乎不限用途（不许直接转卖数据） | 空手道（135 号）、拳击、出拳踢腿、起身 | 一段十几到几十秒、120 fps，要自己一招招切；以后补招可以用 |
+| 100STYLE | CC BY 4.0 | 只有走跑（各种风格，含面朝前横移） | 不够 |
+| LAFAN1（育碧） | CC BY-NC-ND 4.0 | 有对打的长镜头 | 授权不许发布改编后的动作，不用 |
+| Bandai Namco 数据集 2 | CC BY-NC 4.0 | 只有走、跑、挥手 | 不够 |
+| Mixamo、Asset Store 免费包、Rokoko | 各自条款 | 很多 | 要登录（你的账号），留给你 |
+
+```powershell
+python tools\fetch_mocap.py --source accad      # 下载并解压到 _work\mocap\accad\male2（149 段 BVH，30 fps，厘米）
+python tools\bvh_preview.py _work\mocap\accad\male2\Male2_E2_JabRight.bvh --every 4 --out sheet.png   # 火柴人连环图，挑帧范围
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/accad_male2.json'
+```
+
+这位演员习惯右脚在前（southpaw），站架、步法、防御都是这个架势；每一招左右两边各录了一遍，包里统一用右脚在前的版本：
+
+| 用途 | 段落 | 说明 |
+|---|---|---|
+| 站架 | `E8_Bounce` | 原地轻跳的拳击架势，切出 0.8 秒一个循环 |
+| 前进 / 后退 | `E3_Advance` / `E5_Retreat` | 拳击小碎步（前脚迈、后脚跟），各切出 1 秒一个循环 |
+| A 刺拳 | `E2_JabRight` | 前手（右拳） |
+| B 前腿回旋踢 | `G11_RoundhouseLeadingRight` | 轻脚 |
+| C 直拳 | `E3_CrossLeft` | 后手（左拳），身体前压 |
+| D 后腿回旋踢 | `G8_RoundhouseLeft` | 重脚，高踢 |
+
+在 a08 身上量出来：刺拳够到 0.77 米、前腿回旋踢 1.23 米、直拳 0.78 米、后腿回旋踢 1.18 米；播放速度 1.6 / 1.5 / 1.4 / 1.4 倍。
+
+JSON 里的 `bvh` 一块说明怎么把动捕切成片段（节选，`//` 后面是这里加的说明，真正的 JSON 里不能写；完整的见 `tools/motionpacks/accad_male2.json`）：
+
+```json
+"bvh": {
+  "folder": "_work/mocap/accad/male2",
+  "reference": "Male2_A1_Stand.bvh", "restFrame": 0,     // 用哪一帧自然站立建人形骨架（-1 = BVH 的零姿势本身就是 T 姿势时）
+  "scale": 0.01,                                          // 米/单位，不写就按腿长判断（厘米、米、英寸）
+  "segments": [
+    { "name": "jab", "file": "Male2_E2_JabRight.bvh", "from": 14, "to": 50, "limb": "RightHand", "recoverSpeed": 1.5 },
+    { "name": "cross", "file": "Male2_E3_CrossLeft.bvh", "from": 10, "to": 58, "limb": "LeftHand", "recoverSpeed": 2, "face": "stance:jab" },
+    { "name": "guard", "file": "Male2_E8_Bounce.bvh", "loop": true, "minCycle": 0.4, "maxCycle": 1.4, "face": "stance:jab" },
+    { "name": "walk", "file": "Male2_E3_Advance.bvh", "from": 10, "to": 165, "loop": true, "minCycle": 0.8, "maxCycle": 1.4, "face": "travel" }
+  ]
+}
+```
+
+每个段落转成一个人形片段（放在 `Generated\motionpacks\<包名>\bvh\`），后面就和任何人形片段一样：`roles` 和 `strikes` 按段落名引用。
+导入器（`RoeMocap`）为此改成了通用的：
+
+- **骨骼名自动识别**：先拆出左右（`Left`/`L`/`_L`/`l` 前缀）和名字主体，按名字找手（`wrist`/`hand`）和脚（`foot`/`ankle`），
+  它上面一节是前臂/小腿，再上面是上臂/大腿，再上面同侧的是肩；髋是两条大腿和头的公共祖先；髋到头之间按两臂分叉的位置分成脊柱和脖子，
+  和父骨重合（零偏移）的关节跳过。Bandai 的 `Hand_L`、CMU/LAFAN1/Mixamo 的 `LeftHand`、3ds Max 的 `Bip01 L Hand`、ASF 的 `lwrist` 都能认；
+  认不出来时可以在 `bones` 里直接写。`tools\bvh_preview.py` 用同一套规则。
+- 改完后重跑 Bandai 的转换，生成的片段和招式表**逐字节相同**。
+- **对齐方式**（`face`）：
+  - 原来的做法是出招按"伸得最远的方向"对准对手，走路按骨盆朝向。格斗架势是侧身站的（骨盆偏开对手约 55°），按骨盆对齐会斜着走，
+    所以加了 `travel`（按移动方向）和 `back`（后退）。
+  - 每招各按出手方向对齐时，几招的起手姿势互相差到 20° 以上（直拳打出去时身体是拧着的），从站架切过去身体会一扭。
+    `stance:jab` 让起手时骨盆和刺拳起手时一样对着对手，出手过程中再平滑转到出手方向，到最远点正好对准，收回时再转回来
+    （直拳转 −22°，后腿回旋踢 +14°，前腿回旋踢 −3°）。
+- **收招加速**（`recoverSpeed`）：演员收拳很慢，直拳打出去 0.9 秒后才回到架势。最远点之后的部分按这个倍数加速（刺拳 1.5，其余 2）。
+- **循环段落**的长度改用秒（`minCycle`、`maxCycle`），`fps` 可以降采样（CMU 那种 120 fps 的数据）。
+
+实测（`RoeFightProbe.FootSlide -roeMotions accad_male2`，着地的接触点每秒滑多少）：
+
+| | a08 | g04 |
+|---|---|---|
+| 前进（0.9 米/秒，动作放 1.73 / 1.45 倍） | 0.26 | 0.21 |
+| 后退（0.8 米/秒，1.47 / 1.45 倍） | 0.14 | 0.15 |
+| 侧步 | 0.04–0.08 | 0.04–0.07 |
+
+小碎步本来就是后脚拖着地跟上去，所以前进、后退比 Bandai 的正常走路（后退 0.07）滑得多一点；没有净漂移。
+
+演示：`RoeClothDemo.Packs` 让两个角色用同一套按键脚本（站架、前进、后退、两边侧步、A、C、D、B）把每个包各做一遍，
+`python tools\cloth_demo_video.py _work\pack_demo out\motion_packs_demo.mp4 --variants bandai1,accad_male2` 左右拼起来，
+每格下面写着当前按的键和那个包里这个键是什么招。`RoeFightScene.Record -roeMotions accad_male2` 用新包录一整场电脑对电脑。
+
+坑：
+
+1. **裙子像翅膀一样横着飘。** 第一次导入后，两个角色的裙子在新包的所有动作里都水平伸出去，关掉布料也一样。
+   裙子挂在骨盆上，`RoeFightProbe.PelvisCheck` 量出骨盆骨被往前翻了 90°（腿和脊柱由各自的肌肉值摆对了，看不出来）。
+   原因在建人形骨架那一步：原来用"髋 → 第一节脊柱"当"上"把骨盆摆正，ACCAD 的第一节脊柱 `ToSpine` 却在髋正后方 8 厘米、和髋一样高，
+   摆正后骨盆仰面躺倒了 90°，放到角色身上就是前翻 90°。现在第一节脊柱和"髋 → 脖子"的方向差超过 30° 时改用后者（Bandai 两者只差 1.4°，结果不变）。
+2. 后退第一次切到了演员停下来站着的那几帧：站着不动也"首尾很像"。现在 `travel` / `back` 的循环要求每秒至少移动 0.15 米。
 
 ## 已知问题和待定的事
 
 - 布料只在基础动作里生效；游戏自己的技能里裙子和头发是手调的关键帧。布料参数用的是 Blender 插件的预设，还没逐件调过
   （g04 的裙片踢腿时会在膝盖处卷一下）。
-- 第二个动作包还没有：开源动作在找，买来的 Unity 动作照"动作包"一节的 JSON 接进来。
+- 动作包现在有 `bandai1`（默认）和 `accad_male2` 两个，买来的 Unity 动作照"动作包"一节的 JSON 接进来。`accad_male2` 是右脚在前的拳击架势，
+  g04 举着大扇子打拳击架势时扇子挡在身前；只有四个攻击键，ACCAD 里还有勾拳、上勾拳、侧踢、前踢、防御、闪避、胜利动作没用上，CMU 的空手道也可以补进来。
 - 一个角色播另一个角色的技能时，辅助骨用的还是原角色动作里的数值；`RoeHelperRig` 也可以用在这里，还没接。
 - 布料物理：游戏用的是 Magica Cloth 2，每套服装的设置（哪些骨骼、重力、阻尼、身体碰撞体）都能取出来。买了这个插件就能直接照搬；不买就自己写弹簧骨骼。
 - a08 的剑：基础动作时藏起来（挂在骨盆上会跟着拳脚乱甩），开场、胜利和放技能时出现。g04 的扇子拿在手上，一直显示。
