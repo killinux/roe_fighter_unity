@@ -4,5 +4,8 @@
 EditorBuildSettings:
   m_ObjectHideFlags: 0
   serializedVersion: 2
-  m_Scenes: []
+  m_Scenes:
+  - enabled: 1
+    path: Assets/RoeFighter/Scenes/Fight_e23_steel_s02.unity
+    guid: dca3ae13800d3ae4fba8a1f60fc65630
   m_configObjects: {}

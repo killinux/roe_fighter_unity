@@ -16,6 +16,9 @@
 # Prefabs and data generated from those assets
 /Assets/RoeFighter/Generated/
 /Assets/RoeFighter/Generated.meta
+# Fight scenes: copies of the game's stage scenes with the fighters added (RoeFightScene.Build)
+/Assets/RoeFighter/Scenes/
+/Assets/RoeFighter/Scenes.meta
 # Paid Asset Store packages
 /Assets/UFE/
 /Assets/UFE.meta
