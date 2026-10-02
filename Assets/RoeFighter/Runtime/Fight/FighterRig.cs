@@ -82,6 +82,11 @@ namespace RoeFighter.Fight
         Transform[] toes, feet;
         bool grounded;
         float toeSole, ankleSole, groundOffset;
+        readonly Quaternion[] footRest = new Quaternion[2], toeRest = new Quaternion[2];   // the stance: foot against its heading, toe bone
+        readonly Vector3[] footAhead = new Vector3[2];                                     // the foot's axis that points ahead along the floor
+        readonly Vector3[] lastAnkle = new Vector3[2];
+        readonly float[] plantWeight = new float[2];                                       // a still foot near the floor is put down on it
+        bool plantValid;
 
         public bool Ready => graph.IsValid();
 
@@ -127,6 +132,15 @@ namespace RoeFighter.Fight
                 float floor = animator.transform.position.y;
                 toeSole = toes.Average(t => t.position.y) - floor;
                 ankleSole = feet.Average(t => t.position.y) - floor;
+                // and how each foot stands in its shoe: turned against the direction it points along the floor
+                for (int i = 0; i < 2; i++)
+                {
+                    var ahead = Flat(toes[i].position - feet[i].position);
+                    ahead = ahead.sqrMagnitude > 1e-6f ? ahead.normalized : Flat(animator.transform.forward).normalized;
+                    footRest[i] = Quaternion.Inverse(Quaternion.LookRotation(ahead, Vector3.up)) * feet[i].rotation;
+                    footAhead[i] = Quaternion.Inverse(feet[i].rotation) * ahead;
+                    toeRest[i] = toes[i].localRotation;
+                }
             }
             helpers = animator.GetComponent<RoeHelperRig>();
             // skirts, hair, chains and breasts: found and measured in the stance pose
@@ -149,6 +163,8 @@ namespace RoeFighter.Fight
             lockingFeet = false;
             lockWeight = 0f;
             System.Array.Clear(contactDown, 0, contactDown.Length);
+            System.Array.Clear(plantWeight, 0, plantWeight.Length);
+            plantValid = false;
             stanceTime = 0f;
 
             graph = PlayableGraph.Create($"{id} fighter");
@@ -217,6 +233,8 @@ namespace RoeFighter.Fight
             gameWeight = gameTarget = 0f;
             ApplyWeights();
             current = -1;
+            System.Array.Clear(plantWeight, 0, plantWeight.Length);
+            plantValid = false;
             stanceTime = 0f;
             boneCloth?.Reset();
         }
@@ -347,11 +365,42 @@ namespace RoeFighter.Fight
             // floats 11-18 cm; the lowest sole goes down to the floor (the game's clips stay as they are)
             if (grounded && mocap > 0f)
             {
-                float lowest = float.MaxValue;
+                // A planted foot stands in its high-heeled shoe the way the game's stance has it.  The
+                // motion capture's feet are flat shoes': put on these heels as they were, a standing foot
+                // tipped onto its toes, the heel spike 10 cm in the air and the toes 2-3 cm in the floor.
+                // The foot keeps the direction the clip points it in; feet lifted by the clip (steps,
+                // kicks) keep the clip's angle, blended by how far the ankle is above its standing height.
+                float lowest = LowestSole();
                 for (int i = 0; i < 2; i++)
-                    lowest = Mathf.Min(lowest, Mathf.Min(toes[i].position.y - toeSole, feet[i].position.y - ankleSole));
+                {
+                    float above = feet[i].position.y - lowest - ankleSole;
+                    float w = (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.03f, 0.12f, above))) * mocap;
+                    var ahead = Flat(feet[i].rotation * footAhead[i]);
+                    if (w > 0f && ahead.sqrMagnitude > 1e-6f)
+                        feet[i].rotation = Quaternion.Slerp(feet[i].rotation, Quaternion.LookRotation(ahead.normalized, Vector3.up) * footRest[i], w);
+                    toes[i].localRotation = Quaternion.Slerp(toes[i].localRotation, toeRest[i], mocap);
+                }
+                lowest = LowestSole();
                 groundOffset = animator.transform.position.y - lowest;
                 hips.position += Vector3.up * (groundOffset * mocap);
+                // The other foot: retargeted onto these legs, a foot the actor had on the floor often
+                // hovers 1-3 cm above it.  A foot that stays put and is that close goes down to the
+                // floor (two-bone IK); a foot that is travelling (a step, a kick) is left alone.
+                float floor = animator.transform.position.y;
+                for (int i = 0; i < 2 && legs != null; i++)
+                {
+                    var ankle = feet[i].position;
+                    float above = ankle.y - floor - ankleSole;
+                    if (dt > 0f)
+                    {
+                        float speed = plantValid ? Flat(ankle - lastAnkle[i]).magnitude / dt : 0f;
+                        plantWeight[i] = Mathf.MoveTowards(plantWeight[i], above < 0.05f && speed < 0.35f ? 1f : 0f, dt / 0.1f);
+                    }
+                    lastAnkle[i] = ankle;
+                    if (plantWeight[i] > 0f && above > 0f)
+                        TwoBoneIK(legs[i].upper, legs[i].lower, legs[i].foot, ankle - Vector3.up * (above * plantWeight[i] * mocap), transform.forward);
+                }
+                plantValid = dt > 0f;
             }
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
@@ -575,6 +624,15 @@ namespace RoeFighter.Fight
 
         /// <summary>Vertical shift that put the motion capture on the floor in the last step (for checks).</summary>
         public float GroundOffset => groundOffset;
+
+        /// <summary>Where the floor would be under the lowest sole (toe or ankle bone at its standing height).</summary>
+        float LowestSole()
+        {
+            float lowest = float.MaxValue;
+            for (int i = 0; i < 2; i++)
+                lowest = Mathf.Min(lowest, Mathf.Min(toes[i].position.y - toeSole, feet[i].position.y - ankleSole));
+            return lowest;
+        }
 
         /// <summary>
         /// The mixers' input weights from the clip weights, every clip every time, normalized per

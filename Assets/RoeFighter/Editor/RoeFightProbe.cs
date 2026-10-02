@@ -718,6 +718,176 @@ namespace RoeFighter.EditorTools
             Debug.Log($"[ROE] legs {id} {clipName} ({len:F2} s):" + sb);
         }
             /// <summary>
+        /// The feet up close, in the real fight logic: one fighter's feet filmed from her side at floor
+        /// level and measured - per foot the pitch of the foot (ankle to toes against the floor), the
+        /// ankle and toe bone heights, and from the skinned shoe the lowest point under the heel half and
+        /// under the toe half (both 0 when standing flat on the floor in heels; below 0 = in the floor).
+        /// First the game's own pose (the intro), then guard, walking on and back, side steps and the four
+        /// strikes of each motion pack.  Frames to _work/feet/&lt;pack&gt;_&lt;n&gt;.jpg, numbers to the log and feet.txt.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Feet [-roeChar a08] [-roePacks bandai1,accad_male2]
+        /// </summary>
+        public static void Feet()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "a08");
+            string outDir = RoeCapture.Arg("-roeOut", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "feet"));
+            var packs = RoeCapture.Arg("-roePacks", "bandai1,accad_male2").Split(',');
+            if (System.IO.Directory.Exists(outDir))
+                System.IO.Directory.Delete(outDir, true);
+            System.IO.Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.cpu = new[] { false, false };
+            game.hud.gameObject.SetActive(false);
+            foreach (var rig in game.rigs)
+                foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
+            var table = new System.Text.StringBuilder();
+            var baked = new Mesh();
+            bool warmed = false;
+            // (from, to, input, name) in seconds of the fight phase, shots every `every` seconds in between
+            var script = new (float from, float to, FighterInput input, string name, float every)[]
+            {
+                (0.0f, 1.0f, default, "guard", 0.25f),
+                (1.0f, 2.6f, new FighterInput { x = 1 }, "walk", 0.2f),
+                (2.6f, 3.8f, new FighterInput { x = -1 }, "back", 0.2f),
+                (3.8f, 5.3f, new FighterInput { y = 1 }, "side", 0.25f),
+                (5.6f, 6.6f, new FighterInput { a = true }, "A", 0.1f),
+                (6.6f, 7.8f, new FighterInput { c = true }, "C", 0.12f),
+                (7.8f, 9.4f, new FighterInput { d = true }, "D", 0.15f),
+                (9.4f, 10.8f, new FighterInput { b = true }, "B", 0.15f),
+            };
+            foreach (var packName in packs)
+            {
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == packName));
+                game.Setup();
+                int who = game.f[0].rig.id == id ? 0 : 1;
+                var me = game.f[who];
+                var a = me.rig.animator;
+                var feet = new[] { a.GetBoneTransform(HumanBodyBones.LeftFoot), a.GetBoneTransform(HumanBodyBones.RightFoot) };
+                var toes = new[] { a.GetBoneTransform(HumanBodyBones.LeftToes), a.GetBoneTransform(HumanBodyBones.RightToes) };
+                // the shoe and foot vertices of each side: their strongest bone is the foot or under it
+                var renderers = a.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null && r.enabled && r.gameObject.activeInHierarchy).ToArray();
+                var sides = renderers.Select(r =>
+                {
+                    var bw = r.sharedMesh.boneWeights;
+                    var bones = r.bones;
+                    var lists = new[] { new List<int>(), new List<int>() };
+                    for (int i = 0; i < bw.Length; i++)
+                    {
+                        int b = bw[i].boneIndex0;
+                        if (b >= bones.Length || bones[b] == null)
+                            continue;
+                        for (int k = 0; k < 2; k++)
+                            if (bones[b].IsChildOf(feet[k]))
+                                lists[k].Add(i);
+                    }
+                    return lists;
+                }).ToArray();
+                int shot = 0;
+                void Shoot(string what)
+                {
+                    float floor = a.transform.position.y;
+                    var fwd = me.Forward;
+                    var line = new System.Text.StringBuilder($"{packName}\t{shot}\t{what}\t{me.state}\t{me.rig.Current}");
+                    var low = new[] { new Vector2(float.MaxValue, float.MaxValue), new Vector2(float.MaxValue, float.MaxValue) };   // (heel half, toe half)
+                    for (int ri = 0; ri < renderers.Length; ri++)
+                    {
+                        if (sides[ri][0].Count == 0 && sides[ri][1].Count == 0)
+                            continue;
+                        var r = renderers[ri];
+                        r.BakeMesh(baked, true);
+                        var v = baked.vertices;
+                        var m = Matrix4x4.TRS(r.transform.position, r.transform.rotation, Vector3.one);
+                        for (int k = 0; k < 2; k++)
+                        {
+                            var footFwd = toes[k].position - feet[k].position;
+                            footFwd.y = 0f;
+                            footFwd = footFwd.sqrMagnitude > 1e-6f ? footFwd.normalized : fwd;
+                            foreach (int i in sides[ri][k])
+                            {
+                                var p = m.MultiplyPoint3x4(v[i]);
+                                float along = Vector3.Dot(p - feet[k].position, footFwd);
+                                if (along < 0f)
+                                    low[k].x = Mathf.Min(low[k].x, p.y - floor);
+                                else
+                                    low[k].y = Mathf.Min(low[k].y, p.y - floor);
+                            }
+                        }
+                    }
+                    for (int k = 0; k < 2; k++)
+                    {
+                        var d = toes[k].position - feet[k].position;
+                        float pitch = Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg;
+                        line.Append($"\t{(k == 0 ? "L" : "R")} pitch {pitch:F0} ankle {feet[k].position.y - floor:F3} toe {toes[k].position.y - floor:F3} " +
+                                    $"heel-half low {low[k].x:F3} toe-half low {low[k].y:F3}");
+                    }
+                    table.AppendLine(line.ToString());
+                    // side view at floor level, from her left, a little in front
+                    var mid = (feet[0].position + feet[1].position) * 0.5f;
+                    mid.y = floor + 0.14f;
+                    var side = Vector3.Cross(Vector3.up, fwd).normalized;     // her right
+                    var cam = game.cam;
+                    cam.fieldOfView = 30f;
+                    cam.transform.position = mid - side * 1.5f + fwd * 0.35f + Vector3.up * 0.05f;
+                    cam.transform.LookAt(mid, Vector3.up);
+                    if (!warmed)
+                    {
+                        RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
+                        RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
+                        warmed = true;
+                    }
+                    RoeCapture.Render(cam, 640, 400, System.IO.Path.Combine(outDir, $"{packName}_{shot:D3}.jpg"), 90);
+                    shot++;
+                }
+                // the game's own pose while the round is introduced
+                for (int s = 0; game.phase != FightGame.Phase.Fight; s++)
+                {
+                    game.UpdateCamera(FightGame.Dt);
+                    game.Step(new FighterInput[2]);
+                    if (s == 45)
+                        Shoot("intro (game clip)");
+                }
+                me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 6f;
+                me.foe.Place();
+                float next = 0f;
+                for (int s = 0; s < 10.8f * 60f; s++)
+                {
+                    float t = s / 60f;
+                    var input = default(FighterInput);
+                    string what = "";
+                    float every = 0.25f;
+                    foreach (var (from, to, inp, name, ev) in script)
+                        if (t >= from && t < to)
+                        {
+                            input = inp.a || inp.b || inp.c || inp.d ? (s == Mathf.RoundToInt(from * 60f) ? inp : default) : inp;
+                            what = name;
+                            every = ev;
+                        }
+                    // the fight's camera back in place (the shots move it): the game reads the input in its terms
+                    game.UpdateCamera(FightGame.Dt);
+                    // walking: towards the opponent on the screen
+                    var camRight = game.cam.transform.right;
+                    camRight.y = 0f;
+                    input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
+                    var inputs = new FighterInput[2];
+                    inputs[who] = input;
+                    game.Step(inputs);
+                    if (what.Length > 0 && t >= next)
+                    {
+                        Shoot($"{what} {t:F2}s");
+                        next = t + every;
+                    }
+                }
+                Debug.Log($"[ROE] feet {id} {packName}: {shot} shots");
+            }
+            Object.DestroyImmediate(baked);
+            System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, "feet.txt"), table.ToString());
+            Debug.Log("[ROE] feet:\n" + table);
+        }
+
+        /// <summary>
         /// Where the pelvis points in humanoid clips: each clip posed on a fighter at a few times, the
         /// pelvis bone's axes, the spine and thighs relative to world up, and the skirt's first bone.
         ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.PelvisCheck [-roeChars a08] [-roeClips path1,path2]
