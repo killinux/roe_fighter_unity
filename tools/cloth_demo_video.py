@@ -19,7 +19,7 @@ MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回�
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
          'back_fist': '里拳', 'chop': '手刀'}
 NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase'}
-TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）'}
+TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '新版：照 Magica 的做法'}
 
 
 def read_takes(folder):
@@ -49,6 +49,7 @@ def main():
     ap.add_argument('--variants', default='', help='takes to put side by side, left to right (default: as filmed)')
     ap.add_argument('--fps', type=int, default=30)
     ap.add_argument('--slow', type=float, default=1.0, help='play this many times slower')
+    ap.add_argument('--suffix', default='', help='added to every title, e.g. the motion pack')
     a = ap.parse_args()
     script = []
     for line in open(os.path.join(a.dir, 'script.txt'), encoding='utf-8'):
@@ -76,7 +77,7 @@ def main():
             for n, (v, im) in enumerate(zip(variants, ims)):
                 frame.paste(im, (w * n, 0))
                 about, moves = takes.get((cid, v), ('', {}))
-                title = TITLES.get(v) or (about.split(';')[0] if about else v)
+                title = (TITLES.get(v) or (about.split(';')[0] if about else v)) + a.suffix
                 d.text((w * n + 16, 10), f'{NAMES.get(cid, cid)}　{title}', font=big, fill=colours[n % len(colours)],
                        stroke_width=3, stroke_fill=(0, 0, 0))
                 if what in moves:

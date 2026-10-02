@@ -164,10 +164,17 @@ namespace RoeFighter.Fight
                 pelvisRef = Quaternion.Inverse(heading) * hips.rotation;     // replaced by the guard's below, once the clips are in
                 Debug.Log($"[ROE] {id} hung on the hips: {string.Join(", ", hipCloth.Select(t => t.name))}");
             }
-            // skirts, hair, chains and breasts: found and measured in the stance pose
-            boneCloth = useCloth ? new RoeBoneCloth(animator, helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null) : null;
-            if (boneCloth != null)
-                Debug.Log($"[ROE] {id} bone cloth: {boneCloth.Report}");
+            // skirts, hair, chains and breasts: found and measured in the stance pose, by the chosen backend
+            backend = RoeClothBackends.Find(useCloth ? (clothBackend ?? ClothBackend) : "off");
+            cloth = backend.make?.Invoke(animator, transform, helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null);
+            if (cloth != null)
+                Debug.Log($"[ROE] {id} cloth {backend.name}: {cloth.Report}");
+            // the skirt that follows the legs: its rest is the stance's skirt against the hips' heading
+            skirtRig = backend.skinnedSkirt ? animator.GetComponent<RoeSkirtRig>() : null;
+            if (skirtRig != null && hips != null && thighs.All(t => t != null))
+                skirtRig.CaptureStance(hips.position, HipHeading());
+            else
+                skirtRig = null;
             animator.Rebind();
             legs = null;
             var legBones = new[] { HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot,
@@ -253,6 +260,26 @@ namespace RoeFighter.Fight
                 weight[guard] = target[guard] = 1f;
             gameWeight = gameTarget = 0f;
             ApplyWeights();
+            // the legs' rest for the skirt that follows them: the guard as the fight poses it (on the floor,
+            // feet planted - the IK bends the legs a little), over one cycle
+            if (skirtRig != null && index.TryGetValue("guard", out guard))
+            {
+                skirtRig.BeginGuard();
+                capturingGuard = true;
+                Play("guard", 1f, 0f);
+                float length = Mathf.Max(0.1f, clips[guard].clip.length);
+                for (int k = 0; k < 24; k++)
+                    Tick(length / 24f);
+                capturingGuard = false;
+                skirtRig.EndGuard();
+                for (int i = 0; i < clips.Count; i++)
+                {
+                    weight[i] = target[i] = 0f;
+                    playables[i].SetTime(0);
+                }
+                weight[guard] = target[guard] = 1f;
+                ApplyWeights();
+            }
             // the pelvis the skirts are measured against: the guard's, averaged over its cycle
             if (hipCloth != null && index.TryGetValue("guard", out guard))
             {
@@ -276,9 +303,10 @@ namespace RoeFighter.Fight
             }
             current = -1;
             System.Array.Clear(plantWeight, 0, plantWeight.Length);
+            System.Array.Clear(contactDown, 0, contactDown.Length);
             plantValid = false;
             stanceTime = 0f;
-            boneCloth?.Reset();
+            cloth?.Reset();
         }
 
         readonly Dictionary<string, float> strideSpeeds = new Dictionary<string, float>();
@@ -399,7 +427,7 @@ namespace RoeFighter.Fight
                 playables[i].SetTime(t);
             }
             ApplyWeights();
-            boneCloth?.Rest();                // cloth bones no clip animates start from their rest pose again
+            cloth?.Rest();                    // cloth bones no clip animates start from their rest pose again
             graph.Evaluate(0f);
             StepLinger(dt);
             float mocap = 1f - gameWeight;
@@ -461,32 +489,47 @@ namespace RoeFighter.Fight
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
             LockFeet(dt, mocap);
+            // the skirt follows the legs as the game's animators key it (RoeSkirtRig, fitted on the game's
+            // clips): its animation pose, the cloth swings from there.  On the legs' final pose.
+            if (capturingGuard)
+                skirtRig.AddGuard(hips.position, HipHeading());
+            else if (skirtRig != null && skirtRig.Ready && mocap > 0f && !NoHipCloth)
+                skirtRig.Apply(hips.position, HipHeading(), mocap);
             // the limb helpers: the game's clips animate them; under motion capture they follow the limbs
             if (helpers != null)
                 helpers.Apply(mocap);
-            // bone cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
-            if (boneCloth != null)
+            // the cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
+            if (cloth != null)
             {
-                boneCloth.weight = mocap * clothWeight;
-                boneCloth.Step(dt, transform.position.y);
+                cloth.Weight = mocap * clothWeight;
+                cloth.Step(dt, transform.position.y);
             }
         }
 
-        // ---- bone cloth (RoeBoneCloth): skirts, hair, chains, breasts
+        // ---- cloth (RoeClothBackends): skirts, hair, chains, breasts
 
         public bool useCloth = true;
         [Range(0f, 1f)] public float clothWeight = 1f;
-        RoeBoneCloth boneCloth;
+        public string clothBackend;         // null: the fight's choice (ClothBackend)
+        /// <summary>The cloth backend every fighter uses unless it names its own (F4 in the fight).</summary>
+        public static string ClothBackend = "magica_style";
+        IRoeCloth cloth;
+        RoeClothBackends.Backend backend;
+        RoeSkirtRig skirtRig;
+        bool capturingGuard;
 
         /// <summary>The cloth starts again from the animated pose (after a teleport: a new round).</summary>
-        public void ResetCloth() => boneCloth?.Reset();
+        public void ResetCloth() => cloth?.Reset();
 
         public static bool NoHipCloth;      // for checks (RoeFightProbe.SkirtSwing -roeVariant nohip)
 
-        /// <summary>The bone cloth, for checks (null when off).</summary>
-        public RoeBoneCloth Cloth => boneCloth;
+        /// <summary>The bone cloth, for checks (null when off or another backend).</summary>
+        public RoeBoneCloth Cloth => cloth as RoeBoneCloth;
 
-        public string ClothReport => boneCloth?.Report ?? "off";
+        public string ClothReport => cloth != null ? cloth.Report : "off";
+
+        /// <summary>The cloth backend in use (and whether the skirt follows the legs).</summary>
+        public string ClothTitle => backend == null ? "" : backend.title + (skirtRig != null ? ", skirt follows the legs" : "");
 
         // ---- walking: a foot the clip puts down stays where it landed (two-bone IK)
 

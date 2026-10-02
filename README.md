@@ -22,7 +22,7 @@
 | 挑开阔的战斗场景：194 个场景全部粗筛，5 个导入 Unity | 完成；默认用格斗俱乐部擂台 `e23_steel_s02` |
 | 基础动作（走、退、跑、刺拳、直拳、踢、挥砍、防御架势）：公开动作捕捉数据转人形 | 完成；侧步改成程序化迈步（两节骨 IK，脚不滑） |
 | 手臂和腿：皮肤挂在辅助骨上，从游戏动作里拟合出辅助骨怎么跟随肢体，动捕动作时实时驱动；动捕着地；走路不滑；高跟鞋站稳（鞋跟和前掌都着地） | 完成（10-02 下午，高跟鞋 10-02 晚），见"手臂和腿"一节；对比图 `out\feet_fix_1002.jpg` |
-| 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4`；10-02 晚裙子按游戏站姿垂下（之前翘出 45°），对比图 `out\skirt_fix_1002.jpg`。裙子用户仍觉得不自然：调研了 Magica Cloth 2 本身的做法（`docs/magica-cloth-2.md`），改法等用户定 |
+| 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4`；10-02 晚裙子按游戏站姿垂下（之前翘出 45°），对比图 `out\skirt_fix_1002.jpg`。调研 Magica Cloth 2（`docs/magica-cloth-2.md`）后照它的做法重做：裙子跟腿走、一片布连成网，F4 切换新版 / 旧版 / 关，以后可接 Magica；对比视频 `out\skirt_magica_style.mp4` |
 | 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 两个包：`bandai1`（默认）和开源动捕做的 `accad_male2`（拳击架势、步法、前后腿回旋踢，10-02 晚）；对比视频 `out\motion_packs_demo.mp4`，用新包的整场对打 `out\fight_cpu_match_accad.mp4` |
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | UFE 对战 | 暂时买不了；先用自己的格斗逻辑 |
@@ -316,6 +316,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
+| 换布料（Magica 式新版 / 10-02 旧版 / 关；比赛重新开始） | F4 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
 | 电脑接管 1P / 2P | F1 / F2 | |
 
@@ -517,8 +518,39 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
   - Magica 对裙子的头号建议是让"动画姿势"跟腿走（美术蒙皮、逐个动作调，或它的 Custom Skinning），模拟叠在上面；
     我们动捕动作里的基准是站架里的裙子钉在骨盆上，腿每一步都插进去，全靠碰撞推开。
   - 游戏自己的 95 个 Magica 组件全是大厅里的头发模板（Line、惯性 0），战斗里的裙子是手调动画，照搬游戏的设置解决不了。
-  - 改法建议（等用户定）：裙子的动画姿势跟腿走（用游戏手调的裙子动画标定蒙皮权重）、一片布的链横向连起来、惯性分世界和局部；或者买 Magica。
+  - 改法建议：裙子的动画姿势跟腿走（用游戏手调的裙子动画标定蒙皮权重）、一片布的链横向连起来、惯性分世界和局部；或者买 Magica。
   - 数据：`python tools\magica_survey.py settings | links <角色> | picture <图>`；图 `out\skirt_sheets_1002.png`。
+- **照 Magica 的做法重做（10-02 晚）**：用户选了上面的方案 A，"做成可插拔的方式，先用A，后续我想办法买到 Magica 再切换"。细节和全部数字在
+  [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 9 节。
+  - **可插拔**：布料后端接口 `IRoeCloth`（`Runtime/RoeCloth.cs`），游戏里 **F4** 依次换：Magica 式骨骼布料（默认）/ 10-02 旧版 / 关。
+    Magica Cloth 2 的适配器草稿 `Runtime/RoeMagicaCloth.cs` 已按手册的运行时构建接口写好（同样的分片、参数、腿部胶囊），
+    装上插件后在 Player 设置里加 `ROE_MAGICA` 宏就会编译、出现在 F4 里；没装时不参与编译。它按自己的时钟在播放模式里跑，批处理检查和录视频时不动。
+  - **裙子的动画姿势跟腿走**（`RoeSkirtRig`，`RoeHelperFit.FitSkirt` 拟合）：每节裙骨的尾端由胯部朝向、骨盆、两条大腿、两条小腿按权重带着走，
+    权重用游戏手调的裙子动画拟合。在拟合没用到的游戏动作上，裙骨方向偏离游戏关键帧：a08 35.5° → 31.1°，g04 47.2° → 37.2°（剩下的主要是美术加的摆动，由模拟补）。
+    站架时和原来一样，腿一动裙子跟着走。
+  - **一片布连成网**：从蒙皮自动找跨链的三角面，a08 每侧前、侧、后 3 条链连起来，后腰两条短片连起来，g04 前片两条链连起来；横边保持距离、也参加碰撞。
+  - 另外：惯性分世界（角色在场上移动）和局部（动画），Tether，离动画姿势的最大距离，重置后 0.1 秒稳定，碰撞只放过站姿里本来就有的深度。
+  - 结果（`SkirtSwing`，各段动作"裙子插进腿部胶囊多深"的平均，括号里是最深，厘米；胶囊按皮肤 70% 分位数量，比腿略粗，所以不是看得见的穿模深度，只用来比较）：
+
+    | | 旧版 | 新版 |
+    |---|---|---|
+    | g04，Bandai 包 | 7.5（9.1） | **2.2**（5.8） |
+    | g04，ACCAD 包 | 6.8（9.6） | **1.8**（3.4） |
+    | a08，Bandai 包 | 6.9（8.5） | **4.6**（7.1） |
+    | a08，ACCAD 包 | 7.6（8.4） | **4.8**（8.2） |
+
+    一帧里裙摆最大的跳动差不多（旧 15–28°，新 19–22°）；横边在踢腿时最多被拉长 35–59%。
+  - 看图：`out\skirt_compare_g04.jpg`、`out\skirt_compare_a08.jpg`（旧版 / 新版，正面、侧面、背面，前进、后退、侧步、踢、直拳）；
+    视频 `out\skirt_magica_style.mp4`（46 秒，左旧右新，Bandai 包和 ACCAD 包，两个角色）。g04 回旋踢时，旧版前片竖直穿过抬起的大腿，新版搭在大腿上。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.FitSkirt                                   # 裙子跟腿走的权重 → 人形预制体上的 RoeSkirtRig（在 RoeHelperFit.Run 之后）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtDepth -Graphics                      # 基准姿势插进腿多深：游戏手调 / 钉在骨盆 / 跟腿走
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtSwing -Graphics -Extra '-roeChar','a08','-roeCloth','legacy'   # 某个后端的数字
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.Skirt -Graphics -Extra '-roeChar','g04','-roePacks','bandai1','-roeCloths','legacy,magica_style'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeCloths','legacy,magica_style','-roeOut','_work\cloth_demo_mc2'
+python tools\cloth_demo_video.py _work\cloth_demo_mc2 out\x.mp4 --variants legacy,magica_style --suffix "（Bandai 包）"
+```
 
 ### 动作包：可插拔的基础动作
 
@@ -653,9 +685,10 @@ JSON 里的 `bvh` 一块说明怎么把动捕切成片段（节选，`//` 后面
 
 - 布料只在基础动作里生效；游戏自己的技能里裙子和头发是手调的关键帧。裙子的参数按 g04 和 a08 量过调过（见"布料"一节）；
   头发、链子、胸还是 Blender 插件的预设。g04 的一条细装饰线在出招时偶尔一帧转 20–30°。
-- **裙子仍然不自然（用户 10-02 晚看过 `out\g04_skirt_fix.mp4` 后："不行，还是有问题"）。** Magica Cloth 2 的做法已经调研完
-  （[`docs/magica-cloth-2.md`](docs/magica-cloth-2.md)）：之前猜的"相邻骨链横向连成网"核实了；另一半原因是动捕动作里裙子的基准姿势不跟腿。
-  改法（第 8 节：自己照 Magica 改 `RoeBoneCloth`，或者买 Magica）等用户定了再写代码。
+- **裙子**：用户 10-02 晚看过 `out\g04_skirt_fix.mp4` 说"不行，还是有问题"。调研 Magica Cloth 2 之后照它的做法重做了（"布料"一节最后一条，
+  `docs/magica-cloth-2.md` 第 9 节）：裙子的动画姿势跟腿走、一片布连成网、惯性分层，F4 可以和旧版对比。等用户看新视频 `out\skirt_magica_style.mp4`。
+  还没做：横边在踢腿时会被拉长 35–59%；三角弯曲约束（Magica 网格模式有）没加；a08 站架里裙子本来就伸进腿部胶囊约 3.7 厘米（游戏站姿和动捕站架的腿不一样）。
+  Magica 适配器是照手册写的草稿，插件装上后第一次编译、试跑时可能要改。
 - 动作包现在有 `bandai1`（默认）和 `accad_male2` 两个，买来的 Unity 动作照"动作包"一节的 JSON 接进来。`accad_male2` 是右脚在前的拳击架势，
   g04 举着大扇子打拳击架势时扇子挡在身前；只有四个攻击键，ACCAD 里还有勾拳、上勾拳、侧踢、前踢、防御、闪避、胜利动作没用上，CMU 的空手道也可以补进来。
 - 一个角色播另一个角色的技能时，辅助骨用的还是原角色动作里的数值；`RoeHelperRig` 也可以用在这里，还没接。

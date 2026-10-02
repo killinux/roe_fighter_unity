@@ -9,26 +9,32 @@ namespace RoeFighter
     /// <summary>
     /// Bone cloth: skirts, hair, chains and breasts that swing with the body.
     ///
-    /// The method of Magica Cloth 2's BoneCloth, ported from the Blender add-on bone_cloth of the
-    /// ripper_tpose repository (scripts/blender_addons/bone_cloth/core.py, simulate()), which bakes
-    /// the same thing into MMD motions.  The animated pose is the baseline: each bone tail is a
-    /// particle; every step
-    ///   1. inertia: the particles ride the bone the chain hangs on (pelvis, head), except the share
-    ///      of its movement the cloth "feels", and never above the speed limits;
+    /// The method of Magica Cloth 2's BoneCloth (docs/magica-cloth-2.md), first ported from the Blender
+    /// add-on bone_cloth of the ripper_tpose repository (scripts/blender_addons/bone_cloth/core.py).  The
+    /// animated pose is the baseline: each bone tail is a particle; every step
+    ///   1. inertia: the particles ride the body except the share of its motion the cloth "feels", never
+    ///      above the speed limits - world inertia (the fighter moving over the floor, measured on its
+    ///      root) and local inertia (the bone the chain hangs on moving in the fighter's frame, i.e. the
+    ///      animation; less near the root), as Magica splits them;
     ///   2. Verlet integration with damping, a particle speed limit and gravity;
     ///   3. root to tip, a few iterations: angle restoration (turn a share back towards the animated
     ///      direction, most of that move not becoming speed), angle limit (root strict, tip loose),
-    ///      colliders (capsules on the thighs, calves and hips; a bone segment collides as a capsule
-    ///      so it cannot slip between the legs; as deep as the animation itself goes is allowed),
-    ///      backstop (no point sinks behind its animated place towards the body), the floor.
+    ///      the cross links (chains that are one piece of cloth keep their distance, as Magica's mesh
+    ///      connection does), colliders (capsules on the thighs, calves and hips; bone segments and
+    ///      cross links collide as capsules, so a leg cannot slip between two chains; as deep as the
+    ///      animation itself goes is allowed), backstop (no point sinks behind its animated place
+    ///      towards the body), max distance from the animated place, tether (a chain does not fold up
+    ///      towards its root), the floor.
     /// Bone lengths are rigid.  The result is written as bone rotations, blended by a weight.
     ///
     /// Chains are found by name (skirt / hair, braid, bangs / chains, waist ornaments / breasts);
     /// a bone with several simulated children is not simulated itself (its children hang on it).
-    /// The ROE skirts are keyed by hand in the game's own clips; the fight blends this in under the
-    /// motion-capture moves only.
+    /// Chains of one set are linked when the skin has triangles across them.  The ROE skirts are keyed
+    /// by hand in the game's own clips; the fight blends this in under the motion-capture moves only,
+    /// over the skirt pose RoeSkirtRig makes follow the legs.  legacy = the 10-02 version (independent
+    /// chains, one inertia on the anchor bone), kept as a backend to compare.
     /// </summary>
-    public class RoeBoneCloth
+    public class RoeBoneCloth : IRoeCloth
     {
         [Serializable]
         public class Settings
@@ -36,23 +42,42 @@ namespace RoeFighter
             public float gravity = 5f, damping = 0.05f, radius = 0.02f;
             public float restore = 0.2f, attenuation = 0.8f;          // angle restoration and its velocity attenuation
             public float limitRoot = 25f, limitTip = 60f;               // angle limit, degrees
-            public float inertia = 0.4f, moveLimit = 3f, turnLimit = 360f, particleLimit = 4f;
+            // local inertia: the anchor bone's motion in the fighter's frame (legacy: all of its motion)
+            public float inertia = 0.4f, moveLimit = 3f, turnLimit = 360f;
+            public float depthInertia;                                  // a root particle feels this much less of it, a tip all of it
+            // world inertia: the fighter moving over the floor
+            public float worldInertia = 0.4f, worldMoveLimit = 3f, worldTurnLimit = 360f;
+            public float particleLimit = 4f;
             public bool backstop = true;
             public float backstopRadius = 10f, backstopDistance = 0.02f;
+            public float maxDistanceRoot, maxDistanceTip;               // from the animated place, by depth (m); 0 = off
+            public float tether;                                        // no closer to the chain's root than (1 - tether) x the animated distance; 0 = off
+            public bool links;                                          // link chains that share cloth
+            public float linkStiffness = 1f;
             public bool edge = true;                                    // bone segments collide as capsules
             public float friction = 0.05f;
             public float pushAttenuation = 0.9f;                        // of a push out of a collider, the share that does not become speed
             public bool floor = true;
+            public float stabilize = 0.1f;                              // after a reset no speed is carried over for this long (s)
             public int iterations = 4;
         }
 
-        // the add-on's presets (Magica Cloth 2 numbers are per 1/90 s step).  Skirts are stiffer than the
-        // add-on's (restore 0.2, damping 0.05, limits 25/60, inertia 0.4): with those g04's long panels,
-        // whose chains start right at the waist, swung 12 degrees rms standing still and 16-22 walking and
-        // striking, jumping 14-39 degrees in a step (RoeFightProbe.SkirtSwing); now 5 / 6-9, 7-17.
-        public static Settings Skirt() => Tuned(new Settings { restore = 0.35f, damping = 0.15f, limitRoot = 5f, limitTip = 35f, inertia = 0.3f }, SkirtTuning);
+        // Presets; Magica Cloth 2's numbers are per 1/90 s step.  The skirt is stiffer than the add-on's
+        // (restore 0.2, damping 0.05, limits 25/60, inertia 0.4): with those g04's long panels, whose chains
+        // start right at the waist, swung 12 degrees rms standing still and jumped 14-39 degrees in a step
+        // (RoeFightProbe.SkirtSwing).  Magica-style: the skirt's own animation pose follows the legs now
+        // (RoeSkirtRig), so the cloth is held near it (max distance) and feels less of the fighter's travel.
+        public static Settings Skirt(bool legacy) => Tuned(legacy
+            ? new Settings { restore = 0.35f, damping = 0.15f, limitRoot = 5f, limitTip = 35f, inertia = 0.3f, stabilize = 0f }
+            : new Settings
+            {
+                restore = 0.35f, damping = 0.15f, limitRoot = 5f, limitTip = 35f,
+                inertia = 0.3f, moveLimit = 3f, turnLimit = 360f, depthInertia = 0.3f,
+                worldInertia = 0.15f, worldMoveLimit = 1f, worldTurnLimit = 120f,
+                maxDistanceRoot = 0.03f, maxDistanceTip = 0.25f, tether = 0.15f, links = true,
+            }, SkirtTuning);
 
-        /// <summary>For checks: "key=value,..." over the skirt preset (gravity, damping, restore, attenuation, limitRoot, limitTip, inertia, particleLimit).</summary>
+        /// <summary>For checks: "key=value,..." over the skirt preset (see Tuned).</summary>
         public static string SkirtTuning = "";
 
         static Settings Tuned(Settings s, string tuning)
@@ -71,26 +96,38 @@ namespace RoeFighter
                     case "limitRoot": s.limitRoot = v; break;
                     case "limitTip": s.limitTip = v; break;
                     case "inertia": s.inertia = v; break;
+                    case "depthInertia": s.depthInertia = v; break;
+                    case "worldInertia": s.worldInertia = v; break;
+                    case "worldMoveLimit": s.worldMoveLimit = v; break;
                     case "particleLimit": s.particleLimit = v; break;
                     case "pushAttenuation": s.pushAttenuation = v; break;
+                    case "maxDistanceTip": s.maxDistanceTip = v; break;
+                    case "tether": s.tether = v; break;
+                    case "links": s.links = v > 0f; break;
+                    case "linkStiffness": s.linkStiffness = v; break;
                 }
             }
             return s;
         }
-        public static Settings Hair() => new Settings
+
+        // hair, chains and breasts: the add-on's presets, world inertia as their old inertia on the anchor
+        public static Settings Hair(bool legacy) => new Settings
         {
             radius = 0.015f, restore = 0.3f, limitRoot = 15f, limitTip = 50f, inertia = 0.3f, moveLimit = 2f,
-            particleLimit = 3f, backstopDistance = 0.01f, edge = false,
+            worldInertia = 0.3f, worldMoveLimit = 2f, particleLimit = 3f, backstopDistance = 0.01f, edge = false,
+            stabilize = legacy ? 0f : 0.1f,
         };
-        public static Settings Chain() => new Settings
+        public static Settings Chain(bool legacy) => new Settings
         {
             radius = 0.012f, restore = 0.12f, limitRoot = 30f, limitTip = 80f, inertia = 0.5f, moveLimit = 3f,
-            particleLimit = 4f, backstop = false, edge = false,
+            worldInertia = 0.5f, worldMoveLimit = 3f, particleLimit = 4f, backstop = false, edge = false,
+            stabilize = legacy ? 0f : 0.1f,
         };
-        public static Settings Breast() => new Settings
+        public static Settings Breast(bool legacy) => new Settings
         {
             gravity = 3f, radius = 0.03f, restore = 0.35f, attenuation = 0.5f, limitRoot = 6f, limitTip = 12f,
-            inertia = 0.6f, moveLimit = 4f, turnLimit = 720f, particleLimit = 2f, backstop = false, edge = false, floor = false,
+            inertia = 0.6f, moveLimit = 4f, turnLimit = 720f, worldInertia = 0.6f, worldMoveLimit = 4f, worldTurnLimit = 720f,
+            particleLimit = 2f, backstop = false, edge = false, floor = false, stabilize = legacy ? 0f : 0.1f,
         };
 
         static readonly (string kind, Regex name)[] Kinds =
@@ -106,6 +143,7 @@ namespace RoeFighter
             public string name;
             public Transform a, b;
             public float ra, rb;
+            public bool leg;                    // thigh or calf (the checks measure the skirt against these)
         }
 
         class ChainSet
@@ -115,43 +153,125 @@ namespace RoeFighter
             public Transform anchor;
             public Vector3 anchorAxis;          // the anchor's local axis that pointed up at rest: the body axis for the backstop
             public Transform[] bones;
-            public int[] parent;
-            public float[] length, limit;       // limit in radians, by depth
+            public int[] parent, root;          // root: the first particle of the bone's chain
+            public float[] length, limit, depth, maxDistance;   // limit in radians, by depth
             public Vector3[] tailLocal;
             public Quaternion[] restLocal;
             public int[][] levels;
+            public int[] levelOf;
             public Capsule[] capsules;
+            public List<(int i, int j)>[] links;    // per level: particles linked across chains
+            public string linkReport = "";
+            public float[] restPenetration;     // how deep each bone segment lies in the legs in the stance (for checks)
+            public Dictionary<(int, int), float> linkRestPenetration = new Dictionary<(int, int), float>();
+            // how deep each bone segment / tail / cross link lies in each capsule in the stance: as deep is allowed
+            public float[][] restEdge, restPoint;
+            public Dictionary<(int, int), float[]> restLink = new Dictionary<(int, int), float[]>();
+            public float[] allow;
             // state
             public bool ready;
-            public Vector3[] x, xOld, hb, tb, hbPrev, tbPrev, head;
-            public Quaternion[] rb, rot;
+            public float stabilizeLeft;
+            public Vector3[] x, xOld, hb, tb, hbPrev, tbPrev, head, g;
+            public Quaternion[] rb, rot, d;
             public Vector3 anchorPos, anchorPosPrev;
             public Quaternion anchorRot, anchorRotPrev;
         }
 
         readonly List<ChainSet> chains = new List<ChainSet>();
         public readonly List<Capsule> capsules = new List<Capsule>();
+        readonly Transform world;
+        readonly bool legacy;
+        Vector3 worldPos, worldPosPrev;
+        Quaternion worldRot = Quaternion.identity, worldRotPrev = Quaternion.identity;
         public float weight = 1f;
+        public float Weight { get => weight; set => weight = value; }
         public static bool NoColliders, NoBackstop;     // for checks (RoeFightProbe.SkirtSwing -roeVariant)
         public string Report { get; private set; }
 
         /// <summary>
         /// Finds the chains under a humanoid model in its current pose (the battle stance) and measures
-        /// the leg, hip and torso colliders on its skin.  ``exclude``: bones something else drives.
+        /// the leg, hip and torso colliders on its skin.  world: the fighter's root (world inertia);
+        /// exclude: bones something else drives; legacy: the 10-02 solver.
         /// </summary>
-        public RoeBoneCloth(Animator animator, ICollection<Transform> exclude)
+        public RoeBoneCloth(Animator animator, Transform world, ICollection<Transform> exclude, bool legacy = false)
         {
+            this.world = world != null ? world : animator.transform;
+            this.legacy = legacy;
             var human = new Dictionary<Transform, HumanBodyBones>();
             foreach (HumanBodyBones hb in Enum.GetValues(typeof(HumanBodyBones)))
                 if (hb != HumanBodyBones.LastBone && animator.GetBoneTransform(hb) != null)
                     human[animator.GetBoneTransform(hb)] = hb;
             var skin = SkinPoints(animator);
+            var kindOf = Classify(animator.transform, human.Keys.ToList(), exclude);
 
-            // the cloth bones, by kind
-            var kindOf = new Dictionary<Transform, string>();
-            foreach (var t in animator.GetComponentsInChildren<Transform>(true))
+            // colliders: thighs, calves, the hips; the torso for hair
+            Transform B(HumanBodyBones b) => animator.GetBoneTransform(b);
+            var legs = new List<Capsule>();
+            foreach (var (up, low, foot, side) in new[]
             {
-                if (t == animator.transform || human.ContainsKey(t) || (exclude != null && exclude.Contains(t)) || t.GetComponent<Renderer>() != null)
+                (HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, "left"),
+                (HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, "right"),
+            })
+            {
+                if (B(up) == null || B(low) == null || B(foot) == null)
+                    continue;
+                var thigh = Measure($"{side} thigh", B(up), B(low), skin, 70f, 0.07f, 0.05f);
+                var calf = Measure($"{side} calf", B(low), B(foot), skin, 70f, 0.05f, 0.035f);
+                thigh.leg = calf.leg = true;
+                legs.Add(thigh);
+                legs.Add(calf);
+            }
+            if (B(HumanBodyBones.LeftUpperLeg) != null && B(HumanBodyBones.RightUpperLeg) != null)
+            {
+                var hips = Measure("hips", B(HumanBodyBones.LeftUpperLeg), B(HumanBodyBones.RightUpperLeg), skin, 60f, 0.09f, 0.09f);
+                hips.ra = hips.rb = Mathf.Max(hips.ra, hips.rb);
+                legs.Add(hips);
+            }
+            capsules.AddRange(legs);
+            var neck = B(HumanBodyBones.Neck) != null ? B(HumanBodyBones.Neck) : B(HumanBodyBones.Head);
+            var torso = B(HumanBodyBones.Hips) != null && neck != null ? Measure("torso", B(HumanBodyBones.Hips), neck, skin, 50f, 0.12f, 0.1f) : null;
+            if (torso != null)
+                capsules.Add(torso);
+
+            // chain sets: one per kind and anchor
+            var meshes = animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
+            foreach (var group in kindOf.Keys.GroupBy(t => (kindOf[t], Anchor(t, kindOf))))
+            {
+                var (kind, anchor) = group.Key;
+                if (anchor == null)
+                    continue;
+                var bones = group.OrderBy(Depth).ToArray();
+                var s = kind == "skirt" ? Skirt(legacy) : kind == "hair" ? Hair(legacy) : kind == "chain" ? Chain(legacy) : Breast(legacy);
+                Transform owner = anchor;
+                while (owner != null && !human.ContainsKey(owner))
+                    owner = owner.parent;
+                var lower = owner != null && (human[owner] == HumanBodyBones.Hips || human[owner] == HumanBodyBones.Spine);
+                var cs = lower ? legs.ToArray()
+                       : kind == "hair" && torso != null ? new[] { torso }
+                       : new Capsule[0];
+                // inertia and the backstop's body axis come from the body part the chain belongs to
+                // (the pelvis for a skirt, even when its panels hang on a skirt bone)
+                var c = Build($"{kind} on {anchor.name}", kind, s, owner != null ? owner : anchor, bones, cs, skin);
+                if (s.links && !legacy)
+                    Link(c, meshes);
+                chains.Add(c);
+            }
+            Report = $"{(legacy ? "legacy" : "Magica-style")}: {chains.Count} chain sets, {chains.Sum(c => c.bones.Length)} bones: " +
+                     string.Join(", ", chains.Select(c => $"{c.name} ({c.bones.Length}{c.linkReport})")) +
+                     "; colliders " + string.Join(", ", capsules.Select(c => $"{c.name} r {c.ra:F3}/{c.rb:F3}"));
+        }
+
+        /// <summary>
+        /// The cloth bones under a model, by kind (skirt, hair, chain, breast), from their names.  A bone with
+        /// two or more cloth children of its kind hangs them and is not simulated itself; a skirt piece of a
+        /// single bone (g04's waist ornaments) is left out - the game keeps it on the pelvis.
+        /// </summary>
+        public static Dictionary<Transform, string> Classify(Transform root, ICollection<Transform> human, ICollection<Transform> exclude)
+        {
+            var kindOf = new Dictionary<Transform, string>();
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            {
+                if (t == root || human.Contains(t) || (exclude != null && exclude.Contains(t)) || t.GetComponent<Renderer>() != null)
                     continue;
                 if (t.name.EndsWith("_ALL") || t.name.Contains("Dummy") || t.name.Contains("Nub") || t.name.Contains("nub"))
                     continue;
@@ -162,7 +282,6 @@ namespace RoeFighter
                         break;
                     }
             }
-            // a bone with two or more cloth children of its kind hangs them, it is not simulated
             bool changed = true;
             while (changed)
             {
@@ -180,7 +299,6 @@ namespace RoeFighter
                     }
                 }
             }
-            // a skirt piece of one bone (g04's waist ornaments) is stiff: the game keeps it on the pelvis
             foreach (var t in kindOf.Keys.Where(t => kindOf[t] == "skirt").ToList())
             {
                 bool hung = t.parent != null && kindOf.TryGetValue(t.parent, out var pk) && pk == "skirt";
@@ -188,55 +306,7 @@ namespace RoeFighter
                 if (!hung && !hangs)
                     kindOf.Remove(t);
             }
-
-            // colliders: thighs, calves, the hips; the torso for hair
-            Transform B(HumanBodyBones b) => animator.GetBoneTransform(b);
-            var legs = new List<Capsule>();
-            foreach (var (up, low, foot, side) in new[]
-            {
-                (HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, "left"),
-                (HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, "right"),
-            })
-            {
-                if (B(up) == null || B(low) == null || B(foot) == null)
-                    continue;
-                legs.Add(Measure($"{side} thigh", B(up), B(low), skin, 70f, 0.07f, 0.05f));
-                legs.Add(Measure($"{side} calf", B(low), B(foot), skin, 70f, 0.05f, 0.035f));
-            }
-            if (B(HumanBodyBones.LeftUpperLeg) != null && B(HumanBodyBones.RightUpperLeg) != null)
-            {
-                var hips = Measure("hips", B(HumanBodyBones.LeftUpperLeg), B(HumanBodyBones.RightUpperLeg), skin, 60f, 0.09f, 0.09f);
-                hips.ra = hips.rb = Mathf.Max(hips.ra, hips.rb);
-                legs.Add(hips);
-            }
-            capsules.AddRange(legs);
-            var neck = B(HumanBodyBones.Neck) != null ? B(HumanBodyBones.Neck) : B(HumanBodyBones.Head);
-            var torso = B(HumanBodyBones.Hips) != null && neck != null ? Measure("torso", B(HumanBodyBones.Hips), neck, skin, 50f, 0.12f, 0.1f) : null;
-            if (torso != null)
-                capsules.Add(torso);
-
-            // chain sets: one per kind and anchor
-            foreach (var group in kindOf.Keys.GroupBy(t => (kindOf[t], Anchor(t, kindOf))))
-            {
-                var (kind, anchor) = group.Key;
-                if (anchor == null)
-                    continue;
-                var bones = group.OrderBy(Depth).ToArray();
-                var s = kind == "skirt" ? Skirt() : kind == "hair" ? Hair() : kind == "chain" ? Chain() : Breast();
-                Transform owner = anchor;
-                while (owner != null && !human.ContainsKey(owner))
-                    owner = owner.parent;
-                var lower = owner != null && (human[owner] == HumanBodyBones.Hips || human[owner] == HumanBodyBones.Spine);
-                var cs = lower ? legs.ToArray()
-                       : kind == "hair" && torso != null ? new[] { torso }
-                       : new Capsule[0];
-                // inertia and the backstop's body axis come from the body part the chain belongs to
-                // (the pelvis for a skirt, even when its panels hang on a skirt bone)
-                chains.Add(Build($"{kind} on {anchor.name}", kind, s, owner != null ? owner : anchor, bones, cs, skin));
-            }
-            Report = $"{chains.Count} chain sets, {chains.Sum(c => c.bones.Length)} bones: " +
-                     string.Join(", ", chains.Select(c => $"{c.name} ({c.bones.Length})")) +
-                     "; colliders " + string.Join(", ", capsules.Select(c => $"{c.name} r {c.ra:F3}/{c.rb:F3}"));
+            return kindOf;
         }
 
         static int Depth(Transform t)
@@ -256,11 +326,11 @@ namespace RoeFighter
         }
 
         /// <summary>Every skin vertex in the current pose (world), with the bone it hangs on most.</summary>
-        static List<(Vector3 p, Transform bone)> SkinPoints(Animator animator)
+        public static List<(Vector3 p, Transform bone)> SkinPoints(Component root)
         {
             var points = new List<(Vector3, Transform)>();
             var mesh = new Mesh();
-            foreach (var r in animator.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            foreach (var r in root.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
                 if (r.sharedMesh == null)
                     continue;
@@ -274,6 +344,33 @@ namespace RoeFighter
             }
             UnityEngine.Object.DestroyImmediate(mesh);
             return points;
+        }
+
+        /// <summary>
+        /// Where a bone's tail is (world): its simulated child; else as far as the bone's own skin reaches;
+        /// else on along its parent; else 6 cm along its x axis.
+        /// </summary>
+        public static Vector3 Tail(Transform b, Transform child, Transform parentBone, List<(Vector3 p, Transform bone)> skin)
+        {
+            Vector3 tail;
+            if (child != null)
+                tail = child.position;
+            else
+            {
+                var mine = skin.Where(v => v.bone == b).Select(v => v.p).ToList();
+                if (mine.Count >= 4)
+                {
+                    var mean = mine.Aggregate(Vector3.zero, (acc, v) => acc + v) / mine.Count;
+                    tail = b.position + (mean - b.position) * 1.6f;
+                }
+                else if (parentBone != null)
+                    tail = b.position + (b.position - parentBone.position).normalized * 0.6f * Vector3.Distance(b.position, parentBone.position);
+                else
+                    tail = b.position + b.rotation * Vector3.right * 0.06f;
+            }
+            if ((tail - b.position).sqrMagnitude < 1e-6f)
+                tail = b.position + b.rotation * Vector3.right * 0.03f;
+            return tail;
         }
 
         /// <summary>
@@ -325,48 +422,37 @@ namespace RoeFighter
             var c = new ChainSet
             {
                 name = name, kind = kind, s = s, anchor = anchor, bones = bones, capsules = caps,
-                parent = new int[n], length = new float[n], limit = new float[n], tailLocal = new Vector3[n], restLocal = new Quaternion[n],
+                parent = new int[n], root = new int[n], length = new float[n], limit = new float[n], depth = new float[n],
+                maxDistance = new float[n], tailLocal = new Vector3[n], restLocal = new Quaternion[n], levelOf = new int[n],
                 x = new Vector3[n], xOld = new Vector3[n], hb = new Vector3[n], tb = new Vector3[n], hbPrev = new Vector3[n],
-                tbPrev = new Vector3[n], head = new Vector3[n], rb = new Quaternion[n], rot = new Quaternion[n],
+                tbPrev = new Vector3[n], head = new Vector3[n], g = new Vector3[n], rb = new Quaternion[n], rot = new Quaternion[n],
+                d = new Quaternion[n], restPenetration = new float[n], restEdge = new float[n][], restPoint = new float[n][],
+                allow = new float[caps.Length],
             };
             // the anchor's axis that points up at rest
             var axes = new[] { Vector3.right, Vector3.left, Vector3.up, Vector3.down, Vector3.forward, Vector3.back };
             c.anchorAxis = axes.OrderByDescending(ax => Vector3.Dot(anchor.rotation * ax, Vector3.up)).First();
-            var level = new int[n];
             for (int i = 0; i < n; i++)
             {
                 var b = bones[i];
                 c.parent[i] = b.parent != null && index.TryGetValue(b.parent, out int p) ? p : -1;
-                level[i] = c.parent[i] < 0 ? 0 : level[c.parent[i]] + 1;
+                c.levelOf[i] = c.parent[i] < 0 ? 0 : c.levelOf[c.parent[i]] + 1;
+                c.root[i] = c.parent[i] < 0 ? i : c.root[c.parent[i]];
                 c.restLocal[i] = b.localRotation;
                 // the tail: the one simulated child; else where the bone's own skin reaches; else on along the parent
                 Transform child = null;
                 foreach (Transform k in b)
                     if (index.ContainsKey(k))
                         child = k;
-                Vector3 tail;
-                if (child != null)
-                    tail = child.position;
-                else
-                {
-                    var mine = skin.Where(v => v.bone == b).Select(v => v.p).ToList();
-                    if (mine.Count >= 4)
-                    {
-                        var mean = mine.Aggregate(Vector3.zero, (acc, v) => acc + v) / mine.Count;
-                        tail = b.position + (mean - b.position) * 1.6f;
-                    }
-                    else if (c.parent[i] >= 0)
-                        tail = b.position + (b.position - bones[c.parent[i]].position).normalized * 0.6f * Vector3.Distance(b.position, bones[c.parent[i]].position);
-                    else
-                        tail = b.position + b.rotation * Vector3.right * 0.06f;
-                }
-                if ((tail - b.position).sqrMagnitude < 1e-6f)
-                    tail = b.position + b.rotation * Vector3.right * 0.03f;
+                var tail = Tail(b, child, c.parent[i] >= 0 ? bones[c.parent[i]] : null, skin);
                 c.tailLocal[i] = b.InverseTransformPoint(tail);
                 c.length[i] = Vector3.Distance(b.position, tail);
+                c.restPenetration[i] = LegDepth(b.position, tail, s.radius, caps);
+                c.restEdge[i] = caps.Select(cap => Mathf.Max(0f, EdgeDepth(b.position, tail, s.radius, cap, out _, out _))).ToArray();
+                c.restPoint[i] = caps.Select(cap => Mathf.Max(0f, PointDepth(tail, s.radius, cap, out _))).ToArray();
             }
             // depth along its own chain: 0 at the root, 1 at the deepest tip below that root
-            var deepest = (int[])level.Clone();
+            var deepest = (int[])c.levelOf.Clone();
             for (int i = n - 1; i >= 0; i--)
                 if (c.parent[i] >= 0)
                     deepest[c.parent[i]] = Mathf.Max(deepest[c.parent[i]], deepest[i]);
@@ -376,11 +462,204 @@ namespace RoeFighter
                     chainMax[i] = chainMax[c.parent[i]];
             for (int i = 0; i < n; i++)
             {
-                float depth = chainMax[i] > 0 ? (float)level[i] / chainMax[i] : 0f;
-                c.limit[i] = Mathf.Deg2Rad * Mathf.Lerp(s.limitRoot, s.limitTip, depth);
+                c.depth[i] = chainMax[i] > 0 ? (float)c.levelOf[i] / chainMax[i] : 0f;
+                c.limit[i] = Mathf.Deg2Rad * Mathf.Lerp(s.limitRoot, s.limitTip, c.depth[i]);
+                c.maxDistance[i] = Mathf.Lerp(s.maxDistanceRoot, s.maxDistanceTip, c.depth[i]);
             }
-            c.levels = Enumerable.Range(0, n == 0 ? 0 : level.Max() + 1).Select(l => Enumerable.Range(0, n).Where(i => level[i] == l).ToArray()).ToArray();
+            int levels = n == 0 ? 0 : c.levelOf.Max() + 1;
+            c.levels = Enumerable.Range(0, levels).Select(l => Enumerable.Range(0, n).Where(i => c.levelOf[i] == l).ToArray()).ToArray();
+            c.links = Enumerable.Range(0, levels).Select(_ => new List<(int, int)>()).ToArray();
             return c;
+        }
+
+        /// <summary>
+        /// Magica's mesh connection, found from the skin: two chains of the set are one piece of cloth when
+        /// triangles of the mesh lie across them (their corners hang mostly on bones of different chains).
+        /// Linked chains are joined level by level - the tails of their n-th bones - as far as both go.
+        /// a08: each long side panel over its front, side and back chains, the two short back pieces; g04:
+        /// the front panel's two chains (tools/magica_survey.py links).
+        /// </summary>
+        void Link(ChainSet c, SkinnedMeshRenderer[] meshes)
+        {
+            var chainOf = new Dictionary<Transform, int>();
+            for (int i = 0; i < c.bones.Length; i++)
+                chainOf[c.bones[i]] = c.root[i];
+            if (chainOf.Values.Distinct().Count() < 2)
+                return;
+            var across = new Dictionary<(int, int), int>();
+            var baked = new Mesh();
+            foreach (var r in meshes)
+            {
+                var mesh = r.sharedMesh;
+                if (mesh == null)
+                    continue;
+                var w = mesh.boneWeights;
+                if (w.Length == 0)
+                    continue;
+                // the game's meshes are not Read/Write: in a player build their own triangles cannot be read
+                // ("Not allowed to access triangles"), a baked copy's can
+                r.BakeMesh(baked, true);
+                // a vertex belongs to the chain that carries most of its weight (summed over the chain's bones)
+                var chainOfVertex = new int[w.Length];
+                var influences = new (int bone, float weight)[4];
+                for (int v = 0; v < w.Length; v++)
+                {
+                    chainOfVertex[v] = -1;
+                    influences[0] = (w[v].boneIndex0, w[v].weight0);
+                    influences[1] = (w[v].boneIndex1, w[v].weight1);
+                    influences[2] = (w[v].boneIndex2, w[v].weight2);
+                    influences[3] = (w[v].boneIndex3, w[v].weight3);
+                    int best = -1;
+                    float bestWeight = 0.5f;
+                    for (int a = 0; a < 4; a++)
+                    {
+                        if (influences[a].weight <= 0f || influences[a].bone >= r.bones.Length || r.bones[influences[a].bone] == null ||
+                            !chainOf.TryGetValue(r.bones[influences[a].bone], out int ch))
+                            continue;
+                        float sum = 0f;
+                        for (int b2 = 0; b2 < 4; b2++)
+                            if (influences[b2].weight > 0f && influences[b2].bone < r.bones.Length && r.bones[influences[b2].bone] != null &&
+                                chainOf.TryGetValue(r.bones[influences[b2].bone], out int ch2) && ch2 == ch)
+                                sum += influences[b2].weight;
+                        if (sum > bestWeight)
+                        {
+                            bestWeight = sum;
+                            best = ch;
+                        }
+                    }
+                    chainOfVertex[v] = best;
+                }
+                var tris = baked.triangles;
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                {
+                    int a = chainOfVertex[tris[t]], b = chainOfVertex[tris[t + 1]], d = chainOfVertex[tris[t + 2]];
+                    foreach (var (p, q) in new[] { (a, b), (b, d), (a, d) })
+                        if (p >= 0 && q >= 0 && p != q)
+                        {
+                            var key = p < q ? (p, q) : (q, p);
+                            across[key] = (across.TryGetValue(key, out int k) ? k : 0) + 1;
+                        }
+                }
+            }
+            UnityEngine.Object.DestroyImmediate(baked);
+            var parts = new List<string>();
+            foreach (var kv in across.Where(kv => kv.Value >= 6))
+            {
+                var (ra, rb) = kv.Key;
+                var A = ChainOf(c, ra);
+                var Bc = ChainOf(c, rb);
+                int joined = 0;
+                for (int l = 0; l < Mathf.Min(A.Count, Bc.Count); l++)
+                {
+                    int i = A[l], j = Bc[l];
+                    var ti = c.bones[i].TransformPoint(c.tailLocal[i]);
+                    var tj = c.bones[j].TransformPoint(c.tailLocal[j]);
+                    if (Vector3.Distance(ti, tj) > 0.3f)
+                        continue;
+                    c.links[c.levelOf[i]].Add((i, j));
+                    c.linkRestPenetration[(i, j)] = LegDepth(ti, tj, c.s.radius, c.capsules);
+                    c.restLink[(i, j)] = c.capsules.Select(cap => Mathf.Max(0f, EdgeDepth(ti, tj, c.s.radius, cap, out _, out _))).ToArray();
+                    joined++;
+                }
+                if (joined > 0)
+                    parts.Add($"{c.bones[ra].name}~{c.bones[rb].name} x{joined}");
+            }
+            if (parts.Count > 0)
+                c.linkReport = "; linked " + string.Join(" ", parts);
+        }
+
+        /// <summary>The particles of the chain that starts at particle root, root to tip (the first child each time).</summary>
+        static List<int> ChainOf(ChainSet c, int root)
+        {
+            var list = new List<int> { root };
+            for (int i = root; ;)
+            {
+                int next = -1;
+                for (int k = 0; k < c.bones.Length; k++)
+                    if (c.parent[k] == i)
+                    {
+                        next = k;
+                        break;
+                    }
+                if (next < 0)
+                    return list;
+                list.Add(next);
+                i = next;
+            }
+        }
+
+        /// <summary>A piece of cloth for another solver (RoeMagicaCloth): its chains' first bones - in link order
+        /// when they are linked into one sheet - the settings, the bone it belongs to and its colliders.</summary>
+        public class Piece
+        {
+            public string kind;
+            public Settings settings;
+            public List<Transform> roots = new List<Transform>();
+            public bool mesh;                   // the chains are linked across (one sheet)
+            public Transform owner;
+            public Capsule[] capsules;
+        }
+
+        /// <summary>
+        /// The pieces of cloth: per chain set, the chains joined by cross links make one piece (a sheet,
+        /// its chains in the order the links run), every other chain a piece of its own.
+        /// </summary>
+        public List<Piece> Pieces()
+        {
+            var pieces = new List<Piece>();
+            foreach (var c in chains)
+            {
+                var roots = Enumerable.Range(0, c.bones.Length).Where(i => c.parent[i] < 0).ToList();
+                var next = new Dictionary<int, HashSet<int>>();
+                foreach (var r in roots)
+                    next[r] = new HashSet<int>();
+                foreach (var level in c.links)
+                    foreach (var (i, j) in level)
+                    {
+                        next[c.root[i]].Add(c.root[j]);
+                        next[c.root[j]].Add(c.root[i]);
+                    }
+                var done = new HashSet<int>();
+                foreach (var r in roots)
+                {
+                    if (done.Contains(r))
+                        continue;
+                    // walk the sheet from one of its ends, so the order follows the links
+                    var group = new List<int>();
+                    var stack = new Stack<int>();
+                    stack.Push(r);
+                    var seen = new HashSet<int> { r };
+                    while (stack.Count > 0)
+                    {
+                        int k = stack.Pop();
+                        group.Add(k);
+                        foreach (var m in next[k])
+                            if (seen.Add(m))
+                                stack.Push(m);
+                    }
+                    int start = group.FirstOrDefault(k => next[k].Count <= 1);
+                    var order = new List<int> { start };
+                    for (int prev = -1, at = start; ;)
+                    {
+                        int to = next[at].Where(m => m != prev && !order.Contains(m)).DefaultIfEmpty(-1).First();
+                        if (to < 0)
+                            break;
+                        order.Add(to);
+                        prev = at;
+                        at = to;
+                    }
+                    foreach (var k in group.Where(k => !order.Contains(k)))
+                        order.Add(k);
+                    foreach (var k in order)
+                        done.Add(k);
+                    pieces.Add(new Piece
+                    {
+                        kind = c.kind, settings = c.s, owner = c.anchor, capsules = c.capsules, mesh = order.Count > 1,
+                        roots = order.Select(k => c.bones[k]).ToList(),
+                    });
+                }
+            }
+            return pieces;
         }
 
         /// <summary>Before the animation writes the pose: bones no clip animates go back to their rest rotation.</summary>
@@ -405,14 +684,51 @@ namespace RoeFighter
                 {
                     if (isParent.Contains(i))
                         continue;
-                    int r = i;
-                    while (c.parent[r] >= 0)
-                        r = c.parent[r];
+                    int r = c.root[i];
                     var animated = c.tb[i] - c.hb[r];
                     var simulated = c.x[i] - c.hb[r];
                     yield return (c.name, c.bones[i].name, Vector3.Angle(animated, simulated), simulated.normalized, animated.normalized);
                 }
             }
+        }
+
+        /// <summary>
+        /// For checks, after Step: how deep the cloth of a kind is in the legs (thigh and calf capsules), beyond
+        /// how deep the same segment lies in them in the battle stance - bone segments and cross links (m) -
+        /// how far the cross links are stretched or squeezed against the animated pose (largest, as a share),
+        /// and how deep the animated pose itself goes (the base the cloth starts from).
+        /// </summary>
+        public (float boneDepth, float linkDepth, float strain, int links, float baseDepth) Measures(string kind)
+        {
+            float bone = 0f, link = 0f, strain = 0f, animated = 0f;
+            int count = 0;
+            foreach (var c in chains.Where(c => c.kind == kind && c.ready))
+            {
+                for (int i = 0; i < c.bones.Length; i++)
+                {
+                    bone = Mathf.Max(bone, LegDepth(c.head[i], c.x[i], c.s.radius, c.capsules) - c.restPenetration[i]);
+                    animated = Mathf.Max(animated, LegDepth(c.hb[i], c.tb[i], c.s.radius, c.capsules) - c.restPenetration[i]);
+                }
+                foreach (var level in c.links)
+                    foreach (var (i, j) in level)
+                    {
+                        link = Mathf.Max(link, LegDepth(c.x[i], c.x[j], c.s.radius, c.capsules) - c.linkRestPenetration[(i, j)]);
+                        float rest = Vector3.Distance(c.tb[i], c.tb[j]);
+                        if (rest > 1e-4f)
+                            strain = Mathf.Max(strain, Mathf.Abs(Vector3.Distance(c.x[i], c.x[j]) / rest - 1f));
+                        count++;
+                    }
+            }
+            return (bone, link, strain, count, animated);
+        }
+
+        static float LegDepth(Vector3 a, Vector3 b, float r, Capsule[] caps)
+        {
+            float worst = 0f;
+            foreach (var cap in caps)
+                if (cap.leg)
+                    worst = Mathf.Max(worst, EdgeDepth(a, b, r, cap, out _, out _));
+            return worst;
         }
 
         /// <summary>Start again from the animated pose (a teleport, a new round).</summary>
@@ -425,6 +741,9 @@ namespace RoeFighter
         /// <summary>One step of the fight (dt), on the pose the animation and the rig made; floor = world height.</summary>
         public void Step(float dt, float floor)
         {
+            worldPos = world.position;
+            worldRot = world.rotation;
+            bool first = false;
             foreach (var c in chains)
             {
                 ReadPose(c);
@@ -435,10 +754,21 @@ namespace RoeFighter
                     Array.Copy(c.hb, c.hbPrev, c.x.Length);
                     Array.Copy(c.tb, c.tbPrev, c.x.Length);
                     Array.Copy(c.rb, c.rot, c.x.Length);
+                    Array.Copy(c.hb, c.head, c.x.Length);
                     c.anchorPosPrev = c.anchorPos;
                     c.anchorRotPrev = c.anchorRot;
+                    c.stabilizeLeft = c.s.stabilize;
                     c.ready = true;
+                    first = true;
                 }
+            }
+            if (first)
+            {
+                worldPosPrev = worldPos;
+                worldRotPrev = worldRot;
+            }
+            foreach (var c in chains)
+            {
                 if (dt > 0f)
                 {
                     int sub = Mathf.Max(1, Mathf.RoundToInt(dt * 120f));
@@ -448,8 +778,14 @@ namespace RoeFighter
                     Array.Copy(c.tb, c.tbPrev, c.x.Length);
                     c.anchorPosPrev = c.anchorPos;
                     c.anchorRotPrev = c.anchorRot;
+                    c.stabilizeLeft -= dt;
                 }
                 Write(c);
+            }
+            if (dt > 0f)
+            {
+                worldPosPrev = worldPos;
+                worldRotPrev = worldRot;
             }
         }
 
@@ -466,8 +802,30 @@ namespace RoeFighter
             c.anchorRot = c.anchor.rotation;
         }
 
+        /// <summary>
+        /// Carry the particles with a rigid motion (from -> to about a pivot), all but the share the cloth
+        /// feels: felt = inertia, less above the speed limits.  share: per particle, how much of felt applies.
+        /// </summary>
+        static void Carry(ChainSet c, Vector3 pivot, Vector3 move, Quaternion turn, float dt, float inertia, float moveLimit, float turnLimit, float[] share)
+        {
+            float speed = move.magnitude / dt;
+            float feltT = speed > 1e-6f ? inertia * Mathf.Min(1f, moveLimit / speed) : inertia;
+            turn.ToAngleAxis(out float angle, out _);
+            if (angle > 180f)
+                angle = 360f - angle;
+            float feltR = angle > 1e-4f ? inertia * Mathf.Min(1f, turnLimit * dt / angle) : inertia;
+            for (int i = 0; i < c.x.Length; i++)
+            {
+                float k = share != null ? share[i] : 1f;
+                var carry = Quaternion.Slerp(Quaternion.identity, turn, 1f - feltR * k);
+                var shift = move * (1f - feltT * k);
+                c.x[i] = carry * (c.x[i] - pivot) + pivot + shift;
+                c.xOld[i] = carry * (c.xOld[i] - pivot) + pivot + shift;
+            }
+        }
+
         /// <summary>One substep: the fight's step is split in ~120 Hz substeps; w / wPrev = where in the step it ends / starts.</summary>
-        static void Simulate(ChainSet c, float dt, float wPrev, float w, float floor)
+        void Simulate(ChainSet c, float dt, float wPrev, float w, float floor)
         {
             var s = c.s;
             int n = c.bones.Length;
@@ -491,21 +849,27 @@ namespace RoeFighter
             var prevPos = Vector3.Lerp(c.anchorPosPrev, c.anchorPos, wPrev);
             var prevRot = Quaternion.Slerp(c.anchorRotPrev, c.anchorRot, wPrev);
 
-            // 1. inertia: the particles ride the anchor except the share of its motion the cloth feels
-            var move = cPos - prevPos;
-            var turn = cRot * Quaternion.Inverse(prevRot);
-            float speed = move.magnitude / dt;
-            float feltT = speed > 1e-6f ? s.inertia * Mathf.Min(1f, s.moveLimit / speed) : s.inertia;
-            turn.ToAngleAxis(out float angle, out _);
-            if (angle > 180f)
-                angle = 360f - angle;
-            float feltR = angle > 1e-4f ? s.inertia * Mathf.Min(1f, s.turnLimit * dt / angle) : s.inertia;
-            var carry = Quaternion.Slerp(Quaternion.identity, turn, 1f - feltR);
-            var shift = move * (1f - feltT);
-            for (int i = 0; i < n; i++)
+            // 1. inertia
+            if (legacy)
+                Carry(c, prevPos, cPos - prevPos, cRot * Quaternion.Inverse(prevRot), dt, s.inertia, s.moveLimit, s.turnLimit, null);
+            else
             {
-                c.x[i] = carry * (c.x[i] - prevPos) + prevPos + shift;
-                c.xOld[i] = carry * (c.xOld[i] - prevPos) + prevPos + shift;
+                // world: the fighter's root over the floor
+                var wPos = Vector3.Lerp(worldPosPrev, worldPos, w);
+                var wRot = Quaternion.Slerp(worldRotPrev, worldRot, w);
+                var wPos0 = Vector3.Lerp(worldPosPrev, worldPos, wPrev);
+                var wRot0 = Quaternion.Slerp(worldRotPrev, worldRot, wPrev);
+                Carry(c, wPos0, wPos - wPos0, wRot * Quaternion.Inverse(wRot0), dt, s.worldInertia, s.worldMoveLimit, s.worldTurnLimit, null);
+                // local: the anchor in the fighter's frame (the animation), felt less near the roots
+                var local0 = Quaternion.Inverse(wRot0) * (prevPos - wPos0);
+                var local1 = Quaternion.Inverse(wRot) * (cPos - wPos);
+                var lr0 = Quaternion.Inverse(wRot0) * prevRot;
+                var lr1 = Quaternion.Inverse(wRot) * cRot;
+                var pivot = wPos + wRot * local0;
+                var share = new float[n];
+                for (int i = 0; i < n; i++)
+                    share[i] = 1f - s.depthInertia * (1f - c.depth[i]);
+                Carry(c, pivot, wRot * (local1 - local0), wRot * (lr1 * Quaternion.Inverse(lr0)) * Quaternion.Inverse(wRot), dt, s.inertia, s.moveLimit, s.turnLimit, share);
             }
 
             // 2. Verlet: damping, speed limit, gravity
@@ -524,35 +888,56 @@ namespace RoeFighter
             var axis = cRot * c.anchorAxis;
             for (int it = 0; it < s.iterations; it++)
             {
-                foreach (var lv in c.levels)
+                for (int l = 0; l < c.levels.Length; l++)
                 {
+                    var lv = c.levels[l];
+                    // angle restoration (once a step; most of the move does not become speed) and the angle limit
                     foreach (int i in lv)
                     {
                         int p = c.parent[i];
                         // the parent's turn away from its animated pose carries this bone's baseline
-                        var D = p < 0 ? Quaternion.identity : c.rot[p] * Quaternion.Inverse(c.rb[p]);
-                        var h = p < 0 ? hb[i] : c.x[p];
-                        var g = (D * d0[i]).normalized;
-                        var dir = (c.x[i] - h).normalized;
-                        float L = c.length[i];
+                        c.d[i] = p < 0 ? Quaternion.identity : c.rot[p] * Quaternion.Inverse(c.rb[p]);
+                        c.head[i] = p < 0 ? hb[i] : c.x[p];
+                        c.g[i] = (c.d[i] * d0[i]).normalized;
+                        var dir = (c.x[i] - c.head[i]).normalized;
                         if (it == 0)
                         {
-                            // angle restoration, once a step; most of the move does not become speed
-                            var d2 = Turn(dir, g, restore);
-                            var nx = h + d2 * L;
+                            var d2 = Turn(dir, c.g[i], restore);
+                            var nx = c.head[i] + d2 * c.length[i];
                             c.xOld[i] += (nx - c.x[i]) * s.attenuation;
                             c.x[i] = nx;
                             dir = d2;
                         }
-                        // angle limit
-                        dir = Vector3.RotateTowards(g, dir, c.limit[i], 0f).normalized;
-                        c.x[i] = h + dir * L;
-                        // colliders: as deep as the animation itself goes is allowed
+                        dir = Vector3.RotateTowards(c.g[i], dir, c.limit[i], 0f).normalized;
+                        c.x[i] = c.head[i] + dir * c.length[i];
+                    }
+                    // the cross links: linked chains keep their distance as in the animated pose
+                    foreach (var (i, j) in c.links[l])
+                    {
+                        var dv = c.x[j] - c.x[i];
+                        float dist = dv.magnitude, rest = Vector3.Distance(tb[i], tb[j]);
+                        if (dist < 1e-6f)
+                            continue;
+                        var corr = dv / dist * ((dist - rest) * 0.5f * s.linkStiffness);
+                        c.x[i] = OnSphere(c, i, c.x[i] + corr);
+                        c.x[j] = OnSphere(c, j, c.x[j] - corr);
+                    }
+                    // collisions, backstop, max distance, tether, floor
+                    foreach (int i in lv)
+                    {
+                        var h = c.head[i];
+                        float L = c.length[i];
                         if (c.capsules.Length > 0 && !NoColliders)
                         {
+                            // as deep as the stance has it is allowed (legacy: as deep as the animated pose goes)
+                            var allow = legacy ? c.allow : s.edge ? c.restEdge[i] : c.restPoint[i];
+                            if (legacy)
+                                for (int k = 0; k < c.capsules.Length; k++)
+                                    allow[k] = Mathf.Max(0f, s.edge ? EdgeDepth(hb[i], tb[i], s.radius, c.capsules[k], out _, out _)
+                                                                    : PointDepth(tb[i], s.radius, c.capsules[k], out _));
                             bool hit;
-                            Vector3 nx = s.edge ? PushEdge(h, c.x[i], s.radius, c.capsules, hb[i], tb[i], out hit)
-                                                : PushPoint(c.x[i], s.radius, c.capsules, tb[i], out hit);
+                            Vector3 nx = s.edge ? PushEdge(h, c.x[i], s.radius, c.capsules, allow, out hit)
+                                                : PushPoint(c.x[i], s.radius, c.capsules, allow, out hit);
                             nx = h + (nx - h).normalized * L;
                             if (hit)
                             {
@@ -574,6 +959,22 @@ namespace RoeFighter
                             float dl = dv.magnitude;
                             if (dl < s.backstopRadius && dl > 1e-6f)
                                 c.x[i] = h + (centre + dv / dl * s.backstopRadius - h).normalized * L;
+                        }
+                        // max distance from the animated place (Magica's motion constraint)
+                        if (c.maxDistance[i] > 0f)
+                        {
+                            var off = c.x[i] - tb[i];
+                            if (off.magnitude > c.maxDistance[i])
+                                c.x[i] = OnSphere(c, i, tb[i] + off.normalized * c.maxDistance[i]);
+                        }
+                        // tether: the chain does not fold up towards its root
+                        if (s.tether > 0f)
+                        {
+                            var r0 = hb[c.root[i]];
+                            float near = (1f - s.tether) * Vector3.Distance(tb[i], r0);
+                            var out0 = c.x[i] - r0;
+                            if (out0.magnitude < near && out0.magnitude > 1e-6f)
+                                c.x[i] = OnSphere(c, i, r0 + out0.normalized * near);
                         }
                         // the floor: the bone turns up just enough; into the floor the speed is stopped
                         if (s.floor)
@@ -603,13 +1004,26 @@ namespace RoeFighter
                                 c.xOld[i] = nx - vel;
                             }
                         }
-                        dir = (c.x[i] - h).normalized;
-                        c.head[i] = h;
-                        // the bone's frame: the animated one carried by the parent, swung onto the simulated direction
-                        c.rot[i] = Quaternion.FromToRotation(g, dir) * D * c.rb[i];
                     }
+                    // the cross links collide too: a leg cannot pass between two linked chains
+                    if (c.capsules.Length > 0 && !NoColliders)
+                        foreach (var (i, j) in c.links[l])
+                            PushLink(c, i, j);
+                    // each bone's frame: the animated one carried by the parent, swung onto the simulated direction
+                    foreach (int i in lv)
+                        c.rot[i] = Quaternion.FromToRotation(c.g[i], (c.x[i] - c.head[i]).normalized) * c.d[i] * c.rb[i];
                 }
             }
+            // just after a reset nothing that was pushed into place becomes speed
+            if (c.stabilizeLeft > 0f)
+                Array.Copy(c.x, c.xOld, n);
+        }
+
+        /// <summary>A point put back on the particle's bone sphere (its head, its length).</summary>
+        static Vector3 OnSphere(ChainSet c, int i, Vector3 p)
+        {
+            var dv = p - c.head[i];
+            return dv.sqrMagnitude > 1e-12f ? c.head[i] + dv.normalized * c.length[i] : c.x[i];
         }
 
         static Vector3 Turn(Vector3 a, Vector3 b, float fraction)
@@ -630,16 +1044,15 @@ namespace RoeFighter
             return Mathf.Lerp(cap.ra, cap.rb, t) + r - dist;
         }
 
-        static Vector3 PushPoint(Vector3 p, float r, Capsule[] caps, Vector3 animated, out bool hit)
+        static Vector3 PushPoint(Vector3 p, float r, Capsule[] caps, float[] allow, out bool hit)
         {
             hit = false;
             for (int pass = 0; pass < 2; pass++)
             {
                 bool any = false;
-                foreach (var cap in caps)
+                for (int k = 0; k < caps.Length; k++)
                 {
-                    float allow = Mathf.Max(0f, PointDepth(animated, r, cap, out _));
-                    float pen = PointDepth(p, r, cap, out var n) - allow;
+                    float pen = PointDepth(p, r, caps[k], out var n) - allow[k];
                     if (pen > 0f)
                     {
                         p += n * pen;
@@ -682,14 +1095,13 @@ namespace RoeFighter
         /// to 5x the depth in one go and the panel jumped, so the lever stops at 3x and one push at
         /// MaxPush - the rest follows in the next iterations and substeps.
         /// </summary>
-        static Vector3 PushEdge(Vector3 head, Vector3 tail, float r, Capsule[] caps, Vector3 animHead, Vector3 animTail, out bool hit)
+        static Vector3 PushEdge(Vector3 head, Vector3 tail, float r, Capsule[] caps, float[] allow, out bool hit)
         {
             hit = false;
             var move = Vector3.zero;
-            foreach (var cap in caps)
+            for (int k = 0; k < caps.Length; k++)
             {
-                float allow = Mathf.Max(0f, EdgeDepth(animHead, animTail, r, cap, out _, out _));
-                float pen = EdgeDepth(head, tail, r, cap, out var n, out float s) - allow;
+                float pen = EdgeDepth(head, tail, r, caps[k], out var n, out float s) - allow[k];
                 if (pen > 0f && s > 0.05f)
                 {
                     move += n * (pen / Mathf.Max(s, 0.35f));
@@ -697,6 +1109,37 @@ namespace RoeFighter
                 }
             }
             return tail + Vector3.ClampMagnitude(move, MaxPush);
+        }
+
+        /// <summary>
+        /// A cross link against the capsules: both ends move so the closest point clears them, each by its
+        /// share (the contact's place along the link), as deep as the link lies in the stance being allowed.
+        /// </summary>
+        void PushLink(ChainSet c, int i, int j)
+        {
+            var s = c.s;
+            var mi = Vector3.zero;
+            var mj = Vector3.zero;
+            bool hit = false;
+            var allow = c.restLink[(i, j)];
+            for (int k = 0; k < c.capsules.Length; k++)
+            {
+                float pen = EdgeDepth(c.x[i], c.x[j], s.radius, c.capsules[k], out var nrm, out float u) - allow[k];
+                if (pen <= 0f)
+                    continue;
+                float wi = 1f - u, wj = u, norm = wi * wi + wj * wj;
+                mi += nrm * (pen * wi / norm);
+                mj += nrm * (pen * wj / norm);
+                hit = true;
+            }
+            if (!hit)
+                return;
+            var ni = OnSphere(c, i, c.x[i] + Vector3.ClampMagnitude(mi, MaxPush));
+            var nj = OnSphere(c, j, c.x[j] + Vector3.ClampMagnitude(mj, MaxPush));
+            c.xOld[i] += (ni - c.x[i]) * s.pushAttenuation;
+            c.xOld[j] += (nj - c.x[j]) * s.pushAttenuation;
+            c.x[i] = ni;
+            c.x[j] = nj;
         }
 
         const float MaxPush = 0.025f;

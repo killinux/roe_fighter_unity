@@ -15,10 +15,10 @@ namespace RoeFighter.EditorTools
     /// Side-by-side demos: each fighter plays the same scripted moves in the real fight logic
     /// (guard, walk on and back, side steps both ways, then buttons A, C, D, B), once per variant,
     /// filmed by a camera that follows her from the front.
-    ///   Run    the bone cloth: without and with RoeBoneCloth -> _work/cloth_demo/&lt;id&gt;_off, _on
+    ///   Run    the cloth backends (RoeClothBackends): one take each -> _work/cloth_demo/&lt;id&gt;_&lt;backend&gt;
     ///   Packs  the motion packs: one take per pack       -> _work/pack_demo/&lt;id&gt;_&lt;pack&gt;
     /// tools/cloth_demo_video.py puts the takes side by side.
-    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeChars g04,a08] [-roeSize 960x720]
+    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Packs [-roePacks bandai1,cmu1] [-roeChars g04,a08]
     /// </summary>
     public static class RoeClothDemo
@@ -42,11 +42,12 @@ namespace RoeFighter.EditorTools
         public static void Run()
         {
             string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "cloth_demo"));
-            Film(outDir, new[] { "off", "on" }, (game, variant) =>
+            Film(outDir, RoeCapture.Arg("-roeCloths", "legacy,magica_style").Split(','), (game, variant) =>
             {
+                FighterRig.ClothBackend = variant;
                 foreach (var rig in game.rigs)
-                    rig.useCloth = variant == "on";
-            }, (game, variant, me) => variant == "on" ? me.rig.ClothReport : "");
+                    rig.useCloth = true;
+            }, (game, variant, me) => $"{me.rig.ClothTitle}; {me.rig.ClothReport}");
         }
 
         [MenuItem("ROE Fighter/Fight/Motion pack demo")]

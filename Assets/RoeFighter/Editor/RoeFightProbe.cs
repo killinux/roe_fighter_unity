@@ -722,7 +722,9 @@ namespace RoeFighter.EditorTools
         /// side step and the four strikes in the real fight logic; for every skirt chain tip, per part,
         /// the angle between the simulated and the animated tip seen from where the chain hangs (rms and
         /// max) and the largest turn of the simulated tip in one step.
-        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.SkirtSwing [-roeChar g04] [-roeMotions accad_male2] [-roeKind skirt]
+        /// Also, per part: how deep the cloth goes into the legs beyond the stance (bone segments / cross
+        /// links, cm, the largest) and how far the cross links stretch or squeeze (%).
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.SkirtSwing [-roeChar g04] [-roeMotions accad_male2] [-roeKind skirt] [-roeCloth legacy]
         /// </summary>
         public static void SkirtSwing()
         {
@@ -730,6 +732,8 @@ namespace RoeFighter.EditorTools
             string id = RoeCapture.Arg("-roeChar", "g04");
             string kind = RoeCapture.Arg("-roeKind", "skirt");
             string variant = RoeCapture.Arg("-roeVariant", "");
+            FighterRig.ClothBackend = RoeCapture.Arg("-roeCloth", "magica_style");
+            variant = (FighterRig.ClothBackend + " " + variant).Trim();
             RoeBoneCloth.NoColliders = variant.Contains("nocoll");
             RoeBoneCloth.NoBackstop = variant.Contains("noback");
             FighterRig.NoHipCloth = variant.Contains("nohip");
@@ -768,6 +772,8 @@ namespace RoeFighter.EditorTools
                 var max = new Dictionary<string, float>();
                 var jump = new Dictionary<string, float>();
                 var animJump = new Dictionary<string, float>();
+                float boneDepth = 0f, linkDepth = 0f, strain = 0f, baseDepth = 0f;
+                int links = 0;
                 int steps = Mathf.RoundToInt(seconds * 60f), n = 0;
                 for (int s = 0; s < steps; s++)
                 {
@@ -782,6 +788,12 @@ namespace RoeFighter.EditorTools
                     if (me.rig.Cloth == null)
                         break;
                     n++;
+                    var measured = me.rig.Cloth.Measures(kind);
+                    boneDepth = Mathf.Max(boneDepth, measured.boneDepth);
+                    linkDepth = Mathf.Max(linkDepth, measured.linkDepth);
+                    strain = Mathf.Max(strain, measured.strain);
+                    baseDepth = Mathf.Max(baseDepth, measured.baseDepth);
+                    links = measured.links;
                     foreach (var (set, tip, angle, dir, animated) in me.rig.Cloth.TipDeviations(kind))
                     {
                         sum[tip] = (sum.TryGetValue(tip, out var v) ? v : 0f) + angle * angle;
@@ -797,7 +809,8 @@ namespace RoeFighter.EditorTools
                 if (n == 0 || sum.Count == 0)
                     continue;
                 var rms = sum.ToDictionary(kv => kv.Key, kv => Mathf.Sqrt(kv.Value / n));
-                sb.Append($"\n[ROE]   {name,-6}: all tips rms {Mathf.Sqrt(rms.Values.Select(r => r * r).Average()):F1}, max {max.Values.Max():F0}, step {jump.Values.DefaultIfEmpty(0f).Max():F0} " +
+                sb.Append($"\n[ROE]   {name,-6}: in the legs {boneDepth * 100f:F1} cm (links {linkDepth * 100f:F1}, base pose {baseDepth * 100f:F1}), links stretch {strain * 100f:F0}% ({links} links); " +
+                          $"all tips rms {Mathf.Sqrt(rms.Values.Select(r => r * r).Average()):F1}, max {max.Values.Max():F0}, step {jump.Values.DefaultIfEmpty(0f).Max():F0} " +
                           $"(animation step {animJump.Values.DefaultIfEmpty(0f).Max():F0}: {string.Join(" ", animJump.OrderByDescending(kv => kv.Value).Take(2).Select(kv => $"{kv.Key} {kv.Value:F0}"))}); " +
                           string.Join(", ", rms.OrderByDescending(kv => kv.Value).Take(4).Select(kv => $"{kv.Key} {kv.Value:F0}/{max[kv.Key]:F0}/{(jump.TryGetValue(kv.Key, out var j) ? j : 0f):F0}")));
             }
@@ -805,11 +818,72 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>
+        /// How deep the skirt's animated pose goes into the legs (the leg capsules, beyond the battle
+        /// stance; RoeBoneCloth.Measures), clip by clip on the rig itself: the game's own clips (the
+        /// animators' keys - the yardstick), then the basic moves with the skirt pinned to the pelvis
+        /// (legacy) and with the skirt that follows the legs (magica_style).  Max and mean over the clip.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.SkirtDepth [-roeChars g04,a08] [-roeMotions bandai1]
+        /// </summary>
+        public static void SkirtDepth()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            var sb = new System.Text.StringBuilder($"[ROE] skirt base pose in the legs, cm max / mean ({game.Pack?.name}):");
+            foreach (var id in RoeCapture.Arg("-roeChars", "g04,a08").Split(','))
+            {
+                var rig = game.rigs.FirstOrDefault(r => r.id == id);
+                if (rig == null)
+                    continue;
+                foreach (var backend in new[] { "legacy", "magica_style" })
+                {
+                    FighterRig.ClothBackend = backend;
+                    rig.useCloth = true;
+                    rig.UseMotions(game.Pack);
+                    rig.Init();
+                    var clipNames = rig.clips.Select(c => c.name).ToList();
+                    if (backend == "magica_style" && rig.Cloth != null)
+                        sb.Append($"\n[ROE]   {id} pieces (what RoeMagicaCloth would build): " + string.Join("; ", rig.Cloth.Pieces().Select(p =>
+                            $"{p.kind} {string.Join("+", p.roots.Select(r => r.name))}{(p.mesh ? " (mesh)" : "")}")));
+                    sb.Append($"\n[ROE]   {id} {backend}:");
+                    foreach (var name in clipNames)
+                    {
+                        var info = rig.clips.First(c => c.name == name);
+                        if (info.game && backend != "legacy")
+                            continue;               // the game's keys are the same under either backend
+                        if (info.game && !new[] { "idle_01", "skill_01", "skill_02", "skill_03", "hurt", "react_01" }.Contains(name))
+                            continue;
+                        rig.Play(name, 1f, 0f);
+                        rig.ResetCloth();
+                        float len = Mathf.Min(rig.Length(name), 6f), max = 0f, sum = 0f;
+                        int n = 0;
+                        for (float t = 0f; t < len; t += 1f / 60f)
+                        {
+                            rig.Tick(t == 0f ? 0f : 1f / 60f);
+                            var m = rig.Cloth?.Measures("skirt");
+                            if (m == null)
+                                break;
+                            max = Mathf.Max(max, m.Value.baseDepth);
+                            sum += m.Value.baseDepth;
+                            n++;
+                        }
+                        sb.Append($" {(info.game ? "game " : "")}{name} {max * 100f:F1}/{(n > 0 ? sum / n * 100f : 0f):F1}");
+                    }
+                }
+            }
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
         /// The skirt in the real fight logic: one fighter's hips and legs filmed from the front, her left
         /// and behind at moments of the game's own pose (the intro) and the basic moves of each motion
-        /// pack, with the bone cloth off and on.  Frames to _work/skirt/&lt;pack&gt;_&lt;cloth&gt;_&lt;moment&gt;_&lt;view&gt;.jpg;
-        /// the renderers of both fighters (materials, root bone, weapon or not) go to the log.
-        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Skirt [-roeChar a08] [-roePacks bandai1,accad_male2]
+        /// pack, once per cloth backend (default: none, the 10-02 one, Magica-style).  Frames to
+        /// _work/skirt/&lt;pack&gt;_&lt;cloth&gt;_&lt;moment&gt;_&lt;view&gt;.jpg; the renderers of both fighters (materials, root
+        /// bone, weapon or not) go to the log.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Skirt [-roeChar a08] [-roePacks bandai1,accad_male2] [-roeCloths off,legacy,magica_style]
         /// </summary>
         public static void Skirt()
         {
@@ -817,6 +891,7 @@ namespace RoeFighter.EditorTools
             string id = RoeCapture.Arg("-roeChar", "a08");
             string outDir = RoeCapture.Arg("-roeOut", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "skirt"));
             var packs = RoeCapture.Arg("-roePacks", "bandai1,accad_male2").Split(',');
+            var cloths = RoeCapture.Arg("-roeCloths", "off,legacy,magica_style").Split(',');
             if (System.IO.Directory.Exists(outDir))
                 System.IO.Directory.Delete(outDir, true);
             System.IO.Directory.CreateDirectory(outDir);
@@ -845,14 +920,19 @@ namespace RoeFighter.EditorTools
                 (1.6f, new FighterInput { x = 1 }, "walk"),
                 (2.8f, new FighterInput { x = -1 }, "back"),
                 (4.0f, new FighterInput { y = 1 }, "side"),
+                (5.0f, default, "guard2"),
+                (5.35f, new FighterInput { d = true }, "kick"),
+                (6.6f, default, "guard3"),
+                (6.85f, new FighterInput { c = true }, "cross"),
             };
             bool warmed = false;
             foreach (var packName in packs)
-                foreach (bool cloth in new[] { false, true })
+                foreach (var cloth in cloths)
                 {
                     game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == packName));
+                    FighterRig.ClothBackend = cloth;
                     foreach (var rig in game.rigs)
-                        rig.useCloth = cloth;
+                        rig.useCloth = true;
                     game.Setup();
                     int who = game.f[0].rig.id == id ? 0 : 1;
                     var me = game.f[who];
@@ -873,7 +953,7 @@ namespace RoeFighter.EditorTools
                                 RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
                                 warmed = true;
                             }
-                            RoeCapture.Render(cam, 420, 480, System.IO.Path.Combine(outDir, $"{packName}_{(cloth ? "on" : "off")}_{moment}_{view}.jpg"), 90);
+                            RoeCapture.Render(cam, 420, 480, System.IO.Path.Combine(outDir, $"{packName}_{cloth}_{moment}_{view}.jpg"), 90);
                         }
                     }
                     for (int s = 0; game.phase != FightGame.Phase.Fight; s++)
@@ -888,10 +968,12 @@ namespace RoeFighter.EditorTools
                     float t = 0f;
                     foreach (var (at, inp, name) in moments)
                     {
+                        bool press = inp.a || inp.b || inp.c || inp.d, first = true;
                         while (t < at)
                         {
                             game.UpdateCamera(FightGame.Dt);
-                            var input = inp;
+                            var input = press && !first ? default : inp;     // a button is pressed once
+                            first = false;
                             var camRight = game.cam.transform.right;
                             camRight.y = 0f;
                             input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
@@ -900,9 +982,10 @@ namespace RoeFighter.EditorTools
                             game.Step(inputs);
                             t += FightGame.Dt;
                         }
-                        Shoot(name);
+                        if (!name.StartsWith("guard") || name == "guard")
+                            Shoot(name);
                     }
-                    Debug.Log($"[ROE] skirt {id} {packName} cloth {(cloth ? "on" : "off")}: {me.rig.ClothReport}");
+                    Debug.Log($"[ROE] skirt {id} {packName} cloth {cloth}: {me.rig.ClothTitle}; {me.rig.ClothReport}");
                 }
         }
 

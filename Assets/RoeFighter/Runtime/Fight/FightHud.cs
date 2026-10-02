@@ -88,9 +88,9 @@ namespace RoeFighter.Fight
             timer = Label("timer", "60", 64, TextAnchor.MiddleCenter, new Vector2(0.455f, 0.875f), new Vector2(0.545f, 0.985f));
             message = Label("message", "", 120, TextAnchor.MiddleCenter, new Vector2(0.1f, 0.4f), new Vector2(0.9f, 0.62f));
             message.color = Gold;
-            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions",
-                         20, TextAnchor.LowerCenter, new Vector2(0.29f, 0.0f), new Vector2(0.71f, 0.04f));
-            notice = Label("notice", "", 26, TextAnchor.MiddleCenter, new Vector2(0.25f, 0.79f), new Vector2(0.75f, 0.86f));
+            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth",
+                         20, TextAnchor.LowerCenter, new Vector2(0.27f, 0.0f), new Vector2(0.73f, 0.04f));
+            notice = Label("notice", "", 26, TextAnchor.MiddleCenter, new Vector2(0.15f, 0.79f), new Vector2(0.85f, 0.86f));
             help.gameObject.SetActive(showHelp && !drawnByCamera);
             Refresh(game);
         }

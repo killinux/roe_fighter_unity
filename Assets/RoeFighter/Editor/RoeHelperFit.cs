@@ -332,6 +332,308 @@ namespace RoeFighter.EditorTools
             return d;
         }
 
+        // ---- the skirt's animation pose under motion capture (RoeSkirtRig)
+
+        static readonly string[] SkirtFitClips = { "idle_01", "react_01", "skill_01", "skill_03", "hurt" };
+        static readonly string[] SkirtTestClips = { "idle_02", "react_02", "skill_02" };      // held out to check the fit
+
+        /// <summary>
+        /// Fits the skirt to the legs the way the game's animators keyed it, and stores it on the humanoid
+        /// fighter prefab as a RoeSkirtRig.  The game's own clips (standing ones; lying on the floor is
+        /// left out) are sampled on the original character; each skirt bone's tail is a linear blend of
+        /// where six drivers would carry it from the battle stance - the hips' heading, the pelvis, both
+        /// thighs, both calves - with weights >= 0 that sum to 1, least squares over the frames.  The log
+        /// compares, on clips the fit did not see, the bone directions of "pinned to the pelvis" (the
+        /// skirt before), "skinned by distance" (Magica's Custom Skinning) and the fit.
+        ///   -executeMethod RoeFighter.EditorTools.RoeHelperFit.FitSkirt [-roeChars a08,g04]
+        /// </summary>
+        [MenuItem("ROE Fighter/Build/Fit skirt to the legs")]
+        public static void FitSkirt()
+        {
+            var manifest = RoeManifest.Load();
+            foreach (var id in RoeCapture.Arg("-roeChars", "a08,g04").Split(','))
+            {
+                var c = manifest.characters.FirstOrDefault(x => x.id == id);
+                if (c != null)
+                    Debug.Log(FitSkirt(c));
+            }
+            AssetDatabase.SaveAssets();
+        }
+
+        static readonly string[] SkirtDrivers = { null, "Hips", "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg" };
+
+        class SkirtFrame
+        {
+            public bool test;
+            public Matrix4x4[] driver = new Matrix4x4[RoeSkirtRig.Drivers];
+            public Vector3[] head, tail;
+        }
+
+        static string FitSkirt(RoeManifest.Character c)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeFighterBuilder.PrefabPath(c.id));
+            var go = Object.Instantiate(prefab);
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var map = RoeHumanoid.MapBones(go);
+            var idle = c.LoadClip("idle_01");
+            // the skirt bones the cloth simulates, and their tails, in the battle stance (as the fight finds them)
+            RoeCapture.Pose(go, idle, 0f);
+            var kinds = RoeBoneCloth.Classify(go.transform, new HashSet<Transform>(map.Values), null);
+            var bones = kinds.Where(kv => kv.Value == "skirt").Select(kv => kv.Key).OrderBy(Depth).ThenBy(b => b.name).ToList();
+            var index = new Dictionary<Transform, int>();
+            for (int i = 0; i < bones.Count; i++)
+                index[bones[i]] = i;
+            var skin = RoeBoneCloth.SkinPoints(go.transform);
+            var parent = bones.Select(b => b.parent != null && index.TryGetValue(b.parent, out int p) ? p : -1).ToArray();
+            var tailLocal = bones.Select((b, i) =>
+            {
+                Transform child = null;
+                foreach (Transform k in b)
+                    if (index.ContainsKey(k))
+                        child = k;
+                return b.InverseTransformPoint(RoeBoneCloth.Tail(b, child, parent[i] >= 0 ? bones[parent[i]] : null, skin));
+            }).ToArray();
+            Transform Driver(int k) => SkirtDrivers[k] != null && map.TryGetValue(SkirtDrivers[k], out var t) ? t : null;
+            Matrix4x4 Heading()
+            {
+                var l = map["LeftUpperLeg"].position;
+                var r = map["RightUpperLeg"].position;
+                var fwd = Vector3.Cross(r - l, Vector3.up);
+                fwd.y = 0f;
+                return Matrix4x4.TRS(map["Hips"].position, Quaternion.LookRotation(fwd.normalized, Vector3.up), Vector3.one);
+            }
+
+            // the game's clips, 15 frames a second
+            var frames = new List<SkirtFrame>();
+            foreach (var (name, test) in SkirtFitClips.Select(n => (n, false)).Concat(SkirtTestClips.Select(n => (n, true))))
+            {
+                var clip = c.LoadClip(name);
+                if (clip == null)
+                    continue;
+                for (float t = 0f; t <= clip.length + 1e-4f; t += 1f / 15f)
+                {
+                    RoeCapture.Pose(go, clip, t);
+                    var f = new SkirtFrame { test = test, head = new Vector3[bones.Count], tail = new Vector3[bones.Count] };
+                    f.driver[0] = Heading();
+                    for (int k = 1; k < RoeSkirtRig.Drivers; k++)
+                    {
+                        var d = Driver(k);
+                        f.driver[k] = d != null ? Matrix4x4.TRS(d.position, d.rotation, Vector3.one) : f.driver[0];
+                    }
+                    for (int i = 0; i < bones.Count; i++)
+                    {
+                        f.head[i] = bones[i].position;
+                        f.tail[i] = bones[i].TransformPoint(tailLocal[i]);
+                    }
+                    frames.Add(f);
+                }
+            }
+            RoeCapture.EndPosing();
+            var reference = frames[0];      // idle_01 at 0: the battle stance
+
+            // where each driver carries each tail from the stance, per frame
+            Vector3 Carried(SkirtFrame f, int k, int i) => f.driver[k].MultiplyPoint3x4(reference.driver[k].inverse.MultiplyPoint3x4(reference.tail[i]));
+            float[] FitWeights(int i, IEnumerable<SkirtFrame> set)
+            {
+                var ata = new double[RoeSkirtRig.Drivers, RoeSkirtRig.Drivers];
+                var atb = new double[RoeSkirtRig.Drivers];
+                foreach (var f in set)
+                {
+                    var cols = Enumerable.Range(0, RoeSkirtRig.Drivers).Select(k => Carried(f, k, i)).ToArray();
+                    for (int a = 0; a < RoeSkirtRig.Drivers; a++)
+                    {
+                        atb[a] += Vector3.Dot(cols[a], f.tail[i]);
+                        for (int b = 0; b < RoeSkirtRig.Drivers; b++)
+                            ata[a, b] += Vector3.Dot(cols[a], cols[b]);
+                    }
+                }
+                return SimplexLeastSquares(ata, atb);
+            }
+            // by distance, as Magica's Custom Skinning would (inverse square to the pelvis, thigh and calf segments)
+            float[] DistanceWeights(int i)
+            {
+                var p = reference.tail[i];
+                var w = new float[RoeSkirtRig.Drivers];
+                float Seg(Vector3 a, Vector3 b)
+                {
+                    var ab = b - a;
+                    float t = Mathf.Clamp01(Vector3.Dot(p - a, ab) / Mathf.Max(ab.sqrMagnitude, 1e-8f));
+                    return Vector3.Distance(p, a + t * ab);
+                }
+                w[1] = 1f / Mathf.Pow(Mathf.Max(0.03f, Vector3.Distance(p, (map["LeftUpperLeg"].position + map["RightUpperLeg"].position) * 0.5f)), 2f);
+                w[2] = 1f / Mathf.Pow(Mathf.Max(0.03f, Seg(map["LeftUpperLeg"].position, map["LeftLowerLeg"].position)), 2f);
+                w[3] = 1f / Mathf.Pow(Mathf.Max(0.03f, Seg(map["RightUpperLeg"].position, map["RightLowerLeg"].position)), 2f);
+                w[4] = 1f / Mathf.Pow(Mathf.Max(0.03f, Seg(map["LeftLowerLeg"].position, map["LeftFoot"].position)), 2f);
+                w[5] = 1f / Mathf.Pow(Mathf.Max(0.03f, Seg(map["RightLowerLeg"].position, map["RightFoot"].position)), 2f);
+                float sum = w.Sum();
+                return w.Select(x => x / sum).ToArray();
+            }
+            // the reference distances are in the stance pose: pose it once more
+            RoeCapture.Pose(go, idle, 0f);
+            var distance = Enumerable.Range(0, bones.Count).Select(DistanceWeights).ToArray();
+            RoeCapture.EndPosing();
+            var pinned = Enumerable.Range(0, bones.Count).Select(_ => new float[] { 0f, 1f, 0f, 0f, 0f, 0f }).ToArray();
+            var fitted = Enumerable.Range(0, bones.Count).Select(i => FitWeights(i, frames.Where(f => !f.test))).ToArray();
+
+            // each bone's direction from the skinned head to the skinned tail, against the game's keys (RMS, degrees)
+            float[] DirectionError(float[][] weights, bool test)
+            {
+                var sum = new double[bones.Count];
+                int n = 0;
+                foreach (var f in frames.Where(f => f.test == test))
+                {
+                    var p = new Vector3[bones.Count];
+                    for (int i = 0; i < bones.Count; i++)
+                        for (int k = 0; k < RoeSkirtRig.Drivers; k++)
+                            if (weights[i][k] > 0f)
+                                p[i] += weights[i][k] * Carried(f, k, i);
+                    for (int i = 0; i < bones.Count; i++)
+                    {
+                        var h = parent[i] >= 0 ? p[parent[i]] : f.head[i];
+                        float a = Vector3.Angle(f.tail[i] - f.head[i], p[i] - h);
+                        sum[i] += a * a;
+                    }
+                    n++;
+                }
+                return sum.Select(x => n > 0 ? Mathf.Sqrt((float)(x / n)) : 0f).ToArray();
+            }
+            var errPinned = DirectionError(pinned, true);
+            var errDistance = DirectionError(distance, true);
+            var errFitted = DirectionError(fitted, true);
+            var errFittedTrain = DirectionError(fitted, false);
+            int testFrames = frames.Count(f => f.test), fitFrames = frames.Count - testFrames;
+            var sb = new StringBuilder($"[ROE] skirt of {c.id} fitted to the legs: {bones.Count} bones, {fitFrames} frames ({string.Join(" ", SkirtFitClips)}), " +
+                                       $"checked on {testFrames} others ({string.Join(" ", SkirtTestClips)}); bone direction off the game's keys, RMS degrees: " +
+                                       $"pinned to the pelvis {errPinned.Average():F1}, by distance {errDistance.Average():F1}, fitted {errFitted.Average():F1} (on its own frames {errFittedTrain.Average():F1})");
+            for (int i = 0; i < bones.Count; i++)
+                sb.Append($"\n[ROE]   {bones[i].name}: pinned {errPinned[i]:F1}, distance {errDistance[i]:F1}, fitted {errFitted[i]:F1}; weights " +
+                          string.Join(" ", Enumerable.Range(0, RoeSkirtRig.Drivers).Where(k => fitted[i][k] > 0.005f).Select(k => $"{RoeSkirtRig.DriverNames[k]} {fitted[i][k]:F2}")));
+            var names = bones.Select(b => b.name).ToList();
+            Object.DestroyImmediate(go);
+
+            // the weights for the fight: fitted on all the clips
+            var final = Enumerable.Range(0, names.Count).Select(i => FitWeights(i, frames)).ToArray();
+            string path = RoeHumanoid.FighterPath(c.id);
+            var root = PrefabUtility.LoadPrefabContents(path);
+            var byName = new Dictionary<string, Transform>();
+            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+                if (!byName.ContainsKey(t.name))
+                    byName[t.name] = t;
+            var fighterMap = RoeHumanoid.MapBones(root);
+            var rig = root.GetComponent<RoeSkirtRig>() ?? root.AddComponent<RoeSkirtRig>();
+            rig.joints.Clear();
+            rig.hips = fighterMap["Hips"];
+            rig.leftThigh = fighterMap["LeftUpperLeg"];
+            rig.rightThigh = fighterMap["RightUpperLeg"];
+            rig.leftCalf = fighterMap["LeftLowerLeg"];
+            rig.rightCalf = fighterMap["RightLowerLeg"];
+            var jointOf = new Dictionary<int, int>();
+            for (int i = 0; i < names.Count; i++)
+            {
+                if (!byName.TryGetValue(names[i], out var bone))
+                {
+                    sb.Append($"\n[ROE]   {names[i]}: not on the fighter - skipped");
+                    continue;
+                }
+                jointOf[i] = rig.joints.Count;
+                rig.joints.Add(new RoeSkirtRig.Joint
+                {
+                    bone = bone,
+                    parent = parent[i] >= 0 && jointOf.TryGetValue(parent[i], out int pj) ? pj : -1,
+                    tailLocal = tailLocal[i],
+                    weights = final[i],
+                    fitError = errFitted[i],
+                    rigidError = errPinned[i],
+                });
+            }
+            rig.fitReport = sb.ToString().Replace("[ROE] ", "");
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+            PrefabUtility.UnloadPrefabContents(root);
+            sb.Append($"\n[ROE]   {rig.joints.Count} skirt bones saved on {path}");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// min |A w - b|^2 over w >= 0, sum w = 1, from A'A and A'b: every support set is tried (6 drivers:
+        /// 63 small systems), the best one whose solution stays non-negative wins.
+        /// </summary>
+        static float[] SimplexLeastSquares(double[,] ata, double[] atb)
+        {
+            int k = atb.Length;
+            double trace = 0;
+            for (int a = 0; a < k; a++)
+                trace += ata[a, a];
+            double ridge = 1e-7 * trace / k;
+            double best = double.MaxValue;
+            float[] bestW = null;
+            for (int mask = 1; mask < (1 << k); mask++)
+            {
+                var idx = Enumerable.Range(0, k).Where(a => (mask & (1 << a)) != 0).ToArray();
+                int n = idx.Length;
+                var m = new double[n + 1, n + 2];
+                for (int a = 0; a < n; a++)
+                {
+                    for (int b = 0; b < n; b++)
+                        m[a, b] = ata[idx[a], idx[b]] + (a == b ? ridge : 0);
+                    m[a, n] = 1;
+                    m[a, n + 1] = atb[idx[a]];
+                }
+                for (int b = 0; b < n; b++)
+                    m[n, b] = 1;
+                m[n, n + 1] = 1;
+                var x = Gauss(m, n + 1);
+                if (x == null || Enumerable.Range(0, n).Any(a => x[a] < -1e-9))
+                    continue;
+                var w = new double[k];
+                for (int a = 0; a < n; a++)
+                    w[idx[a]] = System.Math.Max(0, x[a]);
+                double obj = 0;
+                for (int a = 0; a < k; a++)
+                {
+                    obj -= 2 * atb[a] * w[a];
+                    for (int b = 0; b < k; b++)
+                        obj += w[a] * ata[a, b] * w[b];
+                }
+                if (obj < best)
+                {
+                    best = obj;
+                    bestW = w.Select(v => (float)v).ToArray();
+                }
+            }
+            return bestW ?? new float[] { 0f, 1f, 0f, 0f, 0f, 0f };
+        }
+
+        /// <summary>Gaussian elimination with partial pivoting on an n x (n+1) augmented matrix; null when singular.</summary>
+        static double[] Gauss(double[,] m, int n)
+        {
+            for (int col = 0; col < n; col++)
+            {
+                int piv = col;
+                for (int r = col + 1; r < n; r++)
+                    if (System.Math.Abs(m[r, col]) > System.Math.Abs(m[piv, col]))
+                        piv = r;
+                if (System.Math.Abs(m[piv, col]) < 1e-12)
+                    return null;
+                if (piv != col)
+                    for (int c2 = 0; c2 <= n; c2++)
+                        (m[col, c2], m[piv, c2]) = (m[piv, c2], m[col, c2]);
+                for (int r = 0; r < n; r++)
+                {
+                    if (r == col)
+                        continue;
+                    double f = m[r, col] / m[col, col];
+                    if (f == 0)
+                        continue;
+                    for (int c2 = col; c2 <= n; c2++)
+                        m[r, c2] -= f * m[col, c2];
+                }
+            }
+            var x = new double[n];
+            for (int r = 0; r < n; r++)
+                x[r] = m[r, n] / m[r, r];
+            return x;
+        }
+
         /// <summary>The helper follows one bone: fixed rotation in its frame up to a roll that is a share of the next bone's roll.</summary>
         static Result BestSingle(Transform h, Dictionary<string, Transform> map, List<string> candidates, Dictionary<Transform, Track> tracks)
         {
