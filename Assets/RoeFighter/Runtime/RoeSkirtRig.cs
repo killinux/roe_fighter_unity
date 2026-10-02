@@ -14,11 +14,20 @@ namespace RoeFighter
     ///
     /// Each skirt bone's tail is skinned to six drivers - the hips' heading (hanging), the pelvis, both
     /// thighs and both calves - with weights RoeHelperFit.FitSkirt fitted to the game's own skirt keys
-    /// (linear blend skinning of the tail point, weights on the simplex).  At run time the drivers' rest
-    /// is the guard (FighterRig measures it in Init) and the skirt's rest is the battle stance's, both
-    /// against the hips' heading: in the guard the skirt hangs as in the stance; when a thigh moves away
-    /// from the guard the bones weighted to it go along.  Each bone is turned (swing only, its roll
-    /// stays) to point from its skinned head to its skinned tail; the bone cloth swings from there.
+    /// (linear blend skinning of the tail point, weights on the simplex).  At run time the rest of both
+    /// the drivers and the skirt is the game's battle stance, as the fit has it: each driver carries the
+    /// bones weighted to it from where it is in the stance to where it is now (RestOnStance).  Each bone is
+    /// turned (swing only, its roll stays) to point from its skinned head to its skinned tail; the bone
+    /// cloth swings from there.
+    ///
+    /// The first version (10-02, RestOnStance false) put the drivers' rest in the motion-capture guard
+    /// instead, so that in the guard the skirt hung exactly as in the stance against the hips' heading.
+    /// But the stance's pelvis is tilted (the right hip ~23 degrees up; 25-31 degrees off the guard's
+    /// pelvis in all, RoeFightProbe.SkirtRests) while the guard's is about level, and a panel the game
+    /// keys on the pelvis has to tilt with it: g04's back panel, which lies on her right buttock in the
+    /// game, stood 3.4 cm off it in the guard (RoeFightProbe.ButtGap; 0.6 with the stance rest), and
+    /// a08's skirt sat 3.5-3.7 cm into her legs in the guard and the steps (0.3-0.6 with the stance
+    /// rest, RoeFightProbe.SkirtDepth, Bandai moves).
     /// </summary>
     public class RoeSkirtRig : MonoBehaviour
     {
@@ -39,13 +48,22 @@ namespace RoeFighter
         public Transform hips, leftThigh, rightThigh, leftCalf, rightCalf;
         [TextArea] public string fitReport;
 
+        /// <summary>
+        /// The drivers' rest: the game's battle stance (true to the fit: a bone the game keys on the pelvis
+        /// keeps its place on the pelvis - g04's back panel lies on the buttocks) or the motion-capture guard
+        /// (the guard shows the stance's skirt as it hangs against the hips' heading, whatever the pelvis).
+        /// </summary>
+        public static bool RestOnStance = true;
+
         // the rests, measured on this body by FighterRig.Init
         Vector3[] stanceTail, stanceHead;                        // in the heading frame
+        Vector3[] stancePos = new Vector3[Drivers];
+        Quaternion[] stanceRot = new Quaternion[Drivers];
         Vector3[] guardPos;
         Vector4[] guardRotSum;
         Quaternion[] guardRot;
         int guardSamples;
-        Vector3[] predicted;
+        Vector3[] predicted, aimedFrom;
         Matrix4x4[] carry = new Matrix4x4[Drivers];
 
         public bool Ready => stanceTail != null && guardRot != null && joints.Count > 0;
@@ -58,6 +76,12 @@ namespace RoeFighter
             stanceTail = new Vector3[joints.Count];
             stanceHead = new Vector3[joints.Count];
             var inv = Quaternion.Inverse(headingRot);
+            for (int k = 1; k < Drivers; k++)
+            {
+                var b = DriverBone(k);
+                stancePos[k] = b != null ? inv * (b.position - headingPos) : Vector3.zero;
+                stanceRot[k] = b != null ? inv * b.rotation : Quaternion.identity;
+            }
             for (int j = 0; j < joints.Count; j++)
                 if (joints[j].bone != null)
                 {
@@ -105,21 +129,21 @@ namespace RoeFighter
             }
         }
 
-        /// <summary>Turn the skirt bones to their skinned pose; weight 0 leaves them as they are.</summary>
-        public void Apply(Vector3 headingPos, Quaternion headingRot, float weight)
+        /// <summary>
+        /// Where the weights put each tail, and where each bone's head is aimed from, with the drivers' rest
+        /// in the stance or in the guard.
+        /// </summary>
+        public void Predict(Vector3 headingPos, Quaternion headingRot, bool onStance, Vector3[] tails, Vector3[] heads)
         {
-            if (!Ready || weight <= 0f)
-                return;
-            // each driver's move from its guard rest, as a matrix from the stance's heading frame to the world
+            // each driver's move from its rest, as a matrix from the stance's heading frame to the world
             carry[0] = Matrix4x4.TRS(headingPos, headingRot, Vector3.one);
             for (int k = 1; k < Drivers; k++)
             {
                 var b = DriverBone(k);
                 carry[k] = b == null ? carry[0]
-                    : Matrix4x4.TRS(b.position, b.rotation, Vector3.one) * Matrix4x4.TRS(guardPos[k], guardRot[k], Vector3.one).inverse;
+                    : Matrix4x4.TRS(b.position, b.rotation, Vector3.one) *
+                      (onStance ? Matrix4x4.TRS(stancePos[k], stanceRot[k], Vector3.one) : Matrix4x4.TRS(guardPos[k], guardRot[k], Vector3.one)).inverse;
             }
-            if (predicted == null || predicted.Length != joints.Count)
-                predicted = new Vector3[joints.Count];
             for (int j = 0; j < joints.Count; j++)
             {
                 var p = Vector3.zero;
@@ -127,17 +151,42 @@ namespace RoeFighter
                 for (int k = 0; k < Drivers; k++)
                     if (w[k] > 0f)
                         p += w[k] * carry[k].MultiplyPoint3x4(stanceTail[j]);
-                predicted[j] = p;
+                tails[j] = p;
             }
+            // a chain's first bone: from where the pelvis carries its stance head (the head itself sits where
+            // the pelvis puts it, which is elsewhere when the pelvis tilts unlike the stance's)
+            for (int j = 0; j < joints.Count; j++)
+                heads[j] = joints[j].parent >= 0 ? tails[joints[j].parent] : carry[1].MultiplyPoint3x4(stanceHead[j]);
+        }
+
+        /// <summary>The drivers' rest, stance against guard: degrees and cm per driver (for the probes).</summary>
+        public string RestReport()
+        {
+            if (!Ready)
+                return "not ready";
+            var parts = new List<string>();
+            for (int k = 1; k < Drivers; k++)
+                parts.Add($"{DriverNames[k]} {Quaternion.Angle(stanceRot[k], guardRot[k]):F0} deg {(stancePos[k] - guardPos[k]).magnitude * 100f:F1} cm");
+            return string.Join(", ", parts);
+        }
+
+        /// <summary>Turn the skirt bones to their skinned pose; weight 0 leaves them as they are.</summary>
+        public void Apply(Vector3 headingPos, Quaternion headingRot, float weight)
+        {
+            if (!Ready || weight <= 0f)
+                return;
+            if (predicted == null || predicted.Length != joints.Count)
+            {
+                predicted = new Vector3[joints.Count];
+                aimedFrom = new Vector3[joints.Count];
+            }
+            Predict(headingPos, headingRot, RestOnStance, predicted, aimedFrom);
             for (int j = 0; j < joints.Count; j++)
             {
                 var jt = joints[j];
                 if (jt.bone == null)
                     continue;
-                // a chain's first bone: from where the pelvis carries its stance head (the head itself sits
-                // where the pelvis puts it, which is elsewhere when the pelvis tilts unlike the stance's)
-                var head = jt.parent >= 0 ? predicted[jt.parent] : carry[1].MultiplyPoint3x4(stanceHead[j]);
-                var target = predicted[j] - head;
+                var target = predicted[j] - aimedFrom[j];
                 var current = jt.bone.rotation * jt.tailLocal;
                 if (target.sqrMagnitude < 1e-10f || current.sqrMagnitude < 1e-10f)
                     continue;

@@ -280,8 +280,10 @@ namespace RoeFighter.Fight
                 weight[guard] = target[guard] = 1f;
                 ApplyWeights();
             }
-            // the pelvis the skirts are measured against: the guard's, averaged over its cycle
-            if (hipCloth != null && index.TryGetValue("guard", out guard))
+            // the pelvis the skirts are measured against: the guard's, averaged over its cycle - or, under the
+            // skirt that follows the legs with its rest in the stance (RoeSkirtRig.RestOnStance), the stance's
+            // as Init measured it, so the panels' roots and the bones aimed from them agree
+            if (hipCloth != null && index.TryGetValue("guard", out guard) && !(skirtRig != null && RoeSkirtRig.RestOnStance))
             {
                 var samples = new List<Quaternion>();
                 float length = Mathf.Max(0.01f, clips[guard].clip.length);
@@ -478,7 +480,9 @@ namespace RoeFighter.Fight
             // keys on the motion capture's level pelvis held a08's long side panels out at 45 degrees like
             // boards.  So in the guard a panel takes its stance rotation against the hips' heading, and
             // any turn of the pelvis away from the guard's (swaying hips, a kick) turns it along; the
-            // cloth swings it from there.
+            // cloth swings it from there.  Under the skirt that follows the legs (RoeSkirtRig) the bones
+            // below are aimed anew, and with its rest in the stance the reference is the stance's pelvis:
+            // the panels' roots then sit where the skinned skirt expects them.
             if (hipCloth != null && mocap > 0f && !NoHipCloth)
             {
                 var heading = HipHeading();
@@ -730,7 +734,7 @@ namespace RoeFighter.Fight
         public float GroundOffset => groundOffset;
 
         /// <summary>The direction the hips face along the floor (from the thighs).</summary>
-        Quaternion HipHeading()
+        public Quaternion HipHeading()
         {
             var forward = Vector3.Cross(thighs[1].position - thighs[0].position, Vector3.up);
             forward.y = 0f;

@@ -19,7 +19,8 @@ MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回�
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
          'back_fist': '里拳', 'chop': '手刀'}
 NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase'}
-TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '新版：照 Magica 的做法'}
+TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '新版：照 Magica 的做法',
+          'rest_guard': '旧：裙子以动捕站架为基准', 'rest_stance': '新：裙子以游戏站姿为基准'}
 
 
 def read_takes(folder):

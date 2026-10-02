@@ -17,9 +17,12 @@ namespace RoeFighter.EditorTools
     /// filmed by a camera that follows her from the front.
     ///   Run    the cloth backends (RoeClothBackends): one take each -> _work/cloth_demo/&lt;id&gt;_&lt;backend&gt;
     ///   Packs  the motion packs: one take per pack       -> _work/pack_demo/&lt;id&gt;_&lt;pack&gt;
-    /// tools/cloth_demo_video.py puts the takes side by side.
-    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720]
+    ///   Rests  the skirt's rest (RoeSkirtRig.RestOnStance): rest_guard, rest_stance -> _work/rest_demo/&lt;id&gt;_&lt;rest&gt;
+    /// tools/cloth_demo_video.py puts the takes side by side.  -roeView backright (or backleft) films the
+    /// hips up close from behind and to that side instead of the whole fighter from the front.
+    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720] [-roeView front]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Packs [-roePacks bandai1,cmu1] [-roeChars g04,a08]
+    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Rests [-roeView backright] [-roeChars g04,a08]
     /// </summary>
     public static class RoeClothDemo
     {
@@ -50,6 +53,21 @@ namespace RoeFighter.EditorTools
             }, (game, variant, me) => $"{me.rig.ClothTitle}; {me.rig.ClothReport}");
         }
 
+        [MenuItem("ROE Fighter/Fight/Skirt rest demo")]
+        public static void Rests()
+        {
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "rest_demo"));
+            string backend = RoeCapture.Arg("-roeCloth", "magica_style");
+            Film(outDir, new[] { "rest_guard", "rest_stance" }, (game, variant) =>
+            {
+                RoeSkirtRig.RestOnStance = variant == "rest_stance";
+                FighterRig.ClothBackend = backend;
+                foreach (var rig in game.rigs)
+                    rig.useCloth = true;
+            }, (game, variant, me) => $"skirt rest in the {(RoeSkirtRig.RestOnStance ? "game's stance" : "motion-capture guard")}; {me.rig.ClothTitle}");
+            RoeSkirtRig.RestOnStance = true;
+        }
+
         [MenuItem("ROE Fighter/Fight/Motion pack demo")]
         public static void Packs()
         {
@@ -73,6 +91,7 @@ namespace RoeFighter.EditorTools
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             var ids = RoeCapture.Arg("-roeChars", "g04,a08").Split(',');
             var size = RoeCapture.Arg("-roeSize", "960x720").Split('x');
+            string view = RoeCapture.Arg("-roeView", "front");
             int width = int.Parse(size[0]), height = int.Parse(size[1]);
             ShaderUtil.allowAsyncCompilation = false;
             var log = new System.Text.StringBuilder("[ROE] demo:");
@@ -114,8 +133,12 @@ namespace RoeFighter.EditorTools
                         Directory.Delete(dir, true);
                     Directory.CreateDirectory(dir);
                     var cam = game.cam;
-                    cam.fieldOfView = 30f;
-                    var look = me.pos + Vector3.up * 0.95f;
+                    bool close = view.StartsWith("back");
+                    float sideways = view == "backleft" ? -1f : 1f;
+                    var hips = me.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
+                    Vector3 Aim() => close ? new Vector3(me.pos.x, hips.position.y - 0.12f, me.pos.z) : me.pos + Vector3.up * 0.95f;
+                    cam.fieldOfView = close ? 28f : 30f;
+                    var look = Aim();
                     int steps = Mathf.RoundToInt(Length * 60f), shot = 0;
                     for (int s = 0; s < steps; s++)
                     {
@@ -131,11 +154,14 @@ namespace RoeFighter.EditorTools
                         var inputs = new FighterInput[2];
                         inputs[who] = input;
                         game.Step(inputs);
-                        // the camera: in front of her, a little to the side, following softly
+                        // the camera: in front of her, a little to the side, following softly (or behind her
+                        // and to one side, at the hips)
                         var fwd = me.Forward;
                         var side = Vector3.Cross(Vector3.up, fwd).normalized;
-                        look = Vector3.Lerp(look, me.pos + Vector3.up * 0.95f, s == 0 ? 1f : 0.08f);
-                        cam.transform.position = look + (fwd * 0.8f - side * 0.6f).normalized * 3.6f + Vector3.up * 0.2f;
+                        look = Vector3.Lerp(look, Aim(), s == 0 ? 1f : 0.08f);
+                        cam.transform.position = close
+                            ? look + (-fwd * 0.8f + side * (0.6f * sideways)).normalized * 1.9f + Vector3.up * 0.1f
+                            : look + (fwd * 0.8f - side * 0.6f).normalized * 3.6f + Vector3.up * 0.2f;
                         cam.transform.LookAt(look, Vector3.up);
                         if (s % 2 != 0)
                             continue;
