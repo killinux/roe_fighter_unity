@@ -279,18 +279,11 @@ namespace RoeFighter.EditorTools
             }
             rig.skillSheetJson = AssetDatabase.LoadAssetAtPath<TextAsset>(RoeSkillSheet.PathOf(c.id));
 
-            // the sword of a08 (and any weapon) only shows during skills: base moves would swing it around the hips
-            // (a weapon held in a hand - g04's fan - stays)
-            bool InHand(Renderer r)
-            {
-                var t = r is SkinnedMeshRenderer s && s.rootBone != null ? s.rootBone : r.transform;
-                for (; t != null; t = t.parent)
-                    if (t.name.Contains("Hand") || t.name.Contains("Finger"))
-                        return true;
-                return false;
-            }
+            // weapons only show during the game's own clips (skills, intro, victory): in the basic moves a08's
+            // sword would swing around the hips, and g04 throws her punches and kicks without the giant fan
+            // (user 10-02: "小招的时候就不显示扇子了，大招再用扇子")
             rig.weaponRenderers = model.GetComponentsInChildren<Renderer>(true)
-                .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_")) && !InHand(r)).ToArray();
+                .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_"))).ToArray();
 
             // sounds the skills use, by clip name; the game's voice lines in Japanese
             var names = new HashSet<string>();

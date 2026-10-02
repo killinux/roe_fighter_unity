@@ -84,6 +84,8 @@ namespace RoeFighter.Fight
         float toeSole, ankleSole, groundOffset;
         readonly Quaternion[] footRest = new Quaternion[2], toeRest = new Quaternion[2];   // the stance: foot against its heading, toe bone
         readonly Vector3[] footAhead = new Vector3[2];                                     // the foot's axis that points ahead along the floor
+        Transform[] thighs, hipCloth;                                                      // hipCloth: non-human bones hung on the hips
+        Quaternion[] hipClothRest;                                                         // their stance rotation against the hips' heading
         readonly Vector3[] lastAnkle = new Vector3[2];
         readonly float[] plantWeight = new float[2];                                       // a still foot near the floor is put down on it
         bool plantValid;
@@ -143,6 +145,21 @@ namespace RoeFighter.Fight
                 }
             }
             helpers = animator.GetComponent<RoeHelperRig>();
+            // what hangs on the hips (skirts, chain anchors): how it hangs in the stance, against the hips' heading
+            thighs = new[] { animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg), animator.GetBoneTransform(HumanBodyBones.RightUpperLeg) };
+            hipCloth = null;
+            if (stance != null && hips != null && thighs.All(t => t != null))
+            {
+                var human = new HashSet<Transform>();
+                foreach (HumanBodyBones b in Enum.GetValues(typeof(HumanBodyBones)))
+                    if (b != HumanBodyBones.LastBone && animator.GetBoneTransform(b) != null)
+                        human.Add(animator.GetBoneTransform(b));
+                var driven = new HashSet<Transform>(helpers != null ? helpers.drives.Select(d => d.helper) : Enumerable.Empty<Transform>());
+                hipCloth = hips.Cast<Transform>().Where(t => !human.Contains(t) && !driven.Contains(t)).ToArray();
+                var heading = HipHeading();
+                hipClothRest = hipCloth.Select(t => Quaternion.Inverse(heading) * t.rotation).ToArray();
+                Debug.Log($"[ROE] {id} hung on the hips: {string.Join(", ", hipCloth.Select(t => t.name))}");
+            }
             // skirts, hair, chains and breasts: found and measured in the stance pose
             boneCloth = useCloth ? new RoeBoneCloth(animator, helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null) : null;
             if (boneCloth != null)
@@ -402,6 +419,17 @@ namespace RoeFighter.Fight
                 }
                 plantValid = dt > 0f;
             }
+            // Skirts hang the way the stance has them.  The stance's skirt keys are turned against its
+            // pelvis, which tilts there (the right hip 23 degrees above the left); on the motion
+            // capture's level pelvis the same keys held a08's long side panels out at 45 degrees like
+            // boards.  Under motion capture whatever hangs on the hips keeps its stance rotation against
+            // the hips' heading (it still turns with them); the cloth swings it from there.
+            if (hipCloth != null && mocap > 0f)
+            {
+                var heading = HipHeading();
+                for (int k = 0; k < hipCloth.Length; k++)
+                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * hipClothRest[k], mocap);
+            }
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
             LockFeet(dt, mocap);
@@ -624,6 +652,16 @@ namespace RoeFighter.Fight
 
         /// <summary>Vertical shift that put the motion capture on the floor in the last step (for checks).</summary>
         public float GroundOffset => groundOffset;
+
+        /// <summary>The direction the hips face along the floor (from the thighs).</summary>
+        Quaternion HipHeading()
+        {
+            var forward = Vector3.Cross(thighs[1].position - thighs[0].position, Vector3.up);
+            forward.y = 0f;
+            if (forward.sqrMagnitude < 1e-8f)
+                forward = Flat(transform.forward);
+            return Quaternion.LookRotation(forward.normalized, Vector3.up);
+        }
 
         /// <summary>Where the floor would be under the lowest sole (toe or ankle bone at its standing height).</summary>
         float LowestSole()

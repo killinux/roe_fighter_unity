@@ -718,6 +718,108 @@ namespace RoeFighter.EditorTools
             Debug.Log($"[ROE] legs {id} {clipName} ({len:F2} s):" + sb);
         }
             /// <summary>
+        /// The skirt in the real fight logic: one fighter's hips and legs filmed from the front, her left
+        /// and behind at moments of the game's own pose (the intro) and the basic moves of each motion
+        /// pack, with the bone cloth off and on.  Frames to _work/skirt/&lt;pack&gt;_&lt;cloth&gt;_&lt;moment&gt;_&lt;view&gt;.jpg;
+        /// the renderers of both fighters (materials, root bone, weapon or not) go to the log.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Skirt [-roeChar a08] [-roePacks bandai1,accad_male2]
+        /// </summary>
+        public static void Skirt()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "a08");
+            string outDir = RoeCapture.Arg("-roeOut", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "skirt"));
+            var packs = RoeCapture.Arg("-roePacks", "bandai1,accad_male2").Split(',');
+            if (System.IO.Directory.Exists(outDir))
+                System.IO.Directory.Delete(outDir, true);
+            System.IO.Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.cpu = new[] { false, false };
+            game.hud.gameObject.SetActive(false);
+            var sb = new System.Text.StringBuilder("[ROE] renderers:");
+            foreach (var rig in game.rigs)
+            {
+                var weapons = new HashSet<Renderer>(rig.weaponRenderers ?? new Renderer[0]);
+                foreach (var r in rig.animator.GetComponentsInChildren<Renderer>(true))
+                {
+                    var smr = r as SkinnedMeshRenderer;
+                    sb.Append($"\n[ROE]   {rig.id} {r.name}: {(smr != null && smr.sharedMesh != null ? smr.sharedMesh.vertexCount : 0)} verts, root {(smr != null && smr.rootBone != null ? smr.rootBone.name : "-")}, " +
+                              $"materials {string.Join(" ", r.sharedMaterials.Select(m => m != null ? m.name : "null"))}{(weapons.Contains(r) ? " [weapon]" : "")}");
+                }
+                foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
+            }
+            Debug.Log(sb.ToString());
+            var moments = new (float at, FighterInput input, string name)[]
+            {
+                (0.6f, default, "guard"),
+                (1.6f, new FighterInput { x = 1 }, "walk"),
+                (2.8f, new FighterInput { x = -1 }, "back"),
+                (4.0f, new FighterInput { y = 1 }, "side"),
+            };
+            bool warmed = false;
+            foreach (var packName in packs)
+                foreach (bool cloth in new[] { false, true })
+                {
+                    game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == packName));
+                    foreach (var rig in game.rigs)
+                        rig.useCloth = cloth;
+                    game.Setup();
+                    int who = game.f[0].rig.id == id ? 0 : 1;
+                    var me = game.f[who];
+                    void Shoot(string moment)
+                    {
+                        var fwd = me.Forward;
+                        var right = Vector3.Cross(Vector3.up, fwd).normalized;
+                        var look = me.pos + Vector3.up * 0.62f;
+                        var cam = game.cam;
+                        cam.fieldOfView = 34f;
+                        foreach (var (view, dir) in new[] { ("front", fwd), ("left", -right), ("back", -fwd) })
+                        {
+                            cam.transform.position = look + dir * 2.4f + Vector3.up * 0.15f;
+                            cam.transform.LookAt(look, Vector3.up);
+                            if (!warmed)
+                            {
+                                RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
+                                RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
+                                warmed = true;
+                            }
+                            RoeCapture.Render(cam, 420, 480, System.IO.Path.Combine(outDir, $"{packName}_{(cloth ? "on" : "off")}_{moment}_{view}.jpg"), 90);
+                        }
+                    }
+                    for (int s = 0; game.phase != FightGame.Phase.Fight; s++)
+                    {
+                        game.UpdateCamera(FightGame.Dt);
+                        game.Step(new FighterInput[2]);
+                        if (s == 45)
+                            Shoot("intro");
+                    }
+                    me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 6f;
+                    me.foe.Place();
+                    float t = 0f;
+                    foreach (var (at, inp, name) in moments)
+                    {
+                        while (t < at)
+                        {
+                            game.UpdateCamera(FightGame.Dt);
+                            var input = inp;
+                            var camRight = game.cam.transform.right;
+                            camRight.y = 0f;
+                            input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
+                            var inputs = new FighterInput[2];
+                            inputs[who] = input;
+                            game.Step(inputs);
+                            t += FightGame.Dt;
+                        }
+                        Shoot(name);
+                    }
+                    Debug.Log($"[ROE] skirt {id} {packName} cloth {(cloth ? "on" : "off")}: {me.rig.ClothReport}");
+                }
+        }
+
+        /// <summary>
         /// The feet up close, in the real fight logic: one fighter's feet filmed from her side at floor
         /// level and measured - per foot the pitch of the foot (ankle to toes against the floor), the
         /// ankle and toe bone heights, and from the skinned shoe the lowest point under the heel half and
