@@ -1,8 +1,13 @@
 // Hair cards of Rise of Eros characters.
-// Stands in for the game's "Pinkcore/Heros/KajiyaKayHair" (and SimpleLit/Hair): grey strand
-// texture tinted by _BaseColor, strand occlusion from the AM map, two shifted Kajiya-Kay
-// highlights.  Drawn as an anti-aliased cut-out (alpha to coverage) so it writes depth and
-// works with shadows, SSAO and depth of field.
+// Stands in for the game's "Pinkcore/Heros/KajiyaKayHair" (and SimpleLit/Hair); the maths
+// follows the game's compiled shader (tools/shader_asm.py).  For each light:
+//   diffuse   albedo x 0.954 x lerp(N.L, 1 - |strand.L|, 0.33)
+//   specular  two Kajiya-Kay lobes (strand shifted along the normal by shift + noise), times
+//             0.5 x (1 - 0.954 x albedo) - dark hair shines more - and N.L
+// Ambient is the same formula with the view direction as the light, times the light probes and
+// the AM map's occlusion (occlusion touches the ambient only).  The game draws hair in a depth
+// pre-pass, an opaque pass and a blended pass for the fringe; here it is one anti-aliased
+// cut-out (alpha to coverage), so it writes depth and works with shadows and depth of field.
 Shader "ROE/Hair"
 {
     Properties
@@ -39,10 +44,6 @@ Shader "ROE/Hair"
         _SecondaryShrink ("Secondary Shrink (tightness)", Range(1, 30)) = 10
         _SecondarySpecularColor ("Secondary Specular Color", Color) = (0.33,0.33,0.33,1)
 
-        [Header(Ours)] [Space(5)]
-        _SpecularScale ("Highlight Strength", Range(0, 2)) = 0.1
-        _DiffuseWrap ("Diffuse Wrap", Range(0, 1)) = 0.5
-
         [Header(Normal)] [Space(5)]
         [Toggle(_NORMALMAP)] _EnableNormalMap ("Normal Map", Float) = 0
         _BumpScale ("Scale", Float) = 1
@@ -67,9 +68,6 @@ Shader "ROE/Hair"
 
         CBUFFER_START(UnityPerMaterial)
             float4 _BaseMap_ST;
-            float4 _OcclusionMaskMap_ST;
-            float4 _ShiftNoiseMap_ST;
-            float4 _BumpMap_ST;
             half4 _BaseColor;
             half4 _PrimarySpecularColor;
             half4 _SecondarySpecularColor;
@@ -85,14 +83,18 @@ Shader "ROE/Hair"
             half _SecondaryShift;
             half _SecondaryNoiseStrength;
             half _SecondaryShrink;
-            half _SpecularScale;
-            half _DiffuseWrap;
             half _BumpScale;
         CBUFFER_END
 
+        // every hair map uses the albedo's tiling, like the game
+        float2 RoeBaseUV(float2 uv)
+        {
+            return uv * _BaseMap_ST.xy + _BaseMap_ST.zw;
+        }
+
         half RoeHairAlpha(float2 uv)
         {
-            return SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv).a * _BaseColor.a;
+            return SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeBaseUV(uv)).a * _BaseColor.a;
         }
 
         void RoeClip(float2 uv, float4 positionCS)
@@ -109,7 +111,7 @@ Shader "ROE/Hair"
         #endif
         #if defined(HAIR_AM)
             // only the dense inner cards cast shadows, loose strands do not
-            clip(SAMPLE_TEXTURE2D(_OcclusionMaskMap, sampler_OcclusionMaskMap, uv).g - _CastShadowMaskCutoff);
+            clip(SAMPLE_TEXTURE2D(_OcclusionMaskMap, sampler_OcclusionMaskMap, RoeBaseUV(uv)).g - _CastShadowMaskCutoff);
         #endif
         }
 
@@ -151,40 +153,40 @@ Shader "ROE/Hair"
 
             struct RoeSurface
             {
-                half3 albedo;
+                half3 diffuse;           // albedo x 0.954
+                half3 specularTint;      // 0.5 x (1 - albedo x 0.954)
                 half3 normalWS;
-                half3 strandPrimary;     // strand direction shifted towards the normal
+                half3 strand;            // hair direction (the card's bitangent)
+                half3 strandPrimary;     // strand direction shifted along the normal
                 half3 strandSecondary;
-                half occlusion;
             };
 
-            half RoeStrandSpecular(half3 T, half3 V, half3 L, half exponent)
+            half RoeStrandSpecular(half3 T, half3 H, half exponent)
+            {
+                half dotTH = dot(T, H);
+                half sinTH = max(sqrt(max(0.0, 1.0 - dotTH * dotTH)), 0.0001);
+                half dirAtten = RoeSmooth01(saturate((dotTH + 1.0) * 0.5));
+                return dirAtten * pow(sinTH, exponent);
+            }
+
+            // The game's hair BRDF for light from L (without the light's colour).
+            half3 RoeHairBRDF(RoeSurface s, half3 L, half3 V)
             {
                 half3 H = SafeNormalize(L + V);
-                half dotTH = dot(T, H);
-                half sinTH = sqrt(max(0.0, 1.0 - dotTH * dotTH));
-                half dirAtten = smoothstep(-1.0, 0.0, dotTH);
-                return dirAtten * pow(sinTH, exponent);
+                half NdotL = saturate(dot(s.normalWS, L));
+                half diffuse = lerp(NdotL, 1.0 - abs(dot(s.strand, L)), 0.33);
+                half3 spec = _PrimarySpecularColor.rgb * RoeStrandSpecular(s.strandPrimary, H, _PrimaryShrink * _PrimaryShrink)
+                           + _SecondarySpecularColor.rgb * RoeStrandSpecular(s.strandSecondary, H, _SecondaryShrink * _SecondaryShrink);
+                return s.diffuse * diffuse + spec * s.specularTint * NdotL;
             }
 
             half3 RoeShadeLight(RoeSurface s, InputData inputData, Light light)
             {
-                half3 L = light.direction;
-                half3 V = inputData.viewDirectionWS;
-                half NdotL = dot(s.normalWS, L);
-                half wrapped = saturate((NdotL + _DiffuseWrap) / (1.0 + _DiffuseWrap));
                 half3 radiance = light.color * (light.distanceAttenuation * light.shadowAttenuation);
-
-                half3 color = s.albedo * wrapped;
-
-                half3 spec = _PrimarySpecularColor.rgb * RoeStrandSpecular(s.strandPrimary, V, L, _PrimaryShrink * _PrimaryShrink);
-                spec += _SecondarySpecularColor.rgb * s.albedo * RoeStrandSpecular(s.strandSecondary, V, L, _SecondaryShrink * _SecondaryShrink);
-                color += spec * (_SpecularScale * saturate(NdotL * 2.0 + 0.5));
-
-                return color * radiance * s.occlusion;
+                return RoeHairBRDF(s, light.direction, inputData.viewDirectionWS) * radiance;
             }
 
-            #define ROE_SURFACE_DIFFUSE(s) ((s).albedo)
+            #define ROE_SURFACE_DIFFUSE(s) ((s).diffuse)
             #include "RoeLightLoop.hlsl"
 
             half4 Frag(RoeVaryings input, FRONT_FACE_TYPE frontFace : FRONT_FACE_SEMANTIC) : SV_Target
@@ -192,7 +194,7 @@ Shader "ROE/Hair"
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
-                float2 uv = input.uv;
+                float2 uv = RoeBaseUV(input.uv);
                 half4 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv);
                 half alpha = tex.a * _BaseColor.a;
             #if defined(_ALPHATEST_ON)
@@ -203,33 +205,38 @@ Shader "ROE/Hair"
 
                 half3 normalTS = half3(0, 0, 1);
             #if defined(_NORMALMAP)
-                normalTS = UnpackNormalScale(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv * _BumpMap_ST.xy + _BumpMap_ST.zw), _BumpScale);
+                // scales x and y after decoding and keeps z, like the game's hair shader
+                normalTS = UnpackNormalScale(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
             #endif
 
                 half3x3 tangentToWorld = RoeTangentToWorld(input, IS_FRONT_VFACE(frontFace, true, false));
                 InputData inputData;
                 RoeInitInputData(input, tangentToWorld, normalTS, inputData);
 
+                half3 albedo = tex.rgb * _BaseColor.rgb;
                 RoeSurface s;
-                s.albedo = tex.rgb * _BaseColor.rgb;
+                s.diffuse = albedo * 0.954;
+                s.specularTint = 0.5 * (1.0 - s.diffuse);
                 s.normalWS = inputData.normalWS;
-                s.occlusion = 1.0;
+                half occlusion = 1.0;
             #if defined(HAIR_AM)
                 half am = SAMPLE_TEXTURE2D(_OcclusionMaskMap, sampler_OcclusionMaskMap, uv).r;
-                s.occlusion = LerpWhiteTo(am, _OcclusionStrength);
+                occlusion = LerpWhiteTo(am, _OcclusionStrength);
             #endif
 
                 half noise = 0.0;
             #if defined(SHIFTNOISEMAP)
-                noise = SAMPLE_TEXTURE2D(_ShiftNoiseMap, sampler_ShiftNoiseMap, uv * _ShiftNoiseMap_ST.xy + _ShiftNoiseMap_ST.zw).r - 0.5;
+                noise = SAMPLE_TEXTURE2D(_ShiftNoiseMap, sampler_ShiftNoiseMap, uv).r - 0.5;
             #endif
                 // strands run along V of the card's UV = the bitangent
-                half3 strand = normalize(tangentToWorld[1]);
-                s.strandPrimary = normalize(strand + s.normalWS * (_PrimaryShift + noise * _PrimaryNoiseStrength));
-                s.strandSecondary = normalize(strand + s.normalWS * (_SecondaryShift + noise * _SecondaryNoiseStrength));
+                s.strand = normalize(tangentToWorld[1]);
+                s.strandPrimary = normalize(s.strand + s.normalWS * (_PrimaryShift + noise * _PrimaryNoiseStrength));
+                s.strandSecondary = normalize(s.strand + s.normalWS * (_SecondaryShift + noise * _SecondaryNoiseStrength));
 
-                AmbientOcclusionFactor aoFactor = CreateAmbientOcclusionFactor(inputData.normalizedScreenSpaceUV, s.occlusion);
-                half3 color = inputData.bakedGI * s.albedo * aoFactor.indirectAmbientOcclusion;
+                // ambient: the hair BRDF lit from the eye, times the light probes and the occlusion
+                AmbientOcclusionFactor aoFactor = CreateAmbientOcclusionFactor(inputData.normalizedScreenSpaceUV, occlusion);
+                half3 V = inputData.viewDirectionWS;
+                half3 color = inputData.bakedGI * RoeHairBRDF(s, V, V) * aoFactor.indirectAmbientOcclusion;
                 color += RoeDirectLighting(s, inputData, aoFactor);
 
                 color = MixFog(color, inputData.fogCoord);

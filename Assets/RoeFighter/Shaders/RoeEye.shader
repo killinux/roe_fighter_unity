@@ -1,9 +1,17 @@
 // Eyeballs of Rise of Eros characters.
-// Stands in for the game's "Pinkcore/Heros/Eye".  The eye is composed in the eyeball's UV
-// disc (centre = looking direction): sclera texture, iris texture inside the iris radius,
-// the pupil enlarged through the mask's G channel, a limbal ring, a little parallax, and one smooth
-// highlight for cornea and sclera.  The exact formulas of the game are unknown; the layout
-// constants below were measured from the game's own textures.
+// Stands in for the game's "Pinkcore/Heros/Eye"; the maths follows the game's compiled shader
+// (tools/shader_asm.py).  The eye is composed in the eyeball's UV disc (centre = looking
+// direction):
+//   iris      where the iris mask's R says so; its albedo is read at a smaller scale than the
+//             mask (lerp(_PupilMinSizeInv, _PupilMaxSizeInv, _PupilSizeScale)), which is what
+//             enlarges the textures' tiny pupils, and shifted by the cornea's parallax (height
+//             in the mask's G channel)
+//   limbus    a ring around the pivot radius, its colour replaces the albedo
+//   sclera    its own texture and bump map; the bump fades out over the iris
+//   lighting  diffuse with the eyeball's own normal; a GGX highlight that the "Direct
+//             Highlight" settings reshape into a crisp disc on the cornea, capped at
+//             _SpecularTermMax; reflections at a dielectric's 4% rising at the silhouette;
+//             the occlusion map marks the shaded rim in WHITE
 Shader "ROE/Eye"
 {
     Properties
@@ -13,7 +21,7 @@ Shader "ROE/Eye"
         _ScleraColor ("Sclera Color", Color) = (0.95,0.95,0.95,1)
         _ScleraSizeInv ("Sclera Size (INV)", Range(0.5, 2)) = 1
         _IrisAlbedoTex ("Iris Albedo Map", 2D) = "white" {}
-        _IrisMaskTex ("Iris Mask Map (R iris, G pupil)", 2D) = "white" {}
+        _IrisMaskTex ("Iris Mask Map (R iris, G cornea height)", 2D) = "white" {}
         _IrisColor ("Iris Color", Color) = (1,1,1,1)
         _PupilMaxSizeInv ("Pupil Max Size (INV)", Range(0.35, 0.5)) = 0.4
         _PupilMinSizeInv ("Pupil Min Size (INV)", Range(0.75, 2)) = 1
@@ -39,9 +47,9 @@ Shader "ROE/Eye"
         _IrisClearCoatMetallic ("Iris ClearCoat Metallic", Range(0, 1)) = 1
         _ScleraMetallic ("Sclera Metallic", Range(0, 1)) = 0.1
         _IrisClearCoatSmoothness ("Iris ClearCoat Smoothness", Range(0, 1)) = 0.6
-        _IrisClearCoatMask ("Iris ClearCoat Mask", Range(0, 1)) = 0.3
+        _IrisClearCoatMask ("Iris ClearCoat Mask (unused by the game)", Range(0, 1)) = 0.3
         _ScleraSmoothness ("Sclera Smoothness", Range(0, 1)) = 0.1
-        _EyeOcclusionMap ("Eye Occlusion Map", 2D) = "white" {}
+        _EyeOcclusionMap ("Eye Occlusion Map (white = shaded)", 2D) = "white" {}
         _IrisOcclusionAmt ("Iris Occlusion Strength", Range(0, 1)) = 0
         _ScleraOcclusionAmt ("Sclera Occlusion Strength", Range(0, 1)) = 0
         _SpecularTermMax ("Specular Term Max", Range(0, 100)) = 10
@@ -50,12 +58,6 @@ Shader "ROE/Eye"
         _DirectHighlightSizeMultiplier ("Direct Highlight Size", Range(-1, 1)) = 0
         _DirectHighlightSharpen ("Direct Highlight Sharpness", Range(0, 1)) = 0
         _DirectHighlightThreshold ("Direct Highlight Specular Clipping Threshold", Range(0.01, 0.99)) = 0.9
-
-        [Header(Ours)] [Space(5)]
-        _PupilBoost ("Pupil Boost", Range(0.5, 3)) = 1.5
-        _LimbusStrength ("Limbal Ring Strength", Range(0, 1)) = 0.75
-        _DiffuseWrap ("Diffuse Wrap", Range(0, 1)) = 0.4
-        _EnvReflection ("Reflection Strength", Range(0, 2)) = 1
 
         [Header(Other)] [Space(5)]
         [ToggleOff(_RECEIVE_SHADOWS_OFF)] _ReceiveShadows ("Receive Shadows", Float) = 1
@@ -107,21 +109,12 @@ Shader "ROE/Eye"
             half _DirectHighlightSizeMultiplier;
             half _DirectHighlightSharpen;
             half _DirectHighlightThreshold;
-            half _PupilBoost;
-            half _LimbusStrength;
-            half _DiffuseWrap;
-            half _EnvReflection;
         CBUFFER_END
 
         void RoeClip(float2 uv, float4 positionCS) { }
         void RoeShadowClip(float2 uv) { }
         #define ROE_SHADOW_DEPTH_BIAS 1.0
         #define ROE_SHADOW_NORMAL_BIAS 1.0
-
-        // Radius of the iris disc in the game's shared iris mask texture, and of the iris in
-        // the iris albedo textures (fractions of the texture width; measured).
-        #define ROE_MASK_IRIS_RADIUS 0.137
-        #define ROE_TEX_IRIS_RADIUS 0.25
         ENDHLSL
 
         Pass
@@ -157,24 +150,44 @@ Shader "ROE/Eye"
 
             struct RoeSurface
             {
-                BRDFData brdf;
-                half3 normalWS;          // bumpy on the sclera, smooth on the cornea
-                half occlusion;
+                half3 diffuse;           // albedo x (1 - reflectivity)
+                half3 specular;          // reflectance at normal incidence
+                half3 normalWS;          // bumpy on the sclera, flat on the cornea
+                half3 vertexNormalWS;    // the eyeball's own normal: diffuse N.L
+                half irisMask;
+                half roughness;          // perceptual roughness squared, at least 2^-7
             };
 
             half3 RoeShadeLight(RoeSurface s, InputData inputData, Light light)
             {
                 half3 L = light.direction;
-                half NdotL = dot(s.normalWS, L);
-                half wrapped = saturate((NdotL + _DiffuseWrap) / (1.0 + _DiffuseWrap));
-                half3 radiance = light.color * (light.distanceAttenuation * light.shadowAttenuation);
+                half3 H = SafeNormalize(L + inputData.viewDirectionWS);
+                half NoH = saturate(dot(s.normalWS, H));
+                half LoH = saturate(dot(L, H));
 
-                half3 color = s.brdf.diffuse * wrapped;
-                half spec = min(DirectBRDFSpecular(s.brdf, s.normalWS, L, inputData.viewDirectionWS), _SpecularTermMax);
-                color += s.brdf.specular * spec * saturate(NdotL);
-                return color * radiance * s.occlusion;
+                // On the cornea the highlight is reshaped into a crisp disc: N.H and L.H are
+                // widened by the size setting, cut below the threshold and ramped back up.
+                half size = _DirectHighlightSizeMultiplier + 1.0;
+                half low = 0.5 - 0.5 * size;
+                half cut = _DirectHighlightSharpen * (_DirectHighlightThreshold - 0.00001);
+                half range = _DirectHighlightSharpen * (_DirectHighlightThreshold - 1.0) + 1.0 - cut;
+                half NoHs = saturate((saturate(NoH * size + low) - cut) / range);
+                half LoHs = saturate((saturate(LoH * size + low) - cut) / range);
+                NoH = lerp(NoH, RoeSmooth01(NoHs), s.irisMask);
+                LoH = lerp(LoH, RoeSmooth01(LoHs), s.irisMask);
+
+                // URP's GGX term on the reshaped angles, capped
+                half r2 = s.roughness * s.roughness;
+                half d = NoH * NoH * (r2 - 1.0) + 1.00001;
+                half specTerm = r2 / (d * d * max(0.1, LoH * LoH) * (s.roughness * 4.0 + 2.0));
+                specTerm = min(specTerm, _SpecularTermMax);
+
+                half3 radiance = light.color * (light.distanceAttenuation * light.shadowAttenuation);
+                return (s.diffuse * saturate(dot(s.vertexNormalWS, L))
+                        + s.specular * (specTerm * saturate(dot(s.normalWS, L)))) * radiance;
             }
 
+            #define ROE_SURFACE_DIFFUSE(s) ((s).diffuse)
             #include "RoeLightLoop.hlsl"
 
             half4 Frag(RoeVaryings input) : SV_Target
@@ -184,7 +197,7 @@ Shader "ROE/Eye"
 
                 // Tangent frame from screen-space derivatives of position and UV: the eyeballs'
                 // vertex tangents are not reliable, and a broken frame turns the whole eye black.
-                half3 viewDirWS = GetWorldSpaceNormalizeViewDir(input.positionWS);
+                half3 V = GetWorldSpaceNormalizeViewDir(input.positionWS);
                 float3 N = normalize(input.normalWS);
                 float3 dp1 = ddx(input.positionWS);
                 float3 dp2 = ddy(input.positionWS);
@@ -196,61 +209,76 @@ Shader "ROE/Eye"
                 float3 B = dp2perp * duv1.y + dp1perp * duv2.y;
                 float invmax = rsqrt(max(max(dot(T, T), dot(B, B)), 1e-20));
                 half3x3 tangentToWorld = half3x3(T * invmax, B * invmax, N);
-                half3 viewDirTS = half3(dot(viewDirWS, tangentToWorld[0]), dot(viewDirWS, tangentToWorld[1]), dot(viewDirWS, N));
 
-                float2 c = input.uv - 0.5;
-                float irisRadius = ROE_MASK_IRIS_RADIUS / _IrisLimbusScaleInv;      // in mesh UV
-                float r = length(c) / irisRadius;                                   // 1 = iris edge
-                half irisW = 1.0 - smoothstep(0.95, 1.04, r);
+                float2 p = input.uv - 0.5;
 
-                // sclera
-                float2 scleraUV = c * _ScleraSizeInv + 0.5;
-                half3 sclera = SAMPLE_TEXTURE2D(_ScleraAlbedoTex, sampler_ScleraAlbedoTex, scleraUV).rgb * _ScleraColor.rgb;
+                // limbal ring: the squared distance from the centre, stretched by the fade ratio
+                // around the pivot radius, ramped in from the iris side and out to the sclera side
+                float pivot = _LimbusPivot * 0.5;
+                float pivot2 = pivot * pivot;
+                float width = _LimbusPivotWidth * 0.01;
+                float d2 = (dot(p, p) - pivot2) * _LimbusFadeRatio + pivot2;
+                float inStart = (pivot2 - 0.0001 - width) * (1.0 - _LimbusSizeIris);
+                float inEnd = pivot2 - width;
+                float outEnd = lerp(pivot2 + width + 0.0001, 0.25, _LimbusSizeSclera);
+                half ringIn = RoeSmooth01(saturate((d2 - inStart) / (inEnd - inStart)));
+                half ringOut = RoeSmooth01(saturate((d2 - outEnd) / (pivot2 + width - outEnd)));
+                half ring = ringIn + ringOut - 1.0;
 
-                // iris, seen through the cornea: shift the lookup against the view direction
-                float2 parallax = viewDirTS.xy / max(viewDirTS.z, 0.35) * (_IrisParallax * irisRadius * 2.0);
-                float2 ci = c - parallax * irisW;
+                // iris, seen through the cornea
+                half3 viewTS = normalize(half3(dot(tangentToWorld[0], V), dot(tangentToWorld[1], V), dot(N, V)));
+                float2 offset = viewTS.xy / (viewTS.z + 0.42);
+                half2 mask = SAMPLE_TEXTURE2D(_IrisMaskTex, sampler_IrisMaskTex, p * _IrisLimbusScaleInv + 0.5).rg;
+                half irisW = mask.r;
+                float height = mask.g * _IrisParallax;
+                float2 pp = p - height * offset;
+                float pupilScale = lerp(_PupilMinSizeInv, _PupilMaxSizeInv, _PupilSizeScale);
+                float2 irisUV = pp * (pupilScale * _IrisLimbusScaleInv) + 0.5 - height * offset;
+                half3 iris = SAMPLE_TEXTURE2D(_IrisAlbedoTex, sampler_IrisAlbedoTex, irisUV).rgb;
+                iris = lerp(iris, iris * _IrisColor.rgb, _IrisColor.a);
 
-                // The iris textures carry only a tiny pupil (12% of the iris).  The centre of the
-                // texture is magnified, fading to no magnification at the iris rim, so the pupil
-                // gets its size without moving the rim.  The material's pupil controls give the
-                // magnification; _PupilBoost is ours (the game's exact falloff is unknown).
-                half pupilInv = lerp(_PupilMinSizeInv, _PupilMaxSizeInv, _PupilSizeScale) / max(_PupilBoost, 0.01);
-                float ri = saturate(length(ci) / irisRadius);
-                float2 irisUV = ci * ((ROE_TEX_IRIS_RADIUS / irisRadius) * lerp(pupilInv, 1.0, ri)) + 0.5;
-                half3 iris = SAMPLE_TEXTURE2D(_IrisAlbedoTex, sampler_IrisAlbedoTex, irisUV).rgb * _IrisColor.rgb;
-
-                // limbal ring: dark band straddling the iris edge
-                half ringIn = smoothstep(1.0 - _LimbusSizeIris * 0.6, 1.0, r);
-                half ringOut = 1.0 - smoothstep(1.0, 1.0 + _LimbusSizeSclera * 0.6, r);
-                half ring = pow(saturate(ringIn * ringOut), 1.0 / max(_LimbusFadeRatio, 1.0)) * _LimbusStrength;
+                float2 scleraUV = p * _ScleraSizeInv + 0.5;
+                half3 sclera = SAMPLE_TEXTURE2D(_ScleraAlbedoTex, sampler_ScleraAlbedoTex, scleraUV).rgb;
+                sclera = lerp(sclera, sclera * _ScleraColor.rgb, _ScleraColor.a);
 
                 half3 albedo = lerp(sclera, iris, irisW);
-                albedo = lerp(albedo, albedo * _LimbusColor.rgb, ring);
+                albedo = lerp(albedo, _LimbusColor.rgb, ring);
+                half metallic = lerp(_ScleraMetallic, _IrisClearCoatMetallic, irisW);
+                half smoothness = lerp(_ScleraSmoothness, _IrisClearCoatSmoothness, irisW);
 
-                half ao = SAMPLE_TEXTURE2D(_EyeOcclusionMap, sampler_EyeOcclusionMap, input.uv).r;
-                half occlusion = LerpWhiteTo(ao, lerp(_ScleraOcclusionAmt, _IrisOcclusionAmt, irisW));
-
-                half3 bumpTS = UnpackNormalScale(SAMPLE_TEXTURE2D(_EyeBumpMap, sampler_EyeBumpMap, scleraUV), _BumpStrength);
-                half3 normalTS = normalize(lerp(bumpTS, half3(0, 0, 1), irisW));
+                // the sclera's bump, flat over the iris
+                half3 bumpTS = RoeUnpackNormalLerp(SAMPLE_TEXTURE2D(_EyeBumpMap, sampler_EyeBumpMap, scleraUV), _BumpStrength);
+                half3 normalTS = lerp(bumpTS, half3(0, 0, 1), irisW);
 
                 InputData inputData;
                 RoeInitInputData(input, tangentToWorld, normalTS, inputData);
-
-                half smoothness = lerp(_ScleraSmoothness, _IrisClearCoatSmoothness, irisW * _IrisClearCoatMask);
-                half metallic = lerp(_ScleraMetallic, _IrisClearCoatMetallic, irisW * _IrisClearCoatMask) * 0.2;
-                half alpha = 1.0;
+                inputData.bakedGI = SampleSH(N);    // the game reads the probes per vertex
 
                 RoeSurface s;
-                InitializeBRDFData(albedo, metallic, half3(0, 0, 0), smoothness, alpha, s.brdf);
+                s.diffuse = albedo * (kDielectricSpec.a - kDielectricSpec.a * metallic);
+                s.specular = lerp(kDielectricSpec.rgb, albedo, metallic);
                 s.normalWS = inputData.normalWS;
-                s.occlusion = occlusion;
+                s.vertexNormalWS = N;
+                s.irisMask = irisW;
+                half perceptualRoughness = 1.0 - smoothness;
+                s.roughness = max(perceptualRoughness * perceptualRoughness, HALF_MIN_SQRT);
+
+                // the occlusion map is white where the eyelids shade the eyeball
+                half ao = SAMPLE_TEXTURE2D(_EyeOcclusionMap, sampler_EyeOcclusionMap, input.uv).r;
+                half occlusion = 1.0 - ao * lerp(_ScleraOcclusionAmt, _IrisOcclusionAmt, irisW);
+
+                // reflections: a dielectric's 4% rising to the grazing term at the silhouette,
+                // whatever the metallic value
+                half NoV = saturate(dot(s.normalWS, V));
+                half grazing = saturate(smoothness + 0.04);
+                half envBRDF = lerp(0.04, grazing, Pow4(1.0 - NoV)) / (s.roughness * s.roughness + 1.0);
+                half3 env = GlossyEnvironmentReflection(reflect(-V, s.normalWS), inputData.positionWS,
+                                                        perceptualRoughness, half(1.0), inputData.normalizedScreenSpaceUV);
+                half3 color = (env * envBRDF + inputData.bakedGI * s.diffuse) * occlusion;
 
                 AmbientOcclusionFactor aoFactor;
                 aoFactor.directAmbientOcclusion = 1.0;
                 aoFactor.indirectAmbientOcclusion = occlusion;
-
-                half3 color = RoeEnvironment(s.brdf, inputData, inputData.bakedGI, occlusion, _EnvReflection, true);
                 color += RoeDirectLighting(s, inputData, aoFactor);
 
             #if defined(_EMISSION)

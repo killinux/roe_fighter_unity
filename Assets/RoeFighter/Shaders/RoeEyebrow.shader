@@ -1,5 +1,9 @@
 // Eyebrow and eyelash cards of Rise of Eros characters (alpha blended over the face).
-// Stands in for the game's "Pinkcore/Heros/Eyebrow".
+// Stands in for the game's "Pinkcore/Heros/Eyebrow"; the maths follows the game's compiled
+// shader (tools/shader_asm.py): plain Lambert with the full shadow, light probes and the
+// per-vertex point lights, on albedo x 0.96 (a dielectric's diffuse share), no highlight.
+// The game's materials premultiply AND blend with SrcAlpha: colour x alpha^2 over the face x
+// (1 - alpha), which keeps soft edges dark - brows and lashes read dense.
 Shader "ROE/Eyebrow"
 {
     Properties
@@ -45,7 +49,11 @@ Shader "ROE/Eyebrow"
             #pragma shader_feature_local_fragment _ALPHAPREMULTIPLY_ON
 
             #pragma multi_compile _ _MAIN_LIGHT_SHADOWS _MAIN_LIGHT_SHADOWS_CASCADE _MAIN_LIGHT_SHADOWS_SCREEN
+            #pragma multi_compile _ _ADDITIONAL_LIGHTS_VERTEX _ADDITIONAL_LIGHTS
             #pragma multi_compile_fragment _ _SHADOWS_SOFT _SHADOWS_SOFT_LOW _SHADOWS_SOFT_MEDIUM _SHADOWS_SOFT_HIGH
+            #pragma multi_compile _ _LIGHT_LAYERS
+            #pragma multi_compile _ _CLUSTER_LIGHT_LOOP
+            #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/RenderingLayers.hlsl"
             #include_with_pragmas "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Fog.hlsl"
             #pragma multi_compile_instancing
 
@@ -62,32 +70,48 @@ Shader "ROE/Eyebrow"
                 half _OcclusionStrength;
             CBUFFER_END
 
-            half4 Frag(RoeVaryings input) : SV_Target
+            struct RoeSurface
+            {
+                half3 diffuse;      // albedo x 0.96
+                half3 normalWS;
+            };
+
+            half3 RoeShadeLight(RoeSurface s, InputData inputData, Light light)
+            {
+                half NdotL = saturate(dot(s.normalWS, light.direction));
+                return s.diffuse * light.color * (light.distanceAttenuation * light.shadowAttenuation * NdotL);
+            }
+
+            #define ROE_SURFACE_DIFFUSE(s) ((s).diffuse)
+            #include "RoeLightLoop.hlsl"
+
+            half4 Frag(RoeVaryings input, FRONT_FACE_TYPE frontFace : FRONT_FACE_SEMANTIC) : SV_Target
             {
                 UNITY_SETUP_INSTANCE_ID(input);
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
-                half4 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv) * _BaseColor;
+                half4 tex = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, input.uv);
                 half occlusion = 1.0;
             #if defined(_OCCLUSIONMAP)
                 occlusion = LerpWhiteTo(SAMPLE_TEXTURE2D(_OcclusionMap, sampler_OcclusionMap, input.uv).g, _OcclusionStrength);
             #endif
 
-                half3 normalWS = normalize(input.normalWS);
-                float4 shadowCoord = TransformWorldToShadowCoord(input.positionWS);
-                Light mainLight = GetMainLight(shadowCoord);
-                half wrapped = saturate(dot(normalWS, mainLight.direction) * 0.5 + 0.5);
-                half3 light = SampleSH(normalWS)
-                            + mainLight.color * (mainLight.distanceAttenuation * lerp(0.5, 1.0, mainLight.shadowAttenuation) * wrapped);
+                // the card's own normal, turned round on its back face
+                half3x3 tangentToWorld = RoeTangentToWorld(input, IS_FRONT_VFACE(frontFace, true, false));
+                InputData inputData;
+                RoeInitInputData(input, tangentToWorld, half3(0, 0, 1), inputData);
 
-                half3 color = tex.rgb * light * occlusion;
+                RoeSurface s;
+                s.diffuse = tex.rgb * _BaseColor.rgb * 0.96;
+                s.normalWS = inputData.normalWS;
+
+                AmbientOcclusionFactor aoFactor = CreateAmbientOcclusionFactor(inputData.normalizedScreenSpaceUV, occlusion);
+                half3 color = inputData.bakedGI * s.diffuse * aoFactor.indirectAmbientOcclusion;
+                color += RoeDirectLighting(s, inputData, aoFactor);
             #if defined(_ALPHAPREMULTIPLY_ON)
-                // The game's material combines this with a SrcAlpha blend: colour x alpha^2 over
-                // skin x (1 - alpha), which darkens soft edges - brows and lashes read denser.
                 color *= tex.a;
             #endif
-                half fog = InitializeInputDataFog(float4(input.positionWS, 1.0), input.fogFactor);
-                color = MixFog(color, fog);
+                color = MixFog(color, inputData.fogCoord);
                 return half4(color, tex.a);
             }
             ENDHLSL

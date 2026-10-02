@@ -1,6 +1,10 @@
 // Outfit, weapon and accessory surfaces of Rise of Eros characters.
 // Stands in for the game's "Pinkcore/Heros/ErosLit/Character" (and SimpleLit/Character):
-// same property names, so the game's materials bind without changes.
+// same property names, so the game's materials bind without changes.  The maths follows the
+// game's compiled shader (tools/shader_asm.py): URP's standard PBR with an RNM detail normal,
+// the grazing reflection scaled by _FresnelStrength and the final colour pulled towards
+// _RimColor at grazing angles.  UVs: _BaseMap_ST for the albedo, _UVScaleOffset for the normal,
+// MGA and emission maps, _DetailNormalMap_ST on the mesh UV for the detail normal.
 Shader "ROE/Character"
 {
     Properties
@@ -87,15 +91,22 @@ Shader "ROE/Character"
             half _IGNOpacity;
         CBUFFER_END
 
+        // UV of the normal, MGA and emission maps
         float2 RoeUV(float2 uv)
         {
             return uv * _UVScaleOffset.xy + _UVScaleOffset.zw;
         }
 
+        // UV of the albedo map
+        float2 RoeBaseUV(float2 uv)
+        {
+            return uv * _BaseMap_ST.xy + _BaseMap_ST.zw;
+        }
+
         void RoeClip(float2 uv, float4 positionCS)
         {
         #if defined(_ALPHATEST_ON)
-            clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeUV(uv)).a * _BaseColor.a - _Cutoff);
+            clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeBaseUV(uv)).a * _BaseColor.a - _Cutoff);
         #endif
             RoeDitherClip(positionCS, _IGNOpacity);
         }
@@ -103,7 +114,7 @@ Shader "ROE/Character"
         void RoeShadowClip(float2 uv)
         {
         #if defined(_ALPHATEST_ON)
-            clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeUV(uv)).a * _BaseColor.a - _Cutoff);
+            clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeBaseUV(uv)).a * _BaseColor.a - _Cutoff);
         #endif
             clip(_IGNOpacity - 0.5);
         }
@@ -176,7 +187,7 @@ Shader "ROE/Character"
                 UNITY_SETUP_STEREO_EYE_INDEX_POST_VERTEX(input);
 
                 float2 uv = RoeUV(input.uv);
-                half4 albedoAlpha = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, uv) * _BaseColor;
+                half4 albedoAlpha = SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeBaseUV(input.uv)) * _BaseColor;
                 half alpha = albedoAlpha.a;
             #if defined(_ALPHATEST_ON)
                 clip(alpha - _Cutoff);
@@ -195,9 +206,9 @@ Shader "ROE/Character"
 
                 half3 normalTS = half3(0, 0, 1);
             #if defined(_NORMALMAP)
-                normalTS = UnpackNormalScale(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
-                float2 detailUV = uv * _DetailNormalMap_ST.xy + _DetailNormalMap_ST.zw;
-                half3 detailTS = UnpackNormalScale(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, detailUV), _DetailBumpScale);
+                normalTS = RoeUnpackNormalLerp(SAMPLE_TEXTURE2D(_BumpMap, sampler_BumpMap, uv), _BumpScale);
+                float2 detailUV = input.uv * _DetailNormalMap_ST.xy + _DetailNormalMap_ST.zw;
+                half3 detailTS = RoeUnpackNormalLerp(SAMPLE_TEXTURE2D(_DetailNormalMap, sampler_DetailNormalMap, detailUV), _DetailBumpScale);
                 normalTS = BlendNormalRNM(normalTS, detailTS);
             #endif
 
@@ -223,9 +234,10 @@ Shader "ROE/Character"
                 color += SAMPLE_TEXTURE2D(_EmissionMap, sampler_EmissionMap, uv).rgb * _EmissionColor.rgb;
             #endif
 
-                // Rim used by the game for hit flashes and highlights; alpha 0 = off.
+                // Rim used by the game for hit flashes and highlights (alpha 0 = off): the colour
+                // is blended towards _RimColor at grazing angles, not added.
                 half NoV = saturate(dot(inputData.normalWS, inputData.viewDirectionWS));
-                color += _RimColor.rgb * (_RimColor.a * Pow4(1.0 - NoV));
+                color = lerp(color, _RimColor.rgb, _RimColor.a * Pow4(1.0 - NoV));
 
                 color = MixFog(color, inputData.fogCoord);
                 return half4(color, OutputAlpha(alpha, IsSurfaceTypeTransparent(_Surface)));

@@ -1,7 +1,7 @@
 // Shared code of the ROE character shaders (URP 17, forward / forward+).
-// The game's own shaders ("Pinkcore/Heros/...") cannot be recovered from the build, only their
-// property lists.  These shaders keep the game's property names, so the game's materials work
-// as they are; the lighting maths is our own reconstruction.
+// The game's shader sources are not in the build, but its compiled DirectX 11 programs are:
+// tools/shader_asm.py disassembles them, and the lighting maths of these shaders follows that
+// disassembly.  They keep the game's property names, so the game's materials work as they are.
 #ifndef ROE_CORE_INCLUDED
 #define ROE_CORE_INCLUDED
 
@@ -166,6 +166,21 @@ half3 RoeEnvironment(BRDFData brdf, InputData inputData, half3 diffuseNormalGI, 
         color += indirectSpecular * EnvironmentBRDFSpecular(brdf, fresnelTerm);
     }
     return color * occlusion;
+}
+
+// Normal map strength the way the game's character and skin shaders apply it: the full normal
+// is decoded first, then blended towards flat by the scale (URP's UnpackNormalScale only scales
+// x and y, z stays as decoded - that is what the game's hair shader does).
+half3 RoeUnpackNormalLerp(half4 packedNormal, half scale)
+{
+    half3 n = UnpackNormal(packedNormal);
+    return half3(n.xy * scale, (n.z - 1.0) * scale + 1.0);
+}
+
+// Hermite ramp of x already in 0..1 (smoothstep without the remap).
+half RoeSmooth01(half x)
+{
+    return x * x * (3.0 - 2.0 * x);
 }
 
 // Screen-door fade the game uses (_IGNOpacity): 1 = solid, 0 = gone.

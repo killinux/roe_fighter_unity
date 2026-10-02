@@ -44,6 +44,7 @@ namespace RoeFighter.EditorTools
 
             int assigned = AssignMaterials(c, go);
             int weapons = AddMissingWeapons(c, go);
+            SetPupils(c, go);
 
             foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
             {
@@ -73,6 +74,29 @@ namespace RoeFighter.EditorTools
                       $"{prefab.GetComponentsInChildren<Transform>(true).Length} transforms");
             return prefab;
         }
+
+        /// <summary>
+        /// The eye materials ship with _PupilSizeScale 0.56 (a08) and 0.76 (g04).  With the game's
+        /// eye shader that makes the pupil 45-60 % of the visible iris; the game's own renders of
+        /// these characters (the gacha videos) show the size that _PupilSizeScale 0 gives, so the
+        /// game evidently sets it at run time.  Ours: the eye materials are set to 0.
+        /// </summary>
+        static void SetPupils(RoeManifest.Character c, GameObject go)
+        {
+            foreach (var m in go.GetComponentsInChildren<Renderer>(true).SelectMany(r => r.sharedMaterials).Distinct())
+            {
+                if (m == null || m.shader == null || m.shader.name != "ROE/Eye" || !m.HasProperty("_PupilSizeScale"))
+                    continue;
+                float before = m.GetFloat("_PupilSizeScale");
+                if (before == PupilSizeScale)
+                    continue;
+                m.SetFloat("_PupilSizeScale", PupilSizeScale);
+                EditorUtility.SetDirty(m);
+                Debug.Log($"[ROE] {c.id}: {m.name} _PupilSizeScale {before} -> {PupilSizeScale} (pupils as in the game's own renders)");
+            }
+        }
+
+        const float PupilSizeScale = 0f;
 
         static int AssignMaterials(RoeManifest.Character c, GameObject go)
         {
