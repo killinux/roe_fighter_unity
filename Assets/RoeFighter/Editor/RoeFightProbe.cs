@@ -718,6 +718,93 @@ namespace RoeFighter.EditorTools
             Debug.Log($"[ROE] legs {id} {clipName} ({len:F2} s):" + sb);
         }
             /// <summary>
+        /// How much the skirt swings, in numbers: one fighter goes through guard, walking on and back, a
+        /// side step and the four strikes in the real fight logic; for every skirt chain tip, per part,
+        /// the angle between the simulated and the animated tip seen from where the chain hangs (rms and
+        /// max) and the largest turn of the simulated tip in one step.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.SkirtSwing [-roeChar g04] [-roeMotions accad_male2] [-roeKind skirt]
+        /// </summary>
+        public static void SkirtSwing()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "g04");
+            string kind = RoeCapture.Arg("-roeKind", "skirt");
+            string variant = RoeCapture.Arg("-roeVariant", "");
+            RoeBoneCloth.NoColliders = variant.Contains("nocoll");
+            RoeBoneCloth.NoBackstop = variant.Contains("noback");
+            FighterRig.NoHipCloth = variant.Contains("nohip");
+            RoeBoneCloth.SkirtTuning = RoeCapture.Arg("-roeSkirt", "");
+            if (RoeBoneCloth.SkirtTuning.Length > 0)
+                variant += " " + RoeBoneCloth.SkirtTuning;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.cpu = new[] { false, false };
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            game.Setup();
+            int who = game.f[0].rig.id == id ? 0 : 1;
+            var me = game.f[who];
+            while (game.phase != FightGame.Phase.Fight)
+            {
+                game.UpdateCamera(FightGame.Dt);
+                game.Step(new FighterInput[2]);
+            }
+            me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 6f;
+            me.foe.Place();
+            var parts = new (string name, float seconds, FighterInput input)[]
+            {
+                ("guard", 1.5f, default), ("walk", 3f, new FighterInput { x = 1 }), ("back", 2f, new FighterInput { x = -1 }),
+                ("side", 2f, new FighterInput { y = 1 }), ("guard2", 1f, default),
+                ("A", 0.9f, new FighterInput { a = true }), ("C", 1.1f, new FighterInput { c = true }),
+                ("D", 1.5f, new FighterInput { d = true }), ("B", 1.4f, new FighterInput { b = true }),
+            };
+            var sb = new System.Text.StringBuilder($"[ROE] {kind} swing {id} ({game.Pack?.name}{(variant.Length > 0 ? " " + variant : "")}), degrees: rms / max away from the animation, max turn in one step");
+            var lastDir = new Dictionary<string, Vector3>();
+            var lastAnim = new Dictionary<string, Vector3>();
+            foreach (var (name, seconds, inp) in parts)
+            {
+                var sum = new Dictionary<string, float>();
+                var max = new Dictionary<string, float>();
+                var jump = new Dictionary<string, float>();
+                var animJump = new Dictionary<string, float>();
+                int steps = Mathf.RoundToInt(seconds * 60f), n = 0;
+                for (int s = 0; s < steps; s++)
+                {
+                    game.UpdateCamera(FightGame.Dt);
+                    var input = inp.a || inp.b || inp.c || inp.d ? (s == 0 ? inp : default) : inp;
+                    var camRight = game.cam.transform.right;
+                    camRight.y = 0f;
+                    input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
+                    var inputs = new FighterInput[2];
+                    inputs[who] = input;
+                    game.Step(inputs);
+                    if (me.rig.Cloth == null)
+                        break;
+                    n++;
+                    foreach (var (set, tip, angle, dir, animated) in me.rig.Cloth.TipDeviations(kind))
+                    {
+                        sum[tip] = (sum.TryGetValue(tip, out var v) ? v : 0f) + angle * angle;
+                        max[tip] = Mathf.Max(max.TryGetValue(tip, out var m) ? m : 0f, angle);
+                        if (lastDir.TryGetValue(tip, out var last))
+                            jump[tip] = Mathf.Max(jump.TryGetValue(tip, out var j) ? j : 0f, Vector3.Angle(last, dir));
+                        if (lastAnim.TryGetValue(tip, out var lastA))
+                            animJump[tip] = Mathf.Max(animJump.TryGetValue(tip, out var j) ? j : 0f, Vector3.Angle(lastA, animated));
+                        lastDir[tip] = dir;
+                        lastAnim[tip] = animated;
+                    }
+                }
+                if (n == 0 || sum.Count == 0)
+                    continue;
+                var rms = sum.ToDictionary(kv => kv.Key, kv => Mathf.Sqrt(kv.Value / n));
+                sb.Append($"\n[ROE]   {name,-6}: all tips rms {Mathf.Sqrt(rms.Values.Select(r => r * r).Average()):F1}, max {max.Values.Max():F0}, step {jump.Values.DefaultIfEmpty(0f).Max():F0} " +
+                          $"(animation step {animJump.Values.DefaultIfEmpty(0f).Max():F0}: {string.Join(" ", animJump.OrderByDescending(kv => kv.Value).Take(2).Select(kv => $"{kv.Key} {kv.Value:F0}"))}); " +
+                          string.Join(", ", rms.OrderByDescending(kv => kv.Value).Take(4).Select(kv => $"{kv.Key} {kv.Value:F0}/{max[kv.Key]:F0}/{(jump.TryGetValue(kv.Key, out var j) ? j : 0f):F0}")));
+            }
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
         /// The skirt in the real fight logic: one fighter's hips and legs filmed from the front, her left
         /// and behind at moments of the game's own pose (the intro) and the basic moves of each motion
         /// pack, with the bone cloth off and on.  Frames to _work/skirt/&lt;pack&gt;_&lt;cloth&gt;_&lt;moment&gt;_&lt;view&gt;.jpg;

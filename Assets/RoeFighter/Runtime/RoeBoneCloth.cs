@@ -41,12 +41,42 @@ namespace RoeFighter
             public float backstopRadius = 10f, backstopDistance = 0.02f;
             public bool edge = true;                                    // bone segments collide as capsules
             public float friction = 0.05f;
+            public float pushAttenuation = 0.9f;                        // of a push out of a collider, the share that does not become speed
             public bool floor = true;
             public int iterations = 4;
         }
 
-        // the add-on's presets (Magica Cloth 2 numbers are per 1/90 s step)
-        public static Settings Skirt() => new Settings();
+        // the add-on's presets (Magica Cloth 2 numbers are per 1/90 s step).  Skirts are stiffer than the
+        // add-on's (restore 0.2, damping 0.05, limits 25/60, inertia 0.4): with those g04's long panels,
+        // whose chains start right at the waist, swung 12 degrees rms standing still and 16-22 walking and
+        // striking, jumping 14-39 degrees in a step (RoeFightProbe.SkirtSwing); now 5 / 6-9, 7-17.
+        public static Settings Skirt() => Tuned(new Settings { restore = 0.35f, damping = 0.15f, limitRoot = 5f, limitTip = 35f, inertia = 0.3f }, SkirtTuning);
+
+        /// <summary>For checks: "key=value,..." over the skirt preset (gravity, damping, restore, attenuation, limitRoot, limitTip, inertia, particleLimit).</summary>
+        public static string SkirtTuning = "";
+
+        static Settings Tuned(Settings s, string tuning)
+        {
+            foreach (var pair in (tuning ?? "").Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = pair.Split('=');
+                if (kv.Length != 2 || !float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v))
+                    continue;
+                switch (kv[0].Trim())
+                {
+                    case "gravity": s.gravity = v; break;
+                    case "damping": s.damping = v; break;
+                    case "restore": s.restore = v; break;
+                    case "attenuation": s.attenuation = v; break;
+                    case "limitRoot": s.limitRoot = v; break;
+                    case "limitTip": s.limitTip = v; break;
+                    case "inertia": s.inertia = v; break;
+                    case "particleLimit": s.particleLimit = v; break;
+                    case "pushAttenuation": s.pushAttenuation = v; break;
+                }
+            }
+            return s;
+        }
         public static Settings Hair() => new Settings
         {
             radius = 0.015f, restore = 0.3f, limitRoot = 15f, limitTip = 50f, inertia = 0.3f, moveLimit = 2f,
@@ -102,6 +132,7 @@ namespace RoeFighter
         readonly List<ChainSet> chains = new List<ChainSet>();
         public readonly List<Capsule> capsules = new List<Capsule>();
         public float weight = 1f;
+        public static bool NoColliders, NoBackstop;     // for checks (RoeFightProbe.SkirtSwing -roeVariant)
         public string Report { get; private set; }
 
         /// <summary>
@@ -148,6 +179,14 @@ namespace RoeFighter
                         changed = true;
                     }
                 }
+            }
+            // a skirt piece of one bone (g04's waist ornaments) is stiff: the game keeps it on the pelvis
+            foreach (var t in kindOf.Keys.Where(t => kindOf[t] == "skirt").ToList())
+            {
+                bool hung = t.parent != null && kindOf.TryGetValue(t.parent, out var pk) && pk == "skirt";
+                bool hangs = t.Cast<Transform>().Any(c => kindOf.TryGetValue(c, out var ck) && ck == "skirt");
+                if (!hung && !hangs)
+                    kindOf.Remove(t);
             }
 
             // colliders: thighs, calves, the hips; the torso for hair
@@ -352,6 +391,30 @@ namespace RoeFighter
                     c.bones[i].localRotation = c.restLocal[i];
         }
 
+        /// <summary>
+        /// For checks, after Step: every chain tip (a bone with no child in its set) of the given kind, how
+        /// far its simulated tail is turned away from the animated one, seen from where its chain hangs
+        /// (degrees), and the simulated direction.
+        /// </summary>
+        public IEnumerable<(string set, string tip, float angle, Vector3 dir, Vector3 animatedDir)> TipDeviations(string kind)
+        {
+            foreach (var c in chains.Where(c => c.kind == kind && c.ready))
+            {
+                var isParent = new HashSet<int>(c.parent.Where(p => p >= 0));
+                for (int i = 0; i < c.bones.Length; i++)
+                {
+                    if (isParent.Contains(i))
+                        continue;
+                    int r = i;
+                    while (c.parent[r] >= 0)
+                        r = c.parent[r];
+                    var animated = c.tb[i] - c.hb[r];
+                    var simulated = c.x[i] - c.hb[r];
+                    yield return (c.name, c.bones[i].name, Vector3.Angle(animated, simulated), simulated.normalized, animated.normalized);
+                }
+            }
+        }
+
         /// <summary>Start again from the animated pose (a teleport, a new round).</summary>
         public void Reset()
         {
@@ -485,17 +548,24 @@ namespace RoeFighter
                         dir = Vector3.RotateTowards(g, dir, c.limit[i], 0f).normalized;
                         c.x[i] = h + dir * L;
                         // colliders: as deep as the animation itself goes is allowed
-                        if (c.capsules.Length > 0)
+                        if (c.capsules.Length > 0 && !NoColliders)
                         {
                             bool hit;
                             Vector3 nx = s.edge ? PushEdge(h, c.x[i], s.radius, c.capsules, hb[i], tb[i], out hit)
                                                 : PushPoint(c.x[i], s.radius, c.capsules, tb[i], out hit);
+                            nx = h + (nx - h).normalized * L;
                             if (hit)
+                            {
+                                // the leg carries the cloth along, it does not bat it away: most of the push
+                                // does not become speed (all of it did: g04's front panels popped 24-39
+                                // degrees in a step when a thigh came through), then friction
+                                c.xOld[i] += (nx - c.x[i]) * s.pushAttenuation;
                                 c.xOld[i] += (nx - c.xOld[i]) * s.friction;
-                            c.x[i] = h + (nx - h).normalized * L;
+                            }
+                            c.x[i] = nx;
                         }
                         // backstop: a big sphere behind the animated tail, on the side of the body's axis
-                        if (s.backstop)
+                        if (s.backstop && !NoBackstop)
                         {
                             var rel = tb[i] - cPos;
                             var nrm = (rel - Vector3.Dot(rel, axis) * axis).normalized;
@@ -606,7 +676,12 @@ namespace RoeFighter
             return Mathf.Lerp(cap.ra, cap.rb, t) + r - dist;
         }
 
-        /// <summary>A bone segment against the capsules: its tail moves so the closest point clears them.</summary>
+        /// <summary>
+        /// A bone segment against the capsules: its tail moves so the closest point clears them.  The
+        /// tail moves pen / s for a contact at s along the segment (the lever); near the head that was up
+        /// to 5x the depth in one go and the panel jumped, so the lever stops at 3x and one push at
+        /// MaxPush - the rest follows in the next iterations and substeps.
+        /// </summary>
         static Vector3 PushEdge(Vector3 head, Vector3 tail, float r, Capsule[] caps, Vector3 animHead, Vector3 animTail, out bool hit)
         {
             hit = false;
@@ -617,12 +692,14 @@ namespace RoeFighter
                 float pen = EdgeDepth(head, tail, r, cap, out var n, out float s) - allow;
                 if (pen > 0f && s > 0.05f)
                 {
-                    move += n * (pen / Mathf.Max(s, 0.2f));
+                    move += n * (pen / Mathf.Max(s, 0.35f));
                     hit = true;
                 }
             }
-            return tail + move;
+            return tail + Vector3.ClampMagnitude(move, MaxPush);
         }
+
+        const float MaxPush = 0.025f;
 
         /// <summary>Write the simulated rotations, blended with the animated ones by ``weight``.</summary>
         void Write(ChainSet c)

@@ -227,6 +227,103 @@ namespace RoeFighter.EditorTools
             return sb.ToString();
         }
 
+        /// <summary>
+        /// How the game moves what hangs on the hips (skirt panels): for each non-human child of the hips
+        /// with skin under it, sampled over the game's own clips, the error of a few models - rigid on the
+        /// pelvis; hanging from the hips' heading (yaw from the thigh line, gravity-like); and blends of the
+        /// heading or the pelvis with either thigh.  Only a report.
+        ///   -executeMethod RoeFighter.EditorTools.RoeHelperFit.SkirtReport [-roeChars a08,g04]
+        /// </summary>
+        public static void SkirtReport()
+        {
+            var manifest = RoeManifest.Load();
+            foreach (var id in RoeCapture.Arg("-roeChars", "a08,g04").Split(','))
+            {
+                var c = manifest.characters.FirstOrDefault(x => x.id == id);
+                if (c == null)
+                    continue;
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeFighterBuilder.PrefabPath(c.id));
+                var go = Object.Instantiate(prefab);
+                go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                var map = RoeHumanoid.MapBones(go);
+                var human = new HashSet<Transform>(map.Values);
+                var skinned = new HashSet<Transform>(go.GetComponentsInChildren<SkinnedMeshRenderer>(true).SelectMany(r => r.bones).Where(b => b != null));
+                var hips = map["Hips"];
+                var roots = hips.Cast<Transform>().Where(t => !human.Contains(t) && t.GetComponentsInChildren<Transform>(true).Any(skinned.Contains)).ToList();
+                var tracked = new List<Transform>(roots) { hips, map["LeftUpperLeg"], map["RightUpperLeg"], map["LeftLowerLeg"], map["RightLowerLeg"] };
+                var tracks = tracked.ToDictionary(t => t, t => new Track());
+                var tips = roots.ToDictionary(r => r, r => r.GetComponentsInChildren<Transform>(true).OrderByDescending(Depth).First());
+                foreach (var tip in tips.Values)
+                    if (!tracks.ContainsKey(tip))
+                        tracks[tip] = new Track();
+                int frames = 0;
+                foreach (var name in Clips)
+                {
+                    var clip = c.LoadClip(name);
+                    if (clip == null)
+                        continue;
+                    for (float t = 0f; t <= clip.length + 1e-4f; t += 1f / 15f)
+                    {
+                        RoeCapture.Pose(go, clip, t);
+                        foreach (var kv in tracks)
+                        {
+                            kv.Value.rot.Add(kv.Key.rotation);
+                            kv.Value.pos.Add(kv.Key.position);
+                        }
+                        frames++;
+                    }
+                }
+                RoeCapture.EndPosing();
+                var L = tracks[map["LeftUpperLeg"]];
+                var R = tracks[map["RightUpperLeg"]];
+                var heading = Enumerable.Range(0, frames).Select(f =>
+                {
+                    var fwd = Vector3.Cross(R.pos[f] - L.pos[f], Vector3.up);
+                    fwd.y = 0f;
+                    return Quaternion.LookRotation(fwd.normalized, Vector3.up);
+                }).ToList();
+                var H = tracks[hips];
+                var sb = new StringBuilder($"[ROE] skirt roots of {c.id} over {frames} frames of the game's clips:");
+                foreach (var root in roots)
+                {
+                    var S = tracks[root];
+                    float Rigid(IList<Quaternion> frame)
+                    {
+                        var rel = Enumerable.Range(0, frames).Select(f => Quaternion.Inverse(frame[f]) * S.rot[f]).ToList();
+                        var q = Average(rel);
+                        return FitError(rel.Select(x => Quaternion.Angle(q, x)));
+                    }
+                    (float w, float error) Blend(IList<Quaternion> a, IList<Quaternion> b)
+                    {
+                        var align = Quaternion.Inverse(b[0]) * a[0];
+                        var best = (w: 0f, error: float.MaxValue);
+                        for (float w = 0f; w < 1.001f; w += 0.05f)
+                        {
+                            var rel = Enumerable.Range(0, frames).Select(f => Quaternion.Inverse(Quaternion.Slerp(a[f], b[f] * align, w)) * S.rot[f]).ToList();
+                            var q = Average(rel);
+                            float e = FitError(rel.Select(x => Quaternion.Angle(q, x)));
+                            if (e < best.error)
+                                best = (w, e);
+                        }
+                        return best;
+                    }
+                    var tip = tracks[tips[root]];
+                    // how far the panel's tip swings around in the hips' heading frame: how much there is to explain
+                    var tipDirs = Enumerable.Range(0, frames).Select(f => Quaternion.Inverse(heading[f]) * (tip.pos[f] - S.pos[f]).normalized).ToList();
+                    var meanDir = tipDirs.Aggregate(Vector3.zero, (s, v) => s + v).normalized;
+                    float swing = Rms(tipDirs.Select(d => Vector3.Angle(d, meanDir)));
+                    var hl = Blend(heading, L.rot);
+                    var hr = Blend(heading, R.rot);
+                    var pl = Blend(H.rot, L.rot);
+                    var pr = Blend(H.rot, R.rot);
+                    sb.Append($"\n[ROE]   {root.name} (tip {tips[root].name}, swings {swing:F0} deg rms): rigid on pelvis {Rigid(H.rot):F1}, hanging {Rigid(heading):F1}, " +
+                              $"heading->L thigh {hl.w:F2} {hl.error:F1}, heading->R thigh {hr.w:F2} {hr.error:F1}, pelvis->L thigh {pl.w:F2} {pl.error:F1}, pelvis->R thigh {pr.w:F2} {pr.error:F1}");
+                }
+                Object.DestroyImmediate(go);
+                Debug.Log(sb.ToString());
+            }
+        }
+
         static int Depth(Transform t)
         {
             int d = 0;

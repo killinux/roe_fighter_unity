@@ -84,8 +84,9 @@ namespace RoeFighter.Fight
         float toeSole, ankleSole, groundOffset;
         readonly Quaternion[] footRest = new Quaternion[2], toeRest = new Quaternion[2];   // the stance: foot against its heading, toe bone
         readonly Vector3[] footAhead = new Vector3[2];                                     // the foot's axis that points ahead along the floor
-        Transform[] thighs, hipCloth;                                                      // hipCloth: non-human bones hung on the hips
+        Transform[] thighs, hipCloth;                                                      // hipCloth: skirt panels hung on the hips
         Quaternion[] hipClothRest;                                                         // their stance rotation against the hips' heading
+        Quaternion pelvisRef = Quaternion.identity;                                        // the guard's pelvis against the hips' heading
         readonly Vector3[] lastAnkle = new Vector3[2];
         readonly float[] plantWeight = new float[2];                                       // a still foot near the floor is put down on it
         bool plantValid;
@@ -145,7 +146,9 @@ namespace RoeFighter.Fight
                 }
             }
             helpers = animator.GetComponent<RoeHelperRig>();
-            // what hangs on the hips (skirts, chain anchors): how it hangs in the stance, against the hips' heading
+            // the skirt panels hung on the hips (bones with a chain under them; single bones such as g04's
+            // waist pieces and a08's sword points stay rigid on the pelvis, as the game keeps them): how they
+            // hang in the stance, against the hips' heading
             thighs = new[] { animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg), animator.GetBoneTransform(HumanBodyBones.RightUpperLeg) };
             hipCloth = null;
             if (stance != null && hips != null && thighs.All(t => t != null))
@@ -155,9 +158,10 @@ namespace RoeFighter.Fight
                     if (b != HumanBodyBones.LastBone && animator.GetBoneTransform(b) != null)
                         human.Add(animator.GetBoneTransform(b));
                 var driven = new HashSet<Transform>(helpers != null ? helpers.drives.Select(d => d.helper) : Enumerable.Empty<Transform>());
-                hipCloth = hips.Cast<Transform>().Where(t => !human.Contains(t) && !driven.Contains(t)).ToArray();
+                hipCloth = hips.Cast<Transform>().Where(t => !human.Contains(t) && !driven.Contains(t) && t.childCount > 0).ToArray();
                 var heading = HipHeading();
                 hipClothRest = hipCloth.Select(t => Quaternion.Inverse(heading) * t.rotation).ToArray();
+                pelvisRef = Quaternion.Inverse(heading) * hips.rotation;     // replaced by the guard's below, once the clips are in
                 Debug.Log($"[ROE] {id} hung on the hips: {string.Join(", ", hipCloth.Select(t => t.name))}");
             }
             // skirts, hair, chains and breasts: found and measured in the stance pose
@@ -249,6 +253,27 @@ namespace RoeFighter.Fight
                 weight[guard] = target[guard] = 1f;
             gameWeight = gameTarget = 0f;
             ApplyWeights();
+            // the pelvis the skirts are measured against: the guard's, averaged over its cycle
+            if (hipCloth != null && index.TryGetValue("guard", out guard))
+            {
+                var samples = new List<Quaternion>();
+                float length = Mathf.Max(0.01f, clips[guard].clip.length);
+                for (int k = 0; k < 8; k++)
+                {
+                    playables[guard].SetTime(length * k / 8f);
+                    graph.Evaluate(0f);
+                    samples.Add(Quaternion.Inverse(HipHeading()) * hips.rotation);
+                }
+                playables[guard].SetTime(0);
+                var sum = Vector4.zero;
+                foreach (var q in samples)
+                {
+                    float s = Quaternion.Dot(q, samples[0]) < 0f ? -1f : 1f;
+                    sum += new Vector4(q.x, q.y, q.z, q.w) * s;
+                }
+                sum.Normalize();
+                pelvisRef = new Quaternion(sum.x, sum.y, sum.z, sum.w);
+            }
             current = -1;
             System.Array.Clear(plantWeight, 0, plantWeight.Length);
             plantValid = false;
@@ -419,16 +444,19 @@ namespace RoeFighter.Fight
                 }
                 plantValid = dt > 0f;
             }
-            // Skirts hang the way the stance has them.  The stance's skirt keys are turned against its
-            // pelvis, which tilts there (the right hip 23 degrees above the left); on the motion
-            // capture's level pelvis the same keys held a08's long side panels out at 45 degrees like
-            // boards.  Under motion capture whatever hangs on the hips keeps its stance rotation against
-            // the hips' heading (it still turns with them); the cloth swings it from there.
-            if (hipCloth != null && mocap > 0f)
+            // Skirts hang the way the stance has them, and move with the pelvis from there.  The game keys
+            // its skirt panels nearly rigid on the pelvis (RoeHelperFit.SkirtReport: closest of the simple
+            // models), but its stance's pelvis tilts (the right hip 23 degrees above the left): the same
+            // keys on the motion capture's level pelvis held a08's long side panels out at 45 degrees like
+            // boards.  So in the guard a panel takes its stance rotation against the hips' heading, and
+            // any turn of the pelvis away from the guard's (swaying hips, a kick) turns it along; the
+            // cloth swings it from there.
+            if (hipCloth != null && mocap > 0f && !NoHipCloth)
             {
                 var heading = HipHeading();
+                var turn = Quaternion.Inverse(heading) * hips.rotation * Quaternion.Inverse(pelvisRef);
                 for (int k = 0; k < hipCloth.Length; k++)
-                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * hipClothRest[k], mocap);
+                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * turn * hipClothRest[k], mocap);
             }
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
@@ -452,6 +480,11 @@ namespace RoeFighter.Fight
 
         /// <summary>The cloth starts again from the animated pose (after a teleport: a new round).</summary>
         public void ResetCloth() => boneCloth?.Reset();
+
+        public static bool NoHipCloth;      // for checks (RoeFightProbe.SkirtSwing -roeVariant nohip)
+
+        /// <summary>The bone cloth, for checks (null when off).</summary>
+        public RoeBoneCloth Cloth => boneCloth;
 
         public string ClothReport => boneCloth?.Report ?? "off";
 
