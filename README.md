@@ -22,6 +22,8 @@
 | 挑开阔的战斗场景：194 个场景全部粗筛，5 个导入 Unity | 完成；默认用格斗俱乐部擂台 `e23_steel_s02` |
 | 基础动作（走、退、跑、刺拳、直拳、踢、挥砍、防御架势）：公开动作捕捉数据转人形 | 完成；侧步改成程序化迈步（两节骨 IK，脚不滑） |
 | 手臂和腿：皮肤挂在辅助骨上，从游戏动作里拟合出辅助骨怎么跟随肢体，动捕动作时实时驱动；动捕着地；走路不滑 | 完成（10-02 下午），见"手臂和腿"一节 |
+| 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4` |
+| 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 框架完成，现在只有 `bandai1` 一个包 |
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | UFE 对战 | 暂时买不了；先用自己的格斗逻辑 |
 
@@ -426,9 +428,81 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
      用同样的 IK 把腿弯过去；动画把脚抬起来时松开，脚离落点超过 25 厘米时也松开。第 2 步读的是锁定之前的动画姿势，两者不会互相推着走。
 - 坑：测步速是在 `Init` 里放动作测的。上一局留下的脚步锁定开关如果没复位，脚被锁在地上，步速就测小了，后退一下子变成 3 倍速。
 
+### 布料：骨骼布料（照 Magica Cloth 2 的做法）
+
+ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addons/bone_cloth`：照 Magica Cloth 2 的 BoneCloth 模拟骨链，烘成 MMD 动作的关键帧。
+它的解算器（`core.py` 的 `simulate()`）不依赖 Blender，这里原样移植成运行时的 `RoeBoneCloth`，每步在姿势算完后跑。
+
+- **原理**：以动画姿势为基准，每节骨头的尾端是一个质点。每个子步依次做：
+  1. **惯性**：质点跟着挂点骨（裙子是骨盆，头发是头）走，只有一部分身体运动会被布"感觉"到，而且不超过限速；
+  2. Verlet 积分：阻尼、限速、重力；
+  3. 从根到梢逐节约束：
+     - **角度恢复**：往动画方向拉回一部分，拉回的位移大部分不变成速度；
+     - **角度限制**：根部严、梢部松；
+     - **碰撞体**：大腿、小腿、两胯的胶囊。骨段整段当胶囊去碰，不会从两腿之间钻过去；动画本身就压进碰撞体的那部分不算；
+     - **背挡**：不许往身体那边退到动画位置后面；
+     - **地面**。
+
+  骨长是刚性的。我们每步 1/60 秒，拆成 2 个子步，等于 120 Hz（插件和 Magica 是 90 Hz，参数按每 1/90 秒换算）。
+- **哪些骨头**：按名字找，分四类，参数用插件的预设：
+  - 裙子 `skirt`：插件"裙子"预设；
+  - 头发 `hair / braid / bangs / hari`：插件"头发"预设，碰躯干胶囊；
+  - 链子和饰物 `skirt_chain / chain / chain_arm / dec_wrist`：更松的一组参数；
+  - 胸 `breast / chest_L/R`：更有弹性、角度很小。
+
+  有两个以上同类子骨的骨头本身不模拟，它下面的链挂在它上面。a08 是 9 组 83 根，g04 是 5 组 64 根。扇子、武器、脸上的骨头不碰。
+- **碰撞体**：大腿、小腿的胶囊从网格量粗细。取"头部落在这一段上的所有骨头"（包括扭转辅助骨）带的顶点，到骨段距离的 70% 分位数：
+  a08 / g04 大腿约 8.6 → 6.4 厘米，小腿约 5.4 → 3.9 厘米。
+- **什么时候生效**：动捕的基础动作时全开（`FighterRig.clothWeight`，默认 1）；游戏自己的技能、受击里，裙子和头发是游戏手调的关键帧，保持原样。
+  没有动画曲线的骨头（a08 的裙链、剑链）每步动画求值前先回到静止角度，否则会把上一步的模拟结果当成动画基准。
+- 演示：`RoeClothDemo` 让每个角色用真实的战斗逻辑把同一段动作做两遍（站架、前进、后退、两边侧步、刺拳、直拳、踢、挥砍），
+  一遍关布料、一遍开，`tools\cloth_demo_video.py` 左右拼成 `out\bone_cloth_demo.mp4`。踢腿时，关布料的腿直接穿过裙片；开布料的裙片被腿顶起来。
+- 坑：同一个 Unity 会话里把场景重新打开，URP 的后期处理会丢掉 Volume 组件（断言 `SetupColorLut colorAdjustments cannot be null`），
+  从第二次开始每帧都是黑的。演示工具只开一次场景，每组之间重新 `Setup`。
+
+### 动作包：可插拔的基础动作
+
+基础动作（站架、前进、后退、跑，以及 A–D 四个攻击）做成可以整套替换的**动作包**（`MotionPack`，在 `Generated\motionpacks\`）。
+每个包写明每个角色动作用哪个人形片段、每个攻击键出哪一招（击打骨骼、有效帧、攻击距离、伤害、硬直……），以及来源和授权。
+游戏自己的技能、受击、倒地不属于动作包，跟着角色走。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.BuildBandai                    # 现在的动捕动作 → bandai1
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','my_pack.json'   # 任何人形片段 → 一个包
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics -Extra '-roeMotions','my_pack'  # 用哪个包开局
+```
+
+- 场景里会放进所有已建好的包；开局用 `-roeMotions` 指定的那个（默认 `bandai1`），游戏里按 **F3** 换下一个包（比赛重新开始，计时下方显示包名）。
+- **买来的 Unity 动作怎么接**：把动作包导进工程（比如放在 `Assets/ThirdParty/某包`），写一个 JSON：
+
+  ```json
+  {
+    "name": "my_pack", "title": "游戏里显示的名字", "source": "Asset Store: 包名", "license": "Asset Store EULA",
+    "folder": "Assets/ThirdParty/某包", "humanoid": true,
+    "roles": { "guard": "Fight_Idle", "walk": "Walk_Forward", "walk_back": "Walk_Backward", "run": "Run" },
+    "strikes": [
+      { "button": "A", "name": "jab", "clip": "Punch_Jab" },
+      { "button": "B", "name": "hook", "clip": "Punch_Hook", "damage": 60 },
+      { "button": "C", "name": "straight", "clip": "Punch_Cross" },
+      { "button": "D", "name": "kick", "clip": "Kick_Roundhouse", "speed": 1.2 }
+    ]
+  }
+  ```
+
+  导入时：
+  - `humanoid` 为真时，先把那个文件夹里的 FBX 都设成 Humanoid；
+  - 片段按名字找（不分大小写，`文件.fbx:片段` 可以指定文件）；
+  - 走路类片段复制一份设成循环，并扣掉水平位移（身体由格斗逻辑移动）；
+  - 每个攻击放到 a08 身上采样，量出是哪只手或脚、最远够多远、多高、哪几帧在最远距离的 85% 以内（和动捕的招式表同一个算法）；
+  - 没写的伤害、硬直按键位给默认值（A 轻、D 重）。
+
+  步速、着地、脚步锁定、辅助骨、布料都是按每个角色身上的实际姿势实时算的，换包不用改别的。
+
 ## 已知问题和待定的事
 
-- 头发、裙子、胸在动捕动作里不会动（停在战斗待机的样子），要接布料物理。
+- 布料只在基础动作里生效；游戏自己的技能里裙子和头发是手调的关键帧。布料参数用的是 Blender 插件的预设，还没逐件调过
+  （g04 的裙片踢腿时会在膝盖处卷一下）。
+- 第二个动作包还没有：开源动作在找，买来的 Unity 动作照"动作包"一节的 JSON 接进来。
 - 一个角色播另一个角色的技能时，辅助骨用的还是原角色动作里的数值；`RoeHelperRig` 也可以用在这里，还没接。
 - 布料物理：游戏用的是 Magica Cloth 2，每套服装的设置（哪些骨骼、重力、阻尼、身体碰撞体）都能取出来。买了这个插件就能直接照搬；不买就自己写弹簧骨骼。
 - a08 的剑：基础动作时藏起来（挂在骨盆上会跟着拳脚乱甩），开场、胜利和放技能时出现。g04 的扇子拿在手上，一直显示。

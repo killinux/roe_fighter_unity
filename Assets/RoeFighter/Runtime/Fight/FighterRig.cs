@@ -84,6 +84,23 @@ namespace RoeFighter.Fight
         float toeSole, ankleSole, groundOffset;
 
         public bool Ready => graph.IsValid();
+
+        /// <summary>
+        /// The basic moves from a motion pack: every clip that is not the game's own is replaced by the
+        /// pack's (named by role).  Takes effect at the next Init().
+        /// </summary>
+        public void UseMotions(MotionPack pack)
+        {
+            if (pack == null)
+                return;
+            clips.RemoveAll(c => !c.game);
+            int at = 0;
+            foreach (var c in pack.clips.Where(c => c.clip != null))
+                clips.Insert(at++, new NamedClip { name = c.role, clip = c.clip, loop = c.loop });
+            motions = pack;
+        }
+
+        [NonSerialized] public MotionPack motions;
         public string Current => current >= 0 ? clips[current].name : "";
         public float CurrentTime => current >= 0 ? (float)playables[current].GetTime() : 0f;
         public float CurrentRate => current >= 0 ? rate[current] : 0f;
@@ -111,8 +128,12 @@ namespace RoeFighter.Fight
                 toeSole = toes.Average(t => t.position.y) - floor;
                 ankleSole = feet.Average(t => t.position.y) - floor;
             }
-            animator.Rebind();
             helpers = animator.GetComponent<RoeHelperRig>();
+            // skirts, hair, chains and breasts: found and measured in the stance pose
+            boneCloth = useCloth ? new RoeBoneCloth(animator, helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null) : null;
+            if (boneCloth != null)
+                Debug.Log($"[ROE] {id} bone cloth: {boneCloth.Report}");
+            animator.Rebind();
             legs = null;
             var legBones = new[] { HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot,
                                    HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot }.Select(animator.GetBoneTransform).ToArray();
@@ -197,6 +218,7 @@ namespace RoeFighter.Fight
             ApplyWeights();
             current = -1;
             stanceTime = 0f;
+            boneCloth?.Reset();
         }
 
         readonly Dictionary<string, float> strideSpeeds = new Dictionary<string, float>();
@@ -317,6 +339,7 @@ namespace RoeFighter.Fight
                 playables[i].SetTime(t);
             }
             ApplyWeights();
+            boneCloth?.Rest();                // cloth bones no clip animates start from their rest pose again
             graph.Evaluate(0f);
             StepLinger(dt);
             float mocap = 1f - gameWeight;
@@ -336,7 +359,24 @@ namespace RoeFighter.Fight
             // the limb helpers: the game's clips animate them; under motion capture they follow the limbs
             if (helpers != null)
                 helpers.Apply(mocap);
+            // bone cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
+            if (boneCloth != null)
+            {
+                boneCloth.weight = mocap * clothWeight;
+                boneCloth.Step(dt, transform.position.y);
+            }
         }
+
+        // ---- bone cloth (RoeBoneCloth): skirts, hair, chains, breasts
+
+        public bool useCloth = true;
+        [Range(0f, 1f)] public float clothWeight = 1f;
+        RoeBoneCloth boneCloth;
+
+        /// <summary>The cloth starts again from the animated pose (after a teleport: a new round).</summary>
+        public void ResetCloth() => boneCloth?.Reset();
+
+        public string ClothReport => boneCloth?.Report ?? "off";
 
         // ---- walking: a foot the clip puts down stays where it landed (two-bone IK)
 

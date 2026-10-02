@@ -77,6 +77,7 @@ namespace RoeFighter.Fight
             rig.Play(rig.Has("react_02") ? "react_02" : "guard", 1f, 0f);
             dieLength = rig.Length("die");
             Place();
+            rig.ResetCloth();
         }
 
         public void Go()

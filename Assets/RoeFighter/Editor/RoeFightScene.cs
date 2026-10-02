@@ -30,7 +30,6 @@ namespace RoeFighter.EditorTools
 
         public static string ScenePath(string stage) => $"{SceneDir}/Fight_{stage}.unity";
 
-        static readonly string[] MocapClips = { "guard", "walk", "walk_back", "side_left", "side_right", "run", "jab", "cross", "kick", "slash" };
         static readonly string[] GameClips = { "hurt", "die", "rip", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03" };
         static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string> { { "a08", "INASE" }, { "g04", "LUF" } };
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -92,7 +91,15 @@ namespace RoeFighter.EditorTools
             game.arenaRadius = Mathf.Clamp(radius, 3f, 12f);
             game.cam = cam;
             game.hud = hud;
-            game.moves = BasicMoves();
+            // the basic moves: every motion pack built so far; the fight starts with -roeMotions (default bandai1)
+            if (!File.Exists(RoeMotionPacks.PackPath("bandai1")))
+                RoeMotionPacks.BuildBandai();
+            game.motionPacks = RoeMotionPacks.All();
+            string wanted = RoeCapture.Arg("-roeMotions", "bandai1");
+            game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == wanted));
+            foreach (var rig in rigs)
+                rig.UseMotions(game.Pack);
+            game.moves = game.Pack.CopyStrikes();
             game.specials = new List<Special>
             {
                 new Special { name = "skill1", clip = "skill_01", action = "skill1", damage = 150, range = 6f },
@@ -114,7 +121,8 @@ namespace RoeFighter.EditorTools
             string path = ScenePath(stage);
             EditorSceneManager.SaveScene(scene, path, false);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(path, true) };
-            Debug.Log($"[ROE] fight scene saved: {path} ({game.moves.Count} strikes, {game.specials.Count} specials, {game.effects.Count} effect prefabs, hit spark {game.hitEffect}, music {(musicPath ?? "none")})");
+            Debug.Log($"[ROE] fight scene saved: {path} ({game.moves.Count} strikes, {game.specials.Count} specials, {game.effects.Count} effect prefabs, hit spark {game.hitEffect}, music {(musicPath ?? "none")}; " +
+                      $"motion packs {string.Join(", ", game.motionPacks.Select(p => p.name))}, starting with {game.Pack.name})");
             return path;
         }
 
@@ -202,38 +210,6 @@ namespace RoeFighter.EditorTools
             return best;
         }
 
-        static List<Move> BasicMoves()
-        {
-            var json = File.ReadAllText(RoeMocap.MovesPath);
-            var table = JsonUtility.FromJson<StrikeTableJson>(json);
-            Move Make(string name, string button, float speed, int damage, float hitstun, float blockstun, float push, Level level, float radius, float meter)
-            {
-                var s = table.moves.First(x => x.name == name);
-                return new Move
-                {
-                    name = name, button = button, clip = name, speed = speed,
-                    bone = (HumanBodyBones)Enum.Parse(typeof(HumanBodyBones), s.bone),
-                    radius = radius, hitStart = s.hitStart, hitEnd = s.hitEnd, length = s.length,
-                    damage = damage, hitstun = hitstun, blockstun = blockstun, push = push, level = level,
-                    meterGain = meter, reach = s.reach,
-                    recover = 0.82f, cancel = Mathf.Clamp01(s.hitEnd / Mathf.Max(0.01f, s.length) + 0.05f),
-                };
-            }
-            return new List<Move>
-            {
-                Make("jab", "A", 1.7f, 40, 0.32f, 0.18f, 0.25f, Level.High, 0.15f, 5f),
-                Make("slash", "B", 1.6f, 60, 0.40f, 0.22f, 0.35f, Level.Mid, 0.20f, 6f),
-                Make("cross", "C", 1.5f, 80, 0.45f, 0.25f, 0.45f, Level.High, 0.17f, 7f),
-                Make("kick", "D", 1.7f, 95, 0.50f, 0.28f, 0.60f, Level.Mid, 0.22f, 8f),
-            };
-        }
-
-        [Serializable]
-        class StrikeTableJson
-        {
-            public List<RoeMocap.StrikeInfo> moves = new List<RoeMocap.StrikeInfo>();
-        }
-
         /// <summary>One fighter: root with the rig component, the game's unit prefab (skills, effects), our humanoid model.</summary>
         static FighterRig MakeFighter(RoeManifest.Character c)
         {
@@ -293,14 +269,8 @@ namespace RoeFighter.EditorTools
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 smr.forceMatrixRecalculationPerRender = false;
 
-            // clips
+            // clips: the game's own here; the basic moves come from a motion pack (BuildScene, FightGame.Setup)
             rig.stance = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(c.id, "idle_01"));
-            foreach (var name in MocapClips)
-            {
-                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeMocap.ClipPath(name));
-                if (clip != null)
-                    rig.clips.Add(new FighterRig.NamedClip { name = name, clip = clip, loop = Loops.Contains(name) });
-            }
             foreach (var name in GameClips)
             {
                 var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(c.id, name));

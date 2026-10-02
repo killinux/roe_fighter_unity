@@ -41,6 +41,14 @@ namespace RoeFighter.Fight
         public AudioClip music;                      // the stage's battle music, looped
         public float musicVolume = 0.3f;
         AudioSource musicSource;
+        public List<MotionPack> motionPacks = new List<MotionPack>();   // basic moves that can be swapped (F3)
+        public int motionPack;
+        float noticeTime;
+
+        /// <summary>A line under the timer: the motion pack in use, for a few seconds after a switch or a new match.</summary>
+        public string Notice => noticeTime > 0f && Pack != null ? $"MOTIONS: {Pack.title}" : "";
+
+        public MotionPack Pack => motionPacks.Count > 0 ? motionPacks[Mathf.Clamp(motionPack, 0, motionPacks.Count - 1)] : null;
 
         public const float Dt = 1f / 60f;
         public readonly Fighter[] f = new Fighter[2];
@@ -96,6 +104,18 @@ namespace RoeFighter.Fight
         public void Setup()
         {
             Application.targetFrameRate = 60;
+            // the basic moves of the chosen motion pack, on both fighters
+            var pack = Pack;
+            if (pack != null)
+            {
+                foreach (var rig in rigs)
+                    rig.UseMotions(pack);
+                moves = pack.CopyStrikes();
+                foreach (var m in moves)
+                    if (string.IsNullOrEmpty(m.hitSound))
+                        m.hitSound = "hit";
+                noticeTime = 4f;
+            }
             for (int i = 0; i < 2; i++)
             {
                 rigs[i].Init();
@@ -158,6 +178,12 @@ namespace RoeFighter.Fight
                 cpu[0] = !cpu[0];
             if (Input.GetKeyDown(KeyCode.F2))
                 cpu[1] = !cpu[1];
+            if (Input.GetKeyDown(KeyCode.F3) && motionPacks.Count > 1)
+            {
+                // the next motion pack; the match starts over with it
+                motionPack = (motionPack + 1) % motionPacks.Count;
+                Setup();
+            }
             if (phase == Phase.MatchOver && phaseTime > 2f && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton7)))
                 Setup();
             accumulator += Mathf.Min(Time.deltaTime, 0.1f);
@@ -184,6 +210,7 @@ namespace RoeFighter.Fight
         {
             frame++;
             phaseTime += Dt;
+            noticeTime -= Dt;
             float dt = Dt * (slowMotion > 0f ? 0.35f : 1f);
             if (slowMotion > 0f)
                 slowMotion -= Dt;

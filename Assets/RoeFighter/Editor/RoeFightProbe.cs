@@ -602,6 +602,62 @@ namespace RoeFighter.EditorTools
             Debug.Log(sb.ToString());
         }
 
+        /// <summary>
+        /// The bones a cloth simulation could move, per fighter: every non-human bone that is not a
+        /// limb helper, grouped by the bone its chain hangs on and its name without the trailing number,
+        /// with the chain depth, how much skin the group carries and whether the battle stance animates it.
+        /// </summary>
+        public static void ClothBones()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            foreach (var rig in Object.FindObjectsByType<FighterRig>(FindObjectsSortMode.None).OrderBy(r => r.id))
+            {
+                var a = rig.animator;
+                var human = new HashSet<Transform>();
+                foreach (HumanBodyBones hb in System.Enum.GetValues(typeof(HumanBodyBones)))
+                    if (hb != HumanBodyBones.LastBone && a.GetBoneTransform(hb) != null)
+                        human.Add(a.GetBoneTransform(hb));
+                var helperRig = a.GetComponent<RoeHelperRig>();
+                var helpers = new HashSet<Transform>(helperRig != null ? helperRig.drives.Select(d => d.helper) : Enumerable.Empty<Transform>());
+                var skin = new Dictionary<Transform, int>();
+                foreach (var r in a.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                {
+                    var bw = r.sharedMesh.boneWeights;
+                    foreach (var w in bw)
+                        if (w.weight0 > 0.3f && r.bones[w.boneIndex0] != null)
+                            skin[r.bones[w.boneIndex0]] = skin.TryGetValue(r.bones[w.boneIndex0], out int n) ? n + 1 : 1;
+                }
+                var animated = new HashSet<string>(AnimationUtility.GetCurveBindings(rig.stance).Select(b => b.path.Split('/').Last()));
+                string Prefix(string name) => System.Text.RegularExpressions.Regex.Replace(name, @"[._\-\s]*\d+$", "");
+                var groups = new Dictionary<string, List<Transform>>();
+                foreach (var t in a.GetComponentsInChildren<Transform>(true))
+                {
+                    if (t == a.transform || human.Contains(t) || helpers.Contains(t) || t.GetComponent<Renderer>() != null)
+                        continue;
+                    var top = t;
+                    while (top.parent != null && !human.Contains(top.parent) && Prefix(top.parent.name) == Prefix(t.name))
+                        top = top.parent;
+                    string key = $"{Prefix(t.name)} (on {(top.parent != null ? top.parent.name : "-")})";
+                    if (!groups.TryGetValue(key, out var list))
+                        groups[key] = list = new List<Transform>();
+                    list.Add(t);
+                }
+                var sb = new System.Text.StringBuilder($"[ROE] cloth candidates of {rig.id}:");
+                foreach (var kv in groups.OrderByDescending(kv => kv.Value.Sum(t => skin.TryGetValue(t, out int n) ? n : 0)))
+                {
+                    int verts = kv.Value.Sum(t => skin.TryGetValue(t, out int n) ? n : 0);
+                    if (verts == 0)
+                        continue;
+                    int keyed = kv.Value.Count(t => animated.Contains(t.name));
+                    float span = kv.Value.Count > 1 ? kv.Value.Max(t => Vector3.Distance(t.position, kv.Value[0].position)) : 0f;
+                    sb.Append($"\n[ROE]   {kv.Key}: {kv.Value.Count} bones, {verts} verts, {keyed} keyed in the stance, span {span:F2} m: " +
+                              string.Join(" ", kv.Value.Take(8).Select(t => t.name)) + (kv.Value.Count > 8 ? " ..." : ""));
+                }
+                Debug.Log(sb.ToString());
+            }
+        }
+
         /// <summary>Animators under each fighter and what the skill timelines are bound to.</summary>
         public static void Bindings()
         {
