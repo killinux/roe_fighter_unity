@@ -22,7 +22,7 @@
 | 挑开阔的战斗场景：194 个场景全部粗筛，5 个导入 Unity | 完成；默认用格斗俱乐部擂台 `e23_steel_s02` |
 | 基础动作（走、退、跑、刺拳、直拳、踢、挥砍、防御架势）：公开动作捕捉数据转人形 | 完成；侧步改成程序化迈步（两节骨 IK，脚不滑） |
 | 手臂和腿：皮肤挂在辅助骨上，从游戏动作里拟合出辅助骨怎么跟随肢体，动捕动作时实时驱动；动捕着地；走路不滑；高跟鞋站稳（鞋跟和前掌都着地） | 完成（10-02 下午，高跟鞋 10-02 晚），见"手臂和腿"一节；对比图 `out\feet_fix_1002.jpg` |
-| 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4`；10-02 晚裙子按游戏站姿垂下（之前翘出 45°），对比图 `out\skirt_fix_1002.jpg`。调研 Magica Cloth 2（`docs/magica-cloth-2.md`）后照它的做法重做：裙子跟腿走、一片布连成网，F4 切换新版 / 旧版 / 关，以后可接 Magica；对比视频 `out\skirt_magica_style.mp4`；之后又修了屁股附近后片翘起（裙子的基准改成游戏站姿），对比视频 `out\skirt_rest_compare.mp4` |
+| 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4`；10-02 晚裙子按游戏站姿垂下（之前翘出 45°），对比图 `out\skirt_fix_1002.jpg`。调研 Magica Cloth 2（`docs/magica-cloth-2.md`）后照它的做法重做：裙子跟腿走、一片布连成网，F4 切换新版 / 旧版 / 关，以后可接 Magica；对比视频 `out\skirt_magica_style.mp4`；之后又修了屁股附近后片翘起（裙子的基准改成游戏站姿），对比视频 `out\skirt_rest_compare.mp4`；10-03 裙子改成自然下垂、贴着身体（F5 可切回），对比视频 `out\skirt_drape_compare.mp4` |
 | 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 两个包：`bandai1`（默认）和开源动捕做的 `accad_male2`（拳击架势、步法、前后腿回旋踢，10-02 晚）；对比视频 `out\motion_packs_demo.mp4`，用新包的整场对打 `out\fight_cpu_match_accad.mp4` |
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | UFE 对战 | 暂时买不了；先用自己的格斗逻辑 |
@@ -317,6 +317,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
 | 换布料（Magica 式新版 / 10-02 旧版 / 关；比赛重新开始） | F4 | |
+| 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
 | 电脑接管 1P / 2P | F1 / F2 | |
 
@@ -559,6 +560,22 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
     基准姿势插进腿多深（`SkirtDepth`，Bandai 包，平均厘米）：a08 站架、前进、后退、跑都从约 3.5 降到 0.3–0.6；g04 前进、后退、跑多了约 1（5.3 → 6.3），模拟之后反而更浅（上表）。
   - 看图：`out\skirt_butt_g04.jpg`（右侧、右后特写，上面一行是游戏原版站姿做参照），`out\skirt_rest_a08.jpg`（a08 正面、侧面、背面，没有翘回 45°）；
     视频 `out\skirt_rest_compare.mp4`（23 秒，从右后方跟拍胯部，左旧右新，两个角色）。
+- **自然下垂（10-03）**：用户看了上一条之后问"能自然下垂么，还是有一点翘"。
+  - 原因：跟腿走的基准姿势是游戏站姿里的裙子被腿带着走。游戏站姿前倾、屁股往后翘，裙子顺着那个身体斜着挂，换到动捕比较直的身体上就斜着翘出去：
+    没贴身体的裙骨平均偏离竖直 17–23°（游戏站姿本身也有 16–20°，`RoeFightProbe.SkirtHang`）。
+  - 做法（`RoeSkirtRig.Drape`，默认开；游戏里 **F5** 在"自然下垂 / 跟腿走"之间切，屏幕上方显示 `SKIRT: hangs / fitted`）：
+    1. 身体表面（`Runtime/RoeBodySurface.cs`）：开局时从蒙皮网格取胯到脚的皮肤点（胯部只取皮肤材质，腰带饰物不算；腿上连护甲、鞋都算），2.5 厘米取一个，
+       只留朝外的面（护甲、鞋的内侧面会把裙子往里拉）；每一步按骨骼重新蒙皮，约 1400 个点，每个角色每步约 0.5 毫秒。
+       离皮肤多远用附近多个点的切平面距离按高斯权重平均（不取"最近一个点"：最近点会在两块皮肤之间来回跳，裙子一帧跳几十度）。
+    2. 每节裙骨从上一步的方向往竖直方向落（时间常数 0.05 秒；每步从头算会在腿的两侧之间跳），碰到皮肤就沿皮肤法线推开：
+       骨的中线离皮肤 1.2 厘米加这节布本身的厚度（下摆的毛边有几厘米厚）。只算朝这条链那一侧的皮肤（前片不会被推进两腿中间），抬起的大腿从下面托住。
+    3. 贴着身体的平布绕自己的骨转一下，平贴在皮肤上（最多 60°）：平布斜着压在圆屁股上，一边会陷进去。
+    4. 每条链下半段（链长 45% 以下）再拿这节布自己的 24 个顶点去碰皮肤，最深的那个决定推多少（每轮最多 2 厘米，最多把骨抬到偏离竖直 45°）：
+       g04 后片下摆的毛边是从侧面包住脚后跟的，骨的中线离腿还有 6–7 厘米。上半段不这么做：为了一个角把整片后片从屁股上推开，又翘起来了。
+    5. 布料模拟：这样挂好的裙子在腿部胶囊（比腿略粗）里允许和基准姿势一样深，不然胶囊又把它推出去；裙片之间的横边不再单独碰胶囊（和横边长度打架，a08 一步抖 13°）。
+  - 数字（Bandai 包，布料开）：没贴身体的裙骨平均偏离竖直（站架 / 前进 / 后退）a08 20 / 19 / 23° → 11 / 8 / 9°，g04 17 / 19 / 19° → 11 / 15 / 14°；
+    裙子网格陷进皮肤的顶点 a08 0 / 0 / 3% → 0 / 0 / 0%，g04 0.3 / 0.8 / 2.0% → 0.1 / 0.9 / 0.8%；g04 后片上端贴着屁股（0.6 厘米 → 贴住）。
+  - 看：`out\skirt_drape_compare.mp4`（右后方跟拍胯部、再从正面，左上一版 52f11de，右自然下垂，两个角色），`out\skirt_drape_g04.jpg`、`out\skirt_drape_a08.jpg`。
 
 ```powershell
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.FitSkirt                                   # 裙子跟腿走的权重 → 人形预制体上的 RoeSkirtRig（在 RoeHelperFit.Run 之后）
@@ -568,6 +585,10 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtRests                                # 两种基准差多少（每个驱动、每节裙骨）
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Rests -Graphics -Extra '-roeView','backright'   # 两种基准各录一遍 → _work\rest_demo
 python tools\cloth_demo_video.py _work\rest_demo out\skirt_rest_compare.mp4 --variants rest_guard,rest_stance
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Extra '-roeDrapes','0,1'       # 裙骨偏离竖直多少、离皮肤多远（-roeChains 逐节）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtJumps -Extra '-roeChar','g04'       # 基准姿势一步最多转多少 + 每步耗时
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Rests -Graphics -Extra '-roeRests','rest_stance,drape','-roeView','front'
+# 裙子的开关都能在命令行改：-roeDrape 0..1  -roeClearance 0.012  -roeTwist 0..1  -roeFacing 0.2  -roeMeshClearance 0.003；ButtGap 还会报裙子网格陷进皮肤的比例（逐节）
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.Skirt -Graphics -Extra '-roeChar','g04','-roePacks','bandai1','-roeCloths','legacy,magica_style'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeCloths','legacy,magica_style','-roeOut','_work\cloth_demo_mc2'
 python tools\cloth_demo_video.py _work\cloth_demo_mc2 out\x.mp4 --variants legacy,magica_style --suffix "（Bandai 包）"
@@ -709,7 +730,8 @@ JSON 里的 `bvh` 一块说明怎么把动捕切成片段（节选，`//` 后面
 - **裙子**：用户 10-02 晚看过 `out\g04_skirt_fix.mp4` 说"不行，还是有问题"。调研 Magica Cloth 2 之后照它的做法重做了（"布料"一节最后一条，
   `docs/magica-cloth-2.md` 第 9 节）：裙子的动画姿势跟腿走、一片布连成网、惯性分层，F4 可以和旧版对比。等用户看新视频 `out\skirt_magica_style.mp4`。
   之后用户说屁股附近的后片翘起来一点，原因和改法见"布料"一节"屁股附近翘起来"，对比视频 `out\skirt_rest_compare.mp4`。
-  还没做：横边在踢腿时还会被拉长（最多 40%）；三角弯曲约束（Magica 网格模式有）没加。
+  10-03 用户问"能自然下垂么"，改成贴着身体自然下垂（"布料"一节"自然下垂"，F5 切换），对比视频 `out\skirt_drape_compare.mp4`。
+  还没做：横边在踢腿时还会被拉长（最多 40%）；三角弯曲约束（Magica 网格模式有）没加；g04 前进时后片下摆的毛边还会碰到脚后跟（约 1% 的顶点、1.5 厘米）。
   Magica 适配器是照手册写的草稿，插件装上后第一次编译、试跑时可能要改。
 - 动作包现在有 `bandai1`（默认）和 `accad_male2` 两个，买来的 Unity 动作照"动作包"一节的 JSON 接进来。`accad_male2` 是右脚在前的拳击架势，
   g04 举着大扇子打拳击架势时扇子挡在身前；只有四个攻击键，ACCAD 里还有勾拳、上勾拳、侧踢、前踢、防御、闪避、胜利动作没用上，CMU 的空手道也可以补进来。

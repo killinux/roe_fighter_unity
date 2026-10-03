@@ -186,6 +186,12 @@ namespace RoeFighter
         public float weight = 1f;
         public float Weight { get => weight; set => weight = value; }
         public static bool NoColliders, NoBackstop;     // for checks (RoeFightProbe.SkirtSwing -roeVariant)
+        /// <summary>
+        /// The skirt's animated pose already rests on the skin (RoeSkirtRig.Drape; FighterRig sets this each
+        /// step): its chains may lie in the leg capsules as deep as that pose does - the capsules are a
+        /// little fatter than the legs and would push a hanging skirt back out.
+        /// </summary>
+        public bool skirtOnSkin;
         public string Report { get; private set; }
 
         /// <summary>
@@ -929,12 +935,18 @@ namespace RoeFighter
                         float L = c.length[i];
                         if (c.capsules.Length > 0 && !NoColliders)
                         {
-                            // as deep as the stance has it is allowed (legacy: as deep as the animated pose goes)
+                            // as deep as the stance has it is allowed (legacy: as deep as the animated pose goes; a
+                            // skirt hung on the skin: as deep as either)
                             var allow = legacy ? c.allow : s.edge ? c.restEdge[i] : c.restPoint[i];
-                            if (legacy)
+                            bool onSkin = !legacy && skirtOnSkin && c.kind == "skirt";
+                            if (legacy || onSkin)
+                            {
+                                var stance = allow;
+                                allow = c.allow;
                                 for (int k = 0; k < c.capsules.Length; k++)
-                                    allow[k] = Mathf.Max(0f, s.edge ? EdgeDepth(hb[i], tb[i], s.radius, c.capsules[k], out _, out _)
-                                                                    : PointDepth(tb[i], s.radius, c.capsules[k], out _));
+                                    allow[k] = Mathf.Max(onSkin ? stance[k] : 0f, s.edge ? EdgeDepth(hb[i], tb[i], s.radius, c.capsules[k], out _, out _)
+                                                                                         : PointDepth(tb[i], s.radius, c.capsules[k], out _));
+                            }
                             bool hit;
                             Vector3 nx = s.edge ? PushEdge(h, c.x[i], s.radius, c.capsules, allow, out hit)
                                                 : PushPoint(c.x[i], s.radius, c.capsules, allow, out hit);
@@ -1005,8 +1017,10 @@ namespace RoeFighter
                             }
                         }
                     }
-                    // the cross links collide too: a leg cannot pass between two linked chains
-                    if (c.capsules.Length > 0 && !NoColliders)
+                    // the cross links collide too: a leg cannot pass between two linked chains (not for a skirt
+                    // hung on the skin: its pose already clears the legs, and link pushes against the capsules,
+                    // which are fatter than the legs, fought the links' lengths - a08 shook 13 degrees a step)
+                    if (c.capsules.Length > 0 && !NoColliders && !(skirtOnSkin && c.kind == "skirt"))
                         foreach (var (i, j) in c.links[l])
                             PushLink(c, i, j);
                     // each bone's frame: the animated one carried by the parent, swung onto the simulated direction
@@ -1122,9 +1136,11 @@ namespace RoeFighter
             var mj = Vector3.zero;
             bool hit = false;
             var allow = c.restLink[(i, j)];
+            bool onSkin = skirtOnSkin && c.kind == "skirt";
             for (int k = 0; k < c.capsules.Length; k++)
             {
-                float pen = EdgeDepth(c.x[i], c.x[j], s.radius, c.capsules[k], out var nrm, out float u) - allow[k];
+                float allowed = onSkin ? Mathf.Max(allow[k], EdgeDepth(c.tb[i], c.tb[j], s.radius, c.capsules[k], out _, out _)) : allow[k];
+                float pen = EdgeDepth(c.x[i], c.x[j], s.radius, c.capsules[k], out var nrm, out float u) - allowed;
                 if (pen <= 0f)
                     continue;
                 float wi = 1f - u, wj = u, norm = wi * wi + wj * wj;

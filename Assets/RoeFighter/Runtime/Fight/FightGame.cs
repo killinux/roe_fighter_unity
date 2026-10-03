@@ -47,7 +47,8 @@ namespace RoeFighter.Fight
 
         /// <summary>A line under the timer: the motion pack and the cloth in use, for a few seconds after a switch or a new match.</summary>
         public string Notice => noticeTime <= 0f ? "" :
-            string.Join("    ", new[] { Pack != null ? $"MOTIONS: {Pack.title}" : null, $"CLOTH: {RoeClothBackends.Find(FighterRig.ClothBackend).title}" }.Where(s => s != null));
+            string.Join("    ", new[] { Pack != null ? $"MOTIONS: {Pack.title}" : null, $"CLOTH: {RoeClothBackends.Find(FighterRig.ClothBackend).title}",
+                                       RoeClothBackends.Find(FighterRig.ClothBackend).skinnedSkirt ? $"SKIRT: {(RoeSkirtRig.Drape > 0f ? "hangs" : "fitted")}" : null }.Where(s => s != null));
 
         public MotionPack Pack => motionPacks.Count > 0 ? motionPacks[Mathf.Clamp(motionPack, 0, motionPacks.Count - 1)] : null;
 
@@ -190,6 +191,13 @@ namespace RoeFighter.Fight
                 // the next cloth backend (Magica-style bone cloth, the 10-02 one, none); the match starts over
                 FighterRig.ClothBackend = RoeClothBackends.Next(FighterRig.ClothBackend);
                 Setup();
+            }
+            if (Input.GetKeyDown(KeyCode.F5))
+            {
+                // the skirt's animation pose: hanging on the body (RoeSkirtRig.Drape 1) or the fitted pose
+                // (0, as of 52f11de); takes effect at once
+                RoeSkirtRig.Drape = RoeSkirtRig.Drape > 0f ? 0f : 1f;
+                noticeTime = 4f;
             }
             if (phase == Phase.MatchOver && phaseTime > 2f && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton7)))
                 Setup();

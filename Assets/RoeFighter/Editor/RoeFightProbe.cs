@@ -10,6 +10,17 @@ namespace RoeFighter.EditorTools
     /// <summary>Checks on the saved fight scene.</summary>
     public static class RoeFightProbe
     {
+        /// <summary>The skirt rig's switches from the command line: -roeSkirtRest stance|guard, -roeDrape 0..1 (RoeSkirtRig.Drape), -roeClearance m, -roeTwist 0..1.</summary>
+        static void SkirtArgs()
+        {
+            RoeSkirtRig.RestOnStance = RoeCapture.Arg("-roeSkirtRest", "stance") == "stance";
+            RoeSkirtRig.Drape = float.Parse(RoeCapture.Arg("-roeDrape", "1"), System.Globalization.CultureInfo.InvariantCulture);
+            RoeSkirtRig.DrapeClearance = float.Parse(RoeCapture.Arg("-roeClearance", "0.012"), System.Globalization.CultureInfo.InvariantCulture);
+            RoeSkirtRig.DrapeTwist = float.Parse(RoeCapture.Arg("-roeTwist", "1"), System.Globalization.CultureInfo.InvariantCulture);
+            RoeSkirtRig.DrapeMeshClearance = float.Parse(RoeCapture.Arg("-roeMeshClearance", "0.003"), System.Globalization.CultureInfo.InvariantCulture);
+            RoeSkirtRig.DrapeFacing = float.Parse(RoeCapture.Arg("-roeFacing", RoeSkirtRig.DrapeFacing.ToString(System.Globalization.CultureInfo.InvariantCulture)), System.Globalization.CultureInfo.InvariantCulture);
+        }
+
         /// <summary>Lists what each fighter draws (renderer, enabled, materials/shaders).</summary>
         public static void Renderers()
         {
@@ -728,7 +739,7 @@ namespace RoeFighter.EditorTools
         /// </summary>
         public static void SkirtSwing()
         {
-            RoeSkirtRig.RestOnStance = RoeCapture.Arg("-roeSkirtRest", "stance") == "stance";
+            SkirtArgs();
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             string id = RoeCapture.Arg("-roeChar", "g04");
             string kind = RoeCapture.Arg("-roeKind", "skirt");
@@ -887,6 +898,192 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>
+        /// Does the skirt hang?  Per skirt chain of each fighter, per bone: the angle from straight down
+        /// and how far its tail is off the skin (RoeBodySurface, cm, negative inside) - for the game's own
+        /// stance (its keys), then in the guard, walking on and walking back, once per RoeSkirtRig.Drape
+        /// value (-roeDrapes, default 0,1), the animation pose (cloth weight 0) and the cloth on it.  In
+        /// the summary "free" bones are those more than 3 cm off the skin: hanging cloth has them near 0.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.SkirtHang [-roeMotions bandai1] [-roeDrapes 0,1] [-roeChains]
+        /// </summary>
+        public static void SkirtHang()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            bool chains = System.Environment.GetCommandLineArgs().Contains("-roeChains");
+            string variant = RoeCapture.Arg("-roeVariant", "");
+            RoeBoneCloth.NoColliders = variant.Contains("nocoll");
+            RoeBoneCloth.NoBackstop = variant.Contains("noback");
+            RoeBoneCloth.SkirtTuning = RoeCapture.Arg("-roeSkirt", "");
+            RoeSkirtRig.DrapeClearance = float.Parse(RoeCapture.Arg("-roeClearance", "0.012"), System.Globalization.CultureInfo.InvariantCulture);
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.cpu = new[] { false, false };
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            FighterRig.ClothBackend = "magica_style";
+            var sb = new System.Text.StringBuilder($"[ROE] skirt hang ({game.Pack?.name}{(variant.Length > 0 ? " " + variant : "")}{(RoeBoneCloth.SkirtTuning.Length > 0 ? " " + RoeBoneCloth.SkirtTuning : "")}): per moment, bones more than 3 cm off the skin ('free') - mean / max degrees from straight down; bones nearer - mean / least cm off the skin");
+
+            string Measure(FighterRig rig, string label)
+            {
+                var sr = rig.animator.GetComponent<RoeSkirtRig>();
+                var body = sr?.Body;
+                if (sr == null || body == null)
+                    return $"\n[ROE]   {rig.id} {label}: no skirt rig";
+                body.Pose();
+                var free = new List<float>();
+                var near = new List<float>();
+                var lines = new System.Text.StringBuilder();
+                int RootOf(int j) { while (sr.joints[j].parent >= 0) j = sr.joints[j].parent; return j; }
+                // chain by chain, root to tip (the joints come level by level)
+                var order = Enumerable.Range(0, sr.joints.Count).OrderBy(j => RootOf(j)).ThenBy(j => j).ToList();
+                foreach (int j in order)
+                {
+                    var jt = sr.joints[j];
+                    if (jt.bone == null)
+                        continue;
+                    var tail = jt.bone.TransformPoint(jt.tailLocal);
+                    float angle = Vector3.Angle(tail - jt.bone.position, Vector3.down);
+                    float off = body.Nearest(tail, out var p, out var n) ? Vector3.Dot(tail - p, n) : 1f;
+                    if (off > 0.03f)
+                        free.Add(angle);
+                    else
+                        near.Add(off);
+                    if (chains)
+                    {
+                        if (jt.parent < 0)
+                            lines.Append($"\n[ROE]       {jt.bone.name}:");
+                        lines.Append($" {angle:F0}/{off * 100f:F1}");
+                    }
+                }
+                return $"\n[ROE]   {rig.id} {label,-18}: free {free.Count,2} bones {(free.Count > 0 ? free.Average() : 0f),4:F1} / {(free.Count > 0 ? free.Max() : 0f),3:F0} deg; " +
+                       $"near {near.Count,2} bones {(near.Count > 0 ? near.Average() * 100f : 0f),4:F1} / {(near.Count > 0 ? near.Min() * 100f : 0f),5:F1} cm" + lines;
+            }
+
+            // the game's own stance, as its keys have it
+            FighterRig.ClothBackend = "magica_style";
+            RoeSkirtRig.Drape = 0f;
+            game.Setup();
+            foreach (var f in game.f)
+            {
+                f.rig.stance.SampleAnimation(f.rig.animator.gameObject, 0f);
+                sb.Append(Measure(f.rig, "game stance"));
+            }
+            foreach (var drapeText in RoeCapture.Arg("-roeDrapes", "0,1").Split(','))
+            {
+                RoeSkirtRig.Drape = float.Parse(drapeText, System.Globalization.CultureInfo.InvariantCulture);
+                game.Setup();
+                while (game.phase != FightGame.Phase.Fight)
+                {
+                    game.UpdateCamera(FightGame.Dt);
+                    game.Step(new FighterInput[2]);
+                }
+                var mid = (game.f[0].pos + game.f[1].pos) * 0.5f;
+                for (int i = 0; i < 2; i++)
+                {
+                    game.f[i].pos = mid + (game.f[i].pos - mid).normalized * 3f;
+                    game.f[i].Place();
+                }
+                foreach (var (moment, seconds, x) in new (string, float, int)[] { ("guard", 1.0f, 0), ("walk", 1.2f, 1), ("back", 1.2f, -1) })
+                {
+                    for (float t = 0f; t < seconds; t += FightGame.Dt)
+                    {
+                        game.UpdateCamera(FightGame.Dt);
+                        var camRight = game.cam.transform.right;
+                        camRight.y = 0f;
+                        var inputs = new FighterInput[2];
+                        for (int i = 0; i < 2; i++)
+                            inputs[i] = new FighterInput { x = x * (Vector3.Dot(game.f[i].foe.pos - game.f[i].pos, camRight) >= 0f ? 1 : -1) };
+                        game.Step(inputs);
+                    }
+                    foreach (var f in game.f)
+                    {
+                        sb.Append(Measure(f.rig, $"drape {drapeText} {moment} cloth"));
+                        var sr = f.rig.animator.GetComponent<RoeSkirtRig>();
+                        var hips = f.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
+                        sr.Apply(hips.position, f.rig.HipHeading(), 1f);       // the animation pose alone
+                        sb.Append(Measure(f.rig, $"drape {drapeText} {moment} pose"));
+                    }
+                }
+            }
+            RoeSkirtRig.Drape = 1f;
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
+        /// Does the skirt's animation pose jump?  One fighter plays the basic moves with the cloth weight at
+        /// 0 (the bones show RoeSkirtRig's pose alone); per skirt bone the largest turn between two steps,
+        /// the worst bones with the move and time.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.SkirtJumps [-roeChar g04] [-roeMotions bandai1] [-roeDrape 1]
+        /// </summary>
+        public static void SkirtJumps()
+        {
+            SkirtArgs();
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "g04");
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.cpu = new[] { false, false };
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            FighterRig.ClothBackend = "magica_style";
+            game.Setup();
+            int who = game.f[0].rig.id == id ? 0 : 1;
+            var me = game.f[who];
+            me.rig.clothWeight = 0f;
+            while (game.phase != FightGame.Phase.Fight)
+            {
+                game.UpdateCamera(FightGame.Dt);
+                game.Step(new FighterInput[2]);
+            }
+            me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 6f;
+            me.foe.Place();
+            var sr = me.rig.animator.GetComponent<RoeSkirtRig>();
+            var last = new Vector3[sr.joints.Count];
+            var worst = new List<(float angle, string bone, string move, float t)>();
+            float time = 0f;
+            foreach (var (name, seconds, inp) in new (string, float, FighterInput)[]
+            {
+                ("guard", 1.5f, default), ("walk", 2f, new FighterInput { x = 1 }), ("back", 2f, new FighterInput { x = -1 }),
+                ("side", 2f, new FighterInput { y = 1 }), ("A", 0.9f, new FighterInput { a = true }), ("C", 1.1f, new FighterInput { c = true }),
+                ("D", 1.5f, new FighterInput { d = true }), ("B", 1.4f, new FighterInput { b = true }),
+            })
+            {
+                int steps = Mathf.RoundToInt(seconds * 60f);
+                for (int s = 0; s < steps; s++)
+                {
+                    game.UpdateCamera(FightGame.Dt);
+                    var input = inp.a || inp.b || inp.c || inp.d ? (s == 0 ? inp : default) : inp;
+                    var camRight = game.cam.transform.right;
+                    camRight.y = 0f;
+                    input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
+                    var inputs = new FighterInput[2];
+                    inputs[who] = input;
+                    game.Step(inputs);
+                    time += FightGame.Dt;
+                    for (int j = 0; j < sr.joints.Count; j++)
+                    {
+                        var jt = sr.joints[j];
+                        var dir = (jt.bone.TransformPoint(jt.tailLocal) - jt.bone.position).normalized;
+                        if (last[j] != Vector3.zero && s > 0)
+                            worst.Add((Vector3.Angle(last[j], dir), jt.bone.name, name, time));
+                        last[j] = dir;
+                    }
+                }
+            }
+            var sb = new System.Text.StringBuilder($"[ROE] skirt pose jumps {id} ({game.Pack?.name}, drape {RoeSkirtRig.Drape}): largest turns of a bone between two steps");
+            // what the skirt rig costs a step (the skin posed, every bone hung)
+            var hipsBone = me.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
+            var watch = System.Diagnostics.Stopwatch.StartNew();
+            for (int k = 0; k < 300; k++)
+                sr.Apply(hipsBone.position, me.rig.HipHeading(), 1f);
+            sb.Append($"\n[ROE]   cost: {watch.Elapsed.TotalMilliseconds / 300.0:F3} ms a step, {sr.joints.Count} bones, {(sr.Body != null ? sr.Body.Count : 0)} skin points");
+            foreach (var g in worst.GroupBy(w => w.move))
+                sb.Append($"\n[ROE]   {g.Key,-6}: " + string.Join(", ", g.OrderByDescending(w => w.angle).Take(4).Select(w => $"{w.bone} {w.angle:F0} deg at {w.t:F2} s")));
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
         /// Does the skirt stand off the buttocks?  On the baked skin, in the hips' heading frame, at heights
         /// below the hip joints: the gap between the rearmost point of the body and the inner face of the
         /// back panel (|x| under 7 cm), and between the body's left side and the left sash - positive = air
@@ -897,7 +1094,7 @@ namespace RoeFighter.EditorTools
         /// </summary>
         public static void ButtGap()
         {
-            RoeSkirtRig.RestOnStance = RoeCapture.Arg("-roeSkirtRest", "stance") == "stance";
+            SkirtArgs();
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             string id = RoeCapture.Arg("-roeChar", "g04");
             string outDir = RoeCapture.Arg("-roeOut", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "butt"));
@@ -916,6 +1113,8 @@ namespace RoeFighter.EditorTools
                 foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
             var sb = new System.Text.StringBuilder($"[ROE] skirt against the buttocks, {id} ({game.Pack?.name}), cm at 5/10/15/20/25 cm below the hip joints - back panel gap | left sash gap:");
+            float lookY = float.Parse(RoeCapture.Arg("-roeLookY", "-0.15"), System.Globalization.CultureInfo.InvariantCulture);       // camera aim against the hips (m)
+            float clothWeight = float.Parse(RoeCapture.Arg("-roeClothWeight", "1"), System.Globalization.CultureInfo.InvariantCulture); // 0: the animation pose alone
             bool warmed = false;
             Fighter me = null;
 
@@ -933,6 +1132,12 @@ namespace RoeFighter.EditorTools
                 var back = new List<Vector3>();
                 var sash = new List<Vector3>();
                 var mesh = new Mesh();
+                // the skirt's vertices against the skin (RoeBodySurface, any facing): how many are inside
+                var skin = a.GetComponent<RoeSkirtRig>()?.Body;
+                skin?.Pose();
+                int skirtVerts = 0, skirtIn = 0, backVerts = 0, backIn = 0;
+                float deepest = 0f, backDeepest = 0f;
+                var perBone = new Dictionary<string, (int n, int inside, float deepest)>();
                 foreach (var smr in a.GetComponentsInChildren<SkinnedMeshRenderer>())
                 {
                     if (smr.sharedMesh == null || smr.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_")))
@@ -946,7 +1151,29 @@ namespace RoeFighter.EditorTools
                         var bone = w[i].boneIndex0 < smr.bones.Length ? smr.bones[w[i].boneIndex0] : null;
                         if (bone == null || w[i].weight0 < 0.4f)
                             continue;
-                        var p = inv * (m4.MultiplyPoint3x4(v[i]) - origin);
+                        var world = m4.MultiplyPoint3x4(v[i]);
+                        if (skin != null && bone.name.StartsWith("Skirt_") && !bone.name.EndsWith("_00"))
+                        {
+                            bool isBack = bone.name.StartsWith("Skirt_Back") || bone.name.StartsWith("Skirt_M_01");
+                            skirtVerts++;
+                            backVerts += isBack ? 1 : 0;
+                            var tally = perBone.TryGetValue(bone.name, out var t0) ? t0 : (n: 0, inside: 0, deepest: 0f);
+                            tally.n++;
+                            if (skin.Signed(world, Vector3.zero, -2f, out float d, out _) && d < -0.003f)
+                            {
+                                tally.inside++;
+                                tally.deepest = Mathf.Min(tally.deepest, d);
+                                skirtIn++;
+                                deepest = Mathf.Min(deepest, d);
+                                if (isBack)
+                                {
+                                    backIn++;
+                                    backDeepest = Mathf.Min(backDeepest, d);
+                                }
+                            }
+                            perBone[bone.name] = tally;
+                        }
+                        var p = inv * (world - origin);
                         if (bone.name.StartsWith("Skirt_Back"))
                             back.Add(p);
                         else if (bone.name.StartsWith("Skirt_Left"))
@@ -967,7 +1194,11 @@ namespace RoeFighter.EditorTools
                     var sashInner = sash.Where(p => Slice(p) && Mathf.Abs(p.z) < 0.08f).Select(p => p.x).DefaultIfEmpty(float.NaN).Max();
                     parts.Add($"{(bodyBack - panelFront) * 100f:F1}|{(bodyLeft - sashInner) * 100f:F1}");
                 }
-                return string.Join("  ", parts);
+                var inside = skin == null ? "" : $";  skirt vertices in the skin {100f * skirtIn / Mathf.Max(1, skirtVerts):F1}% (deepest {deepest * 100f:F1} cm), " +
+                    $"back panel {100f * backIn / Mathf.Max(1, backVerts):F1}% ({backDeepest * 100f:F1} cm); most in: " +
+                    string.Join(", ", perBone.Where(kv => kv.Value.inside > 0).OrderByDescending(kv => kv.Value.inside).Take(4)
+                                             .Select(kv => $"{kv.Key} {kv.Value.inside}/{kv.Value.n} ({kv.Value.deepest * 100f:F1})"));
+                return string.Join("  ", parts) + inside;
             }
 
             void Shoot(string name)
@@ -976,7 +1207,7 @@ namespace RoeFighter.EditorTools
                 var hips = a.GetBoneTransform(HumanBodyBones.Hips).position;
                 var fwd = me.Forward;
                 var right = Vector3.Cross(Vector3.up, fwd).normalized;
-                var look = new Vector3(hips.x, hips.y - 0.15f, hips.z);
+                var look = new Vector3(hips.x, hips.y + lookY, hips.z);
                 var cam = game.cam;
                 cam.fieldOfView = 26f;
                 foreach (var (view, dir) in new[] { ("left", -right), ("back", -fwd), ("backleft", (-fwd - right).normalized), ("right", right), ("backright", (-fwd + right).normalized) })
@@ -1013,6 +1244,7 @@ namespace RoeFighter.EditorTools
                 FighterRig.ClothBackend = cloth;
                 game.Setup();
                 me = game.f[who];
+                me.rig.clothWeight = clothWeight;
                 while (game.phase != FightGame.Phase.Fight)
                 {
                     game.UpdateCamera(FightGame.Dt);
@@ -1034,6 +1266,8 @@ namespace RoeFighter.EditorTools
                         game.Step(inputs);
                     }
                     sb.Append($"\n[ROE]   {cloth,-12} {moment,-5}: {Measure(me.rig)}");
+                    if (System.Environment.GetCommandLineArgs().Contains("-roeHangReport"))
+                        sb.Append($"\n[ROE]     hang: {me.rig.animator.GetComponent<RoeSkirtRig>()?.HangReport(RoeCapture.Arg("-roeHangReport", "Skirt_Back"))}");
                     Shoot($"{cloth}_{moment}");
                 }
             }
@@ -1049,7 +1283,7 @@ namespace RoeFighter.EditorTools
         /// </summary>
         public static void SkirtDepth()
         {
-            RoeSkirtRig.RestOnStance = RoeCapture.Arg("-roeSkirtRest", "stance") == "stance";
+            SkirtArgs();
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
             var game = Object.FindFirstObjectByType<FightGame>();
@@ -1111,7 +1345,7 @@ namespace RoeFighter.EditorTools
         /// </summary>
         public static void Skirt()
         {
-            RoeSkirtRig.RestOnStance = RoeCapture.Arg("-roeSkirtRest", "stance") == "stance";
+            SkirtArgs();
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             string id = RoeCapture.Arg("-roeChar", "a08");
             string outDir = RoeCapture.Arg("-roeOut", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "skirt"));

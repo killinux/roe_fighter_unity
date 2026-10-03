@@ -169,10 +169,14 @@ namespace RoeFighter.Fight
             cloth = backend.make?.Invoke(animator, transform, helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null);
             if (cloth != null)
                 Debug.Log($"[ROE] {id} cloth {backend.name}: {cloth.Report}");
-            // the skirt that follows the legs: its rest is the stance's skirt against the hips' heading
+            // the skirt's animation pose under motion capture: its rest is the stance's skirt against the hips'
+            // heading, and it hangs on the skin (measured here, in the stance)
             skirtRig = backend.skinnedSkirt ? animator.GetComponent<RoeSkirtRig>() : null;
             if (skirtRig != null && hips != null && thighs.All(t => t != null))
+            {
                 skirtRig.CaptureStance(hips.position, HipHeading());
+                Debug.Log($"[ROE] {id} skirt rig: {skirtRig.joints.Count} bones, hung on {(skirtRig.Body != null ? skirtRig.Body.Count : 0)} skin points");
+            }
             else
                 skirtRig = null;
             animator.Rebind();
@@ -309,6 +313,7 @@ namespace RoeFighter.Fight
             plantValid = false;
             stanceTime = 0f;
             cloth?.Reset();
+            skirtRig?.Idle();
         }
 
         readonly Dictionary<string, float> strideSpeeds = new Dictionary<string, float>();
@@ -493,18 +498,23 @@ namespace RoeFighter.Fight
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
             LockFeet(dt, mocap);
-            // the skirt follows the legs as the game's animators key it (RoeSkirtRig, fitted on the game's
-            // clips): its animation pose, the cloth swings from there.  On the legs' final pose.
-            if (capturingGuard)
-                skirtRig.AddGuard(hips.position, HipHeading());
-            else if (skirtRig != null && skirtRig.Ready && mocap > 0f && !NoHipCloth)
-                skirtRig.Apply(hips.position, HipHeading(), mocap);
             // the limb helpers: the game's clips animate them; under motion capture they follow the limbs
             if (helpers != null)
                 helpers.Apply(mocap);
+            // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
+            // game's animators key it, then hung on the body (the skin, posed with the helpers above); the
+            // cloth swings from there.  On the legs' final pose.
+            if (capturingGuard)
+                skirtRig.AddGuard(hips.position, HipHeading());
+            else if (skirtRig != null && skirtRig.Ready && mocap > 0f && !NoHipCloth)
+                skirtRig.Apply(hips.position, HipHeading(), mocap, dt);
+            else
+                skirtRig?.Idle();
             // the cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
             if (cloth != null)
             {
+                if (cloth is RoeBoneCloth boneCloth)
+                    boneCloth.skirtOnSkin = skirtRig != null && skirtRig.Ready && RoeSkirtRig.Drape > 0f;
                 cloth.Weight = mocap * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using UnityEngine;
 
 namespace RoeFighter
@@ -55,6 +56,59 @@ namespace RoeFighter
         /// </summary>
         public static bool RestOnStance = true;
 
+        /// <summary>
+        /// How much the skirt hangs straight down instead of keeping the fitted pose (0..1): with 1 every
+        /// bone points down and is turned out of the body only as far as the skin (RoeBodySurface) is in the
+        /// way, so a panel rests on the buttocks and the thighs and falls straight from there.  The fitted
+        /// pose is the game stance's skirt carried by the legs - in the stance it hangs over her own body,
+        /// which leans and sticks the hips out, so on the upright motion-capture body it stood off.
+        /// </summary>
+        public static float Drape = 1f;
+        /// <summary>
+        /// How far off the skin the cloth of a hanging panel stays (m): its bone's line keeps this plus how
+        /// thick the cloth round it is (a fur hem several centimetres thick keeps its bone that much further).
+        /// </summary>
+        public static float DrapeClearance = 0.012f;
+        /// <summary>
+        /// How much a piece of cloth lying on the body turns about its bone to lie flat on it (0..1): a flat
+        /// panel turned off the skin's tangent sinks one edge into a round buttock; turned flat on it, both
+        /// edges clear.  Only near the skin (5 cm, fully from 1.5 cm) and for pieces wider than thick.
+        /// </summary>
+        public static float DrapeTwist = 1f;
+        /// <summary>
+        /// Keep a sample of each piece's own vertices out of the skin too (m off it; negative: off): a wide
+        /// fur hem wraps round a heel from the side, where its bone's line is far from the leg.  Only on the
+        /// lower part of a chain (from DrapeMeshFrom of its length; higher up, pushing a whole panel off the
+        /// buttock for one corner stood it off again) and never lifting a bone past DrapeMeshLift degrees.
+        /// </summary>
+        public static float DrapeMeshClearance = 0.003f;
+        public static float DrapeMeshFrom = 0.45f, DrapeMeshLift = 45f;
+        /// <summary>
+        /// Which skin a chain rests on: only points whose normal faces the chain's side of the body (dot with
+        /// the level direction from the hips to the chain's root at least this) - a front panel between the
+        /// thighs is pushed forward by them, not into the gap between them.
+        /// </summary>
+        public static float DrapeFacing = 0.2f;
+        /// <summary>
+        /// How fast a bone falls back to hanging (s, time constant): each step starts from where it hung the
+        /// step before, so a leg sweeping past pushes the skirt aside instead of the skirt jumping from one
+        /// side of the leg to the other.
+        /// </summary>
+        public static float DrapeSettle = 0.05f;
+
+        RoeBodySurface body;
+        int[] chainRoot;
+        Vector3[] through;       // per joint: its piece of cloth's normal, in the bone's rotation frame (zero: not flat)
+        float[] thick;           // per joint: how far its cloth reaches off the bone's line, through the piece (m)
+        Vector3[][] samples;     // per joint: a spread of its cloth's vertices, in the bone's rotation frame from its head
+        float[][] sampleLever;   // per sample: how far along the bone, as a share of its length (0.5 .. 1.5)
+        float[] chainDepth;      // per joint: how far down its chain it starts (0 = the chain's first bone)
+        Vector3[] hung;          // per joint: the direction it hung in at the last step (world)
+        bool hungValid;
+
+        /// <summary>The skin the skirt rests on (null until the stance is captured).</summary>
+        public RoeBodySurface Body => body;
+
         // the rests, measured on this body by FighterRig.Init
         Vector3[] stanceTail, stanceHead;                        // in the heading frame
         Vector3[] stancePos = new Vector3[Drivers];
@@ -88,6 +142,100 @@ namespace RoeFighter
                     stanceTail[j] = inv * (joints[j].bone.TransformPoint(joints[j].tailLocal) - headingPos);
                     stanceHead[j] = inv * (joints[j].bone.position - headingPos);
                 }
+            chainRoot = new int[joints.Count];
+            var level = new int[joints.Count];
+            for (int j = 0; j < joints.Count; j++)
+            {
+                int r = j;
+                while (joints[r].parent >= 0 && joints[r].parent != r)
+                {
+                    r = joints[r].parent;
+                    level[j]++;
+                }
+                chainRoot[j] = r;
+            }
+            chainDepth = new float[joints.Count];
+            for (int j = 0; j < joints.Count; j++)
+            {
+                int bones = 1 + Enumerable.Range(0, joints.Count).Where(k => chainRoot[k] == chainRoot[j]).Select(k => level[k]).Max();
+                chainDepth[j] = (float)level[j] / bones;
+            }
+            var animator = GetComponent<Animator>();
+            body = animator != null ? new RoeBodySurface(animator) : null;
+            // each bone's piece of cloth: its widest spread across the bone (the main axis of its vertices
+            // round the bone's line) and the normal through it; zero where the piece is not much wider than
+            // thick (strings, cords)
+            through = new Vector3[joints.Count];
+            thick = new float[joints.Count];
+            samples = new Vector3[joints.Count][];
+            sampleLever = new float[joints.Count][];
+            var verts = animator != null ? RoeBodySurface.BoneVertices(animator, new HashSet<Transform>(joints.Where(jt => jt.bone != null).Select(jt => jt.bone)))
+                                         : new Dictionary<Transform, List<Vector3>>();
+            for (int j = 0; j < joints.Count; j++)
+            {
+                var jt = joints[j];
+                if (jt.bone == null || !verts.TryGetValue(jt.bone, out var list) || list.Count < 6)
+                    continue;
+                var unturn = Quaternion.Inverse(jt.bone.rotation);
+                var axis = unturn * (jt.bone.TransformPoint(jt.tailLocal) - jt.bone.position);
+                if (axis.sqrMagnitude < 1e-8f)
+                    continue;
+                axis.Normalize();
+                var u = Vector3.Cross(axis, Mathf.Abs(axis.y) < 0.9f ? Vector3.up : Vector3.right).normalized;
+                var v = Vector3.Cross(axis, u);
+                float cuu = 0f, cvv = 0f, cuv = 0f, mu = 0f, mv = 0f;
+                foreach (var w in list)
+                {
+                    var o = unturn * (w - jt.bone.position);
+                    mu += Vector3.Dot(o, u);
+                    mv += Vector3.Dot(o, v);
+                }
+                mu /= list.Count;
+                mv /= list.Count;
+                foreach (var w in list)
+                {
+                    var o = unturn * (w - jt.bone.position);
+                    float a = Vector3.Dot(o, u) - mu, b = Vector3.Dot(o, v) - mv;
+                    cuu += a * a;
+                    cvv += b * b;
+                    cuv += a * b;
+                }
+                float phi = 0.5f * Mathf.Atan2(2f * cuv, cuu - cvv);
+                var across = Mathf.Cos(phi) * u + Mathf.Sin(phi) * v;
+                float tr = cuu + cvv, det = cuu * cvv - cuv * cuv;
+                float big = 0.5f * tr + Mathf.Sqrt(Mathf.Max(0f, 0.25f * tr * tr - det)), small = tr - big;
+                if (big > 16f * Mathf.Max(small, 1e-12f))         // four times as wide as thick
+                    through[j] = Vector3.Cross(axis, across).normalized;
+                // how thick: through a flat piece, or all round a cord - the 98th percentile (a fur hem is a few
+                // of a piece's vertices), at most 4 cm
+                var normalAxis = through[j];
+                var reach = list.Select(w =>
+                {
+                    var o = unturn * (w - jt.bone.position);
+                    var radial = o - Vector3.Dot(o, axis) * axis;
+                    return normalAxis != Vector3.zero ? Mathf.Abs(Vector3.Dot(radial, normalAxis)) : radial.magnitude;
+                }).OrderBy(d => d).ToList();
+                thick[j] = Mathf.Min(0.04f, reach[Mathf.Clamp((int)(reach.Count * 0.98f), 0, reach.Count - 1)]);
+                // a spread of the piece's vertices (farthest-point picks, 24 at most)
+                var all = list.Select(w => unturn * (w - jt.bone.position)).ToList();
+                var pick = new List<Vector3> { all.OrderByDescending(o => (o - Vector3.Dot(o, axis) * axis).sqrMagnitude).First() };
+                var nearest = all.Select(o => (o - pick[0]).sqrMagnitude).ToArray();
+                while (pick.Count < Mathf.Min(24, all.Count))
+                {
+                    int far = 0;
+                    for (int k = 1; k < all.Count; k++)
+                        if (nearest[k] > nearest[far])
+                            far = k;
+                    if (nearest[far] < 1e-6f)
+                        break;
+                    pick.Add(all[far]);
+                    for (int k = 0; k < all.Count; k++)
+                        nearest[k] = Mathf.Min(nearest[k], (all[k] - all[far]).sqrMagnitude);
+                }
+                float len = (jt.bone.TransformPoint(jt.tailLocal) - jt.bone.position).magnitude;
+                samples[j] = pick.ToArray();
+                sampleLever[j] = pick.Select(o => Mathf.Clamp(Vector3.Dot(o, axis) / Mathf.Max(len, 1e-4f), 0.5f, 1.5f)).ToArray();
+            }
         }
 
         public void BeginGuard()
@@ -159,6 +307,29 @@ namespace RoeFighter
                 heads[j] = joints[j].parent >= 0 ? tails[joints[j].parent] : carry[1].MultiplyPoint3x4(stanceHead[j]);
         }
 
+        /// <summary>For the probes: per bone whose name starts so, its cloth thickness and its tail's and middle's distance off the skin (cm).</summary>
+        public string HangReport(string prefix)
+        {
+            if (body == null || thick == null)
+                return "no drape";
+            body.Pose();
+            var parts = new List<string>();
+            for (int j = 0; j < joints.Count; j++)
+            {
+                var b = joints[j].bone;
+                if (b == null || !b.name.StartsWith(prefix))
+                    continue;
+                var tail = b.TransformPoint(joints[j].tailLocal);
+                var outward = joints[chainRoot[j]].bone.position - hips.position;
+                outward.y = 0f;
+                outward = outward.normalized;
+                string D(Vector3 x) => body.Signed(x, outward, DrapeFacing, out float s, out _) ? (s * 100f).ToString("F1") : "-";
+                string A(Vector3 x) => body.Signed(x, Vector3.zero, -2f, out float s, out _) ? (s * 100f).ToString("F1") : "-";
+                parts.Add($"{b.name} thick {thick[j] * 100f:F1} tail {D(tail)}/{A(tail)} mid {D((tail + b.position) * 0.5f)}/{A((tail + b.position) * 0.5f)}");
+            }
+            return string.Join("; ", parts);
+        }
+
         /// <summary>The drivers' rest, stance against guard: degrees and cm per driver (for the probes).</summary>
         public string RestReport()
         {
@@ -170,8 +341,11 @@ namespace RoeFighter
             return string.Join(", ", parts);
         }
 
+        /// <summary>A step without Apply (the game's own clips): the hanging starts over from the animation.</summary>
+        public void Idle() => hungValid = false;
+
         /// <summary>Turn the skirt bones to their skinned pose; weight 0 leaves them as they are.</summary>
-        public void Apply(Vector3 headingPos, Quaternion headingRot, float weight)
+        public void Apply(Vector3 headingPos, Quaternion headingRot, float weight, float dt = 1f / 60f)
         {
             if (!Ready || weight <= 0f)
                 return;
@@ -181,6 +355,17 @@ namespace RoeFighter
                 aimedFrom = new Vector3[joints.Count];
             }
             Predict(headingPos, headingRot, RestOnStance, predicted, aimedFrom);
+            bool drape = Drape > 0f && body != null && body.Count > 0 && chainRoot != null;
+            if (drape)
+            {
+                body.Pose();
+                if (hung == null || hung.Length != joints.Count)
+                {
+                    hung = new Vector3[joints.Count];
+                    hungValid = false;
+                }
+            }
+            float settle = dt > 0f ? 1f - Mathf.Exp(-dt / Mathf.Max(DrapeSettle, 1e-4f)) : 1f;
             for (int j = 0; j < joints.Count; j++)
             {
                 var jt = joints[j];
@@ -190,9 +375,116 @@ namespace RoeFighter
                 var current = jt.bone.rotation * jt.tailLocal;
                 if (target.sqrMagnitude < 1e-10f || current.sqrMagnitude < 1e-10f)
                     continue;
+                if (drape)
+                {
+                    target = Hang(j, target.normalized, hungValid ? hung[j] : current.normalized, settle);
+                    hung[j] = target.normalized;
+                }
                 var turned = Quaternion.FromToRotation(current, target) * jt.bone.rotation;
+                if (drape && DrapeTwist > 0f)
+                    turned = LieFlat(j, turned, target);
                 jt.bone.rotation = weight >= 1f ? turned : Quaternion.Slerp(jt.bone.rotation, turned, weight);
             }
+            hungValid = drape;
+        }
+
+        /// <summary>
+        /// Turn a bone about its own line so its piece of cloth lies flat on the skin under it: the cloth's
+        /// normal onto the skin's (whichever face is nearer; at most 60 degrees), by how near the skin is.
+        /// </summary>
+        Quaternion LieFlat(int j, Quaternion rotation, Vector3 along)
+        {
+            if (through == null || j >= through.Length || through[j] == Vector3.zero)
+                return rotation;
+            var bone = joints[j].bone;
+            var a = along.normalized;
+            var mid = bone.position + along * 0.5f;
+            var outward = joints[chainRoot[j]].bone.position - hips.position;
+            outward.y = 0f;
+            outward = outward.sqrMagnitude > 1e-6f ? outward.normalized : Vector3.zero;
+            if (!body.Signed(mid, outward, DrapeFacing, out float s, out var n))
+                return rotation;
+            float near = 1f - Mathf.SmoothStep(0f, 1f, (s - 0.015f) / 0.035f);
+            if (near <= 0f)
+                return rotation;
+            var cloth = rotation * through[j];
+            var pc = cloth - Vector3.Dot(cloth, a) * a;
+            var pn = n - Vector3.Dot(n, a) * a;
+            if (pc.sqrMagnitude < 1e-6f || pn.sqrMagnitude < 1e-6f)
+                return rotation;
+            if (Vector3.Dot(pc, pn) < 0f)
+                pn = -pn;
+            float angle = Mathf.Clamp(Vector3.SignedAngle(pc, pn, a), -60f, 60f);
+            return Quaternion.AngleAxis(angle * near * DrapeTwist, a) * rotation;
+        }
+
+        /// <summary>
+        /// A bone hung from where its head is now (its parent already turned): from the direction it hung in
+        /// the step before, part way (settle) down - or towards part way from the fitted direction - then
+        /// turned out of the skin: the tail and the middle of the bone pushed off along the skin's normal to
+        /// DrapeClearance, the length kept, a few times over.
+        /// </summary>
+        Vector3 Hang(int j, Vector3 fitted, Vector3 from, float settle)
+        {
+            var bone = joints[j].bone;
+            var head = bone.position;
+            float length = (bone.TransformPoint(joints[j].tailLocal) - head).magnitude;
+            var hanging = Drape >= 1f ? Vector3.down : Vector3.Slerp(fitted, Vector3.down, Drape).normalized;
+            var dir = Vector3.Slerp(from, hanging, settle).normalized;
+            var outward = joints[chainRoot[j]].bone.position - hips.position;
+            outward.y = 0f;
+            outward = outward.sqrMagnitude > 1e-6f ? outward.normalized : Vector3.zero;
+            var tail = head + dir * length;
+            float clear = DrapeClearance + (thick != null && j < thick.Length ? thick[j] : 0f);
+            for (int it = 0; it < 4; it++)
+            {
+                bool moved = false;
+                for (int k = 0; k < 2; k++)
+                {
+                    var x = k == 0 ? tail : (head + tail) * 0.5f;
+                    if (body.Signed(x, outward, DrapeFacing, out float s, out var n) && s < clear)
+                    {
+                        tail += n * ((clear - s) * (k == 0 ? 1f : 2f));
+                        tail = head + (tail - head).normalized * length;
+                        moved = true;
+                    }
+                }
+                // the piece's own vertices, carried by the bone turned this way: the deepest one sets the push
+                // (at the tail, by its lever; at most 2 cm a round), along the skin's normal there; only skin
+                // that faces the chain's side counts here, not the tops of feet
+                if (samples != null && samples[j] != null && samples[j].Length > 0 && chainDepth[j] >= DrapeMeshFrom)
+                {
+                    var turned = Quaternion.FromToRotation(bone.rotation * joints[j].tailLocal, tail - head) * bone.rotation;
+                    float worst = 0f;
+                    var push = Vector3.zero;
+                    for (int k = 0; k < samples[j].Length; k++)
+                    {
+                        var x = head + turned * samples[j][k];
+                        if (body.Signed(x, outward, DrapeFacing, out float s, out var n) && s < DrapeMeshClearance && Vector3.Dot(n, outward) > 0f)
+                        {
+                            float need = (DrapeMeshClearance - s) / sampleLever[j][k];
+                            if (need > worst)
+                            {
+                                worst = need;
+                                push = n;
+                            }
+                        }
+                    }
+                    if (worst > 0f)
+                    {
+                        tail += push * Mathf.Min(worst, 0.02f);
+                        var d = Vector3.RotateTowards(Vector3.down, (tail - head).normalized, DrapeMeshLift * Mathf.Deg2Rad, 0f);
+                        if (Vector3.Angle(Vector3.down, tail - head) > DrapeMeshLift && Vector3.Angle(Vector3.down, dir) <= DrapeMeshLift)
+                            tail = head + d * length;
+                        else
+                            tail = head + (tail - head).normalized * length;
+                        moved = true;
+                    }
+                }
+                if (!moved)
+                    break;
+            }
+            return tail - head;
         }
     }
 }

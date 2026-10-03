@@ -17,12 +17,13 @@ namespace RoeFighter.EditorTools
     /// filmed by a camera that follows her from the front.
     ///   Run    the cloth backends (RoeClothBackends): one take each -> _work/cloth_demo/&lt;id&gt;_&lt;backend&gt;
     ///   Packs  the motion packs: one take per pack       -> _work/pack_demo/&lt;id&gt;_&lt;pack&gt;
-    ///   Rests  the skirt's rest (RoeSkirtRig.RestOnStance): rest_guard, rest_stance -> _work/rest_demo/&lt;id&gt;_&lt;rest&gt;
+    ///   Rests  the skirt's animation pose (RoeSkirtRig): rest_guard (fitted, rest in the guard), rest_stance
+    ///          (fitted, rest in the stance), drape (hangs on the body) -> _work/rest_demo/&lt;id&gt;_&lt;variant&gt;
     /// tools/cloth_demo_video.py puts the takes side by side.  -roeView backright (or backleft) films the
     /// hips up close from behind and to that side instead of the whole fighter from the front.
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720] [-roeView front]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Packs [-roePacks bandai1,cmu1] [-roeChars g04,a08]
-    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Rests [-roeView backright] [-roeChars g04,a08]
+    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Rests [-roeView backright] [-roeChars g04,a08] [-roeRests rest_stance,drape]
     /// </summary>
     public static class RoeClothDemo
     {
@@ -58,14 +59,16 @@ namespace RoeFighter.EditorTools
         {
             string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "rest_demo"));
             string backend = RoeCapture.Arg("-roeCloth", "magica_style");
-            Film(outDir, new[] { "rest_guard", "rest_stance" }, (game, variant) =>
+            Film(outDir, RoeCapture.Arg("-roeRests", "rest_stance,drape").Split(','), (game, variant) =>
             {
-                RoeSkirtRig.RestOnStance = variant == "rest_stance";
+                RoeSkirtRig.RestOnStance = variant != "rest_guard";
+                RoeSkirtRig.Drape = variant == "drape" ? 1f : 0f;
                 FighterRig.ClothBackend = backend;
                 foreach (var rig in game.rigs)
                     rig.useCloth = true;
-            }, (game, variant, me) => $"skirt rest in the {(RoeSkirtRig.RestOnStance ? "game's stance" : "motion-capture guard")}; {me.rig.ClothTitle}");
+            }, (game, variant, me) => $"skirt rest in the {(RoeSkirtRig.RestOnStance ? "game's stance" : "motion-capture guard")}, drape {RoeSkirtRig.Drape}; {me.rig.ClothTitle}");
             RoeSkirtRig.RestOnStance = true;
+            RoeSkirtRig.Drape = 1f;
         }
 
         [MenuItem("ROE Fighter/Fight/Motion pack demo")]
