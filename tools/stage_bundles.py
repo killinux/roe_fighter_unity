@@ -16,9 +16,10 @@ CACHE = r'D:\roe_exports\_hq_materials'
 
 def patterns(cid):
     fam = cid[0]
+    # (the suit's own chara_bare_pc_<id>_nk* / bare_blend_shape_pc_<id>_nk* bundles are left out: rigs and clips of
+    # its H scenes, nothing the fight uses; the nude body for the clothes burst is the family's, --nude)
     return [
         f'chara_armor_pc_{cid}_*', f'chara_mat_armor_pc_{cid}_*', f'chara_tex_armor_pc_{cid}_*',
-        f'chara_bare_pc_{cid}_nk*', f'bare_blend_shape_pc_{cid}_nk*',
         f'meta_armor_pc_{cid}_*', f'meta_armor_localize_audio_pc_{cid}_*',
         f'sfx_battlefield_pc_{cid}*', f'sfx_battlefield_pc_{fam}01*',
         f'chara_*_pc_{fam}_common*',
@@ -47,8 +48,9 @@ def main():
     want = set()
     for cid in ids:
         if nude:
+            # (the _fm_ bodies are another version of a family's body: only when asked for, e.g. --nude g01_fm)
             for pat in nude_patterns(cid):
-                want |= set(n for n in fnmatch.filter(names, pat) if '_fm_' not in n)
+                want |= set(n for n in fnmatch.filter(names, pat) if '_fm_' not in n or '_fm' in cid)
             continue
         for pat in patterns(cid):
             want |= set(fnmatch.filter(names, pat))

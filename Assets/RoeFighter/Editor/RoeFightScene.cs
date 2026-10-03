@@ -16,11 +16,13 @@ using Object = UnityEngine.Object;
 namespace RoeFighter.EditorTools
 {
     /// <summary>
-    /// Builds the playable fight scene: one of the game's battle stages, two fighters, the fight
-    /// logic, camera and HUD.  Saved as Assets/RoeFighter/Scenes/Fight_&lt;stage&gt;.unity (press Play).
-    ///   Build   -executeMethod RoeFighter.EditorTools.RoeFightScene.Build [-roeStage e23_steel_s02] [-roeP1 a08] [-roeP2 g04]
+    /// Builds the playable fight scene: one of the game's battle stages, every fighter of the roster (the
+    /// select screen picks two; the others wait put away), the fight logic, camera and HUD.  Saved as
+    /// Assets/RoeFighter/Scenes/Fight_&lt;stage&gt;.unity (press Play).
+    ///   Build   -executeMethod RoeFighter.EditorTools.RoeFightScene.Build [-roeStage e23_steel_s02] [-roeRoster a08,g04,b10,g05]
+    ///           [-roeP1 a08] [-roeP2 g04]   (the two picked when the scene starts)
     ///   Record  -executeMethod RoeFighter.EditorTools.RoeFightScene.Record [-roeStage ...] [-roeOut dir] [-roeSeconds 90]
-    ///           [-roeSize 1280x720] [-roeSeed 1]   CPU against CPU, frames + timeline.json for tools/make_video.py
+    ///           [-roeSize 1280x720] [-roeSeed 1] [-roeP1 b10] [-roeP2 g05]   CPU against CPU, frames + timeline.json for tools/make_video.py
     ///   Player  -executeMethod RoeFighter.EditorTools.RoeFightScene.BuildPlayer [-roeStage ...] [-roeOut dir]
     /// </summary>
     public static class RoeFightScene
@@ -31,7 +33,20 @@ namespace RoeFighter.EditorTools
         public static string ScenePath(string stage) => $"{SceneDir}/Fight_{stage}.unity";
 
         static readonly string[] GameClips = { "hurt", "die", "rip", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03" };
-        static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string> { { "a08", "INASE" }, { "g04", "LUF" } };
+        static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
+        {
+            { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" },
+        };
+        // a word on each suit for the select screen
+        static readonly Dictionary<string, string> Outfits = new Dictionary<string, string>
+        {
+            { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" },
+        };
+
+        /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗").</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05";
+
+        public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
 
         [MenuItem("ROE Fighter/Fight/Build fight scene")]
@@ -42,9 +57,22 @@ namespace RoeFighter.EditorTools
             BuildScene(stage, p1, p2);
         }
 
+        /// <summary>The fighters the scene holds: -roeRoster, else DefaultRoster; the two picked are always in it.</summary>
+        static List<string> Roster(string p1, string p2)
+        {
+            var ids = RoeCapture.Arg("-roeRoster", DefaultRoster).Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).ToList();
+            foreach (var id in new[] { p1, p2 })
+                if (!ids.Contains(id))
+                    ids.Add(id);
+            return ids.Where(id => File.Exists(RoeHumanoid.FighterPath(id)) && File.Exists(RoeSkillSheet.PathOf(id))).ToList();
+        }
+
         public static string BuildScene(string stage, string p1, string p2)
         {
             ShaderUtil.allowAsyncCompilation = false;
+            var ids = Roster(p1, p2);
+            // the select screen's cards: rendered in the studio first (a scene of their own)
+            Portraits(ids);
             var info = RoeStage.Open(stage);
             Debug.Log("[ROE] " + info.report);
             var sight = new RoeStage.Sight();
@@ -55,7 +83,12 @@ namespace RoeFighter.EditorTools
                       $"fighters along {layout.axis}, camera side {layout.normal}");
 
             var manifest = RoeManifest.Load();
-            var rigs = new[] { p1, p2 }.Select(id => MakeFighter(manifest.characters.First(c => c.id == id))).ToArray();
+            var roster = ids.Select(id => MakeFighter(manifest.characters.First(c => c.id == id))).ToArray();
+            int pick1 = Mathf.Max(0, ids.IndexOf(p1)), pick2 = Mathf.Max(0, ids.IndexOf(p2));
+            var rigs = new[] { roster[pick1], roster[pick2] };
+            // the ones not in the match wait put away (the select screen brings them out)
+            foreach (var r in roster)
+                r.gameObject.SetActive(rigs.Contains(r));
 
             // camera + post-processing
             var camGo = new GameObject("Fight Camera");
@@ -86,6 +119,8 @@ namespace RoeFighter.EditorTools
             var gameGo = new GameObject("Fight");
             var game = gameGo.AddComponent<FightGame>();
             game.rigs = rigs;
+            game.roster = roster;
+            game.pick = new[] { pick1, pick2 };
             game.centre = centre;
             game.axis = layout.axis;
             game.arenaRadius = Mathf.Clamp(radius, 3f, 12f);
@@ -97,7 +132,7 @@ namespace RoeFighter.EditorTools
             game.motionPacks = RoeMotionPacks.All();
             string wanted = RoeCapture.Arg("-roeMotions", "bandai1");
             game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == wanted));
-            foreach (var rig in rigs)
+            foreach (var rig in roster)
                 rig.UseMotions(game.Pack);
             game.moves = game.Pack.CopyStrikes();
             game.specials = new List<Special>
@@ -106,7 +141,7 @@ namespace RoeFighter.EditorTools
                 new Special { name = "skill2", clip = "skill_02", action = "skill2", damage = 190, range = 6f },
                 new Special { name = "skill3", clip = "skill_03", action = "skill3", damage = 360, meterCost = 100f, range = 7f },
             };
-            (game.effects, game.hitEffect) = Effects(rigs);
+            (game.effects, game.hitEffect) = Effects(roster);
             foreach (var m in game.moves)
                 m.hitSound = rigs[0].sounds.Any(s => s.name == "hit") ? "hit" : null;
             // the stage's own battle music
@@ -121,12 +156,49 @@ namespace RoeFighter.EditorTools
             string path = ScenePath(stage);
             EditorSceneManager.SaveScene(scene, path, false);
             EditorBuildSettings.scenes = new[] { new EditorBuildSettingsScene(path, true) };
-            Debug.Log($"[ROE] fight scene saved: {path} ({game.moves.Count} strikes, {game.specials.Count} specials, {game.effects.Count} effect prefabs, hit spark {game.hitEffect}, music {(musicPath ?? "none")}; " +
+            Debug.Log($"[ROE] fight scene saved: {path} (roster {string.Join(" ", ids)}, picked {p1} {p2}; {game.moves.Count} strikes, {game.specials.Count} specials, {game.effects.Count} effect prefabs, hit spark {game.hitEffect}, music {(musicPath ?? "none")}; " +
                       $"motion packs {string.Join(", ", game.motionPacks.Select(p => p.name))}, starting with {game.Pack.name})");
             return path;
         }
 
         static UnityEngine.SceneManagement.Scene SceneManager_Active() => UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+
+        /// <summary>
+        /// A picture per fighter for the select screen's card: upper body and face, standing, in the studio
+        /// (Generated/&lt;id&gt;/&lt;id&gt;_portrait.png).  Opens a scene of its own: call it before the stage.
+        /// </summary>
+        public static void Portraits(IEnumerable<string> ids)
+        {
+            ShaderUtil.allowAsyncCompilation = false;
+            var studio = RoeStudio.Build();
+            foreach (var id in ids)
+            {
+                var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+                if (prefab == null)
+                    continue;
+                var stance = RoeHumanoidClips.Standing(id, out _);
+                var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                if (stance != null)
+                    RoeCapture.Pose(go, stance, 0f);
+                foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
+                var forward = RoeShowcase.Forward(go);
+                var head = RoeShowcase.FindBone(go, "Bip001 Head");
+                var chest = RoeShowcase.FindBone(go, "Bip001 Spine2") ?? RoeShowcase.FindBone(go, "Bip001 Spine1");
+                var target = head != null && chest != null ? Vector3.Lerp(chest.position, head.position, 0.75f) : RoeShowcase.WorldBounds(go).center;
+                studio.LightFrom(forward);
+                // no depth of field: the studio's volume profile is the fight scene's too (a focus left in it blurred the match)
+                studio.Aim(target, forward, 14f, 3f, 1.45f, 24f);
+                string file = Path.Combine(ProjectDir, PortraitPath(id));
+                Directory.CreateDirectory(Path.GetDirectoryName(file));
+                RoeCapture.Render(studio.camera, 120, 160, file);
+                RoeCapture.Render(studio.camera, 120, 160, file);
+                RoeCapture.Render(studio.camera, 360, 480, file);
+                RoeCapture.EndPosing();
+                Object.DestroyImmediate(go);
+                AssetDatabase.ImportAsset(PortraitPath(id), ImportAssetOptions.ForceUpdate);
+            }
+        }
 
         [Serializable]
         class SurveyEntry
@@ -218,6 +290,8 @@ namespace RoeFighter.EditorTools
             var rig = root.AddComponent<FighterRig>();
             rig.id = c.id;
             rig.displayName = DisplayNames.TryGetValue(c.id, out var shown) ? shown : c.id.ToUpperInvariant();
+            rig.outfit = Outfits.TryGetValue(c.id, out var outfit) ? outfit : "";
+            rig.portrait = AssetDatabase.LoadAssetAtPath<Texture2D>(PortraitPath(c.id));
 
             // the game's unit: timelines + effect anchors on a hidden low-detail body
             var unitPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeUnit.RigPath(sheet));
@@ -271,8 +345,9 @@ namespace RoeFighter.EditorTools
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 smr.forceMatrixRecalculationPerRender = false;
 
-            // clips: the game's own here; the basic moves come from a motion pack (BuildScene, FightGame.Setup)
-            rig.stance = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(c.id, "idle_01"));
+            // clips: the game's own here; the basic moves come from a motion pack (BuildScene, FightGame.Setup).  The
+            // stance is the battle stance, or a showcase clip that stands when that one floats (g05 sits in the air)
+            rig.stance = RoeHumanoidClips.Standing(c.id, out var standing);
             foreach (var name in GameClips)
             {
                 var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(c.id, name));
@@ -288,10 +363,28 @@ namespace RoeFighter.EditorTools
                 .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_"))).ToArray();
             // her own strikes instead of the motion pack's (user 10-03: g04 strikes like Mai Shiranui, from DOA6;
             // -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her weapon (user 10-03: a smaller fan; -roeWeaponScale g04=0.7)
-            if (Table("-roeOwnStrikes", "g04=doa6_mai").TryGetValue(c.id, out var own))
+            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai").TryGetValue(c.id, out var own))
                 rig.strikePack = OwnStrikes(own);
             if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
                 rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
+            // barefoot (-roeBarefoot g05=1): flat feet under the motion capture, the soles from the bind pose
+            string feetNote = "";
+            if (Table("-roeBarefoot", "g05=1").TryGetValue(c.id, out var bare) && bare != "0")
+            {
+                rig.barefoot = true;
+                var an = model.GetComponent<Animator>();
+                var toes = new[] { an.GetBoneTransform(HumanBodyBones.LeftToes), an.GetBoneTransform(HumanBodyBones.RightToes) };
+                var feet = new[] { an.GetBoneTransform(HumanBodyBones.LeftFoot), an.GetBoneTransform(HumanBodyBones.RightFoot) };
+                if (toes.All(t => t != null) && feet.All(t => t != null))
+                {
+                    // the prefab's human bones stand in the bind pose, its feet on the floor (the model's origin)
+                    float floor = model.transform.position.y;
+                    rig.barefootSoles = new Vector2(toes.Average(t => t.position.y) - floor, feet.Average(t => t.position.y) - floor);
+                    float pitch = feet.Average(f => Vector3.Angle(toes[System.Array.IndexOf(feet, f)].position - f.position,
+                        Vector3.ProjectOnPlane(toes[System.Array.IndexOf(feet, f)].position - f.position, Vector3.up)));
+                    feetNote = $", barefoot (soles from the bind pose: toe {rig.barefootSoles.x:F3} m, ankle {rig.barefootSoles.y:F3} m, foot pitch {pitch:F0} deg)";
+                }
+            }
 
             // sounds the skills use, by clip name; the game's voice lines in Japanese
             var names = new HashSet<string>();
@@ -320,12 +413,12 @@ namespace RoeFighter.EditorTools
             rig.audioSource.playOnAwake = false;
             rig.audioSource.spatialBlend = 0f;
 
-            Debug.Log($"[ROE] fighter {c.id}: unit {sheet.unit} ({stripped} game scripts stripped, {hidden} ghost renderers hidden, " +
+            Debug.Log($"[ROE] fighter {c.id}: {standing}; unit {sheet.unit} ({stripped} game scripts stripped, {hidden} ghost renderers hidden, " +
                       $"{rig.directors.Count} timelines: {string.Join(" ", rig.directors.Select(d => d.action))}), " +
                       $"{rig.clips.Count} clips, {rig.weaponRenderers.Length} weapon renderers, {rig.sounds.Count} sounds, " +
                       $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")}, " +
                       $"own strikes {(rig.strikePack != null ? $"{rig.strikePack.name} ({string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}"))})" : "none")}, " +
-                      $"weapon size {rig.weaponScale:F2} " +
+                      $"weapon size {rig.weaponScale:F2}{feetNote} " +
                       $"(hit sound {(hit.p != null ? Path.GetFileName(hit.p) : "none")}; sfx: {string.Join(" ", c.sfx.Take(12).Select(Path.GetFileNameWithoutExtension))})");
             return rig;
         }
@@ -411,10 +504,11 @@ namespace RoeFighter.EditorTools
                 BuildScene(stage, RoeCapture.Arg("-roeP1", "a08"), RoeCapture.Arg("-roeP2", "g04"));
             EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
             var game = Object.FindFirstObjectByType<FightGame>();
+            game.PickIds(RoeCapture.Arg("-roeP1", null), RoeCapture.Arg("-roeP2", null));
             game.cpu = new[] { true, true };
             game.seed = seed;
             game.hud.drawnByCamera = true;
-            foreach (var rig in game.rigs)
+            foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
                 foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;     // many renders inside one editor update
             string pack = RoeCapture.Arg("-roeMotions", null);
@@ -470,6 +564,93 @@ namespace RoeFighter.EditorTools
             File.WriteAllText(Path.Combine(outDir, "timeline.json"), json.ToString());
             Debug.Log($"[ROE] fight recorded: {shot} frames ({shot * every / 60f:F1} s), {lines.Count} sounds, rounds won {game.wins[0]}-{game.wins[1]}, " +
                       $"to {outDir}{states}");
+        }
+
+        // ---- filming the select screen
+
+        /// <summary>
+        /// The select screen filmed (batch mode has no keys: the cards are moved by script the way the keys move
+        /// them): 1P goes from INASE over LUF to KART and confirms, picks GODDESS LUF for the computer, confirms, and
+        /// the match begins.  Frames and timeline.json (music) for tools/make_video.py.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightScene.SelectDemo [-roeOut dir] [-roeSize 1280x720]
+        /// </summary>
+        [MenuItem("ROE Fighter/Fight/Film the select screen")]
+        public static void SelectDemo()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(ProjectDir, "_work", "select_demo"));
+            var size = RoeCapture.Arg("-roeSize", "1280x720").Split('x');
+            int width = int.Parse(size[0]), height = int.Parse(size[1]);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.hud.drawnByCamera = true;
+            game.hud.showHelp = true;
+            void Recalc()
+            {
+                foreach (var rig in game.roster.Concat(game.rigs))
+                    foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                        smr.forceMatrixRecalculationPerRender = true;
+            }
+            Recalc();
+            game.cpu = new[] { false, true };
+            game.PickIds("a08", "g04");
+            game.EnterSelect();
+            string frameDir = Path.Combine(outDir, "frames");
+            if (Directory.Exists(frameDir))
+                Directory.Delete(frameDir, true);
+            Directory.CreateDirectory(frameDir);
+            int shot = 0;
+            var log = new StringBuilder("[ROE] select demo:");
+            void Film(float seconds, string what)
+            {
+                log.Append($"\n[ROE]   {shot / 30f,5:F1}s {what}");
+                int steps = Mathf.RoundToInt(seconds * 60f);
+                for (int s = 0; s < steps; s++)
+                {
+                    game.Step(null);
+                    game.UpdateCamera(FightGame.Dt);
+                    if (s % 2 != 0)
+                        continue;
+                    game.hud.Refresh(game);
+                    Canvas.ForceUpdateCanvases();
+                    if (shot == 0)
+                    {
+                        RoeCapture.Render(game.cam, 320, 180, Path.Combine(outDir, "_warm.jpg"), 80);
+                        RoeCapture.Render(game.cam, 320, 180, Path.Combine(outDir, "_warm.jpg"), 80);
+                    }
+                    RoeCapture.Render(game.cam, width, height, Path.Combine(frameDir, $"{shot:D5}.jpg"), 92);
+                    shot++;
+                }
+            }
+            void Move(int side, string id)
+            {
+                var before = new[] { game.pick[0], game.pick[1] };
+                game.pick[side] = Array.FindIndex(game.roster, r => r.id == id);
+                game.PicksChanged(before);
+                Recalc();
+            }
+            Film(1.6f, "the select screen: 1P on INASE, the computer on LUF");
+            Move(0, "g04");
+            Film(0.9f, "1P moves to LUF (both on the same card: a mirror match would get a copy)");
+            Move(0, "b10");
+            Film(1.2f, "1P moves to KART");
+            game.picked[0] = true;
+            game.choosing = 1;
+            Film(1.0f, "1P confirms; now the computer's fighter");
+            Move(1, "a08");
+            Film(0.8f, "the computer's card to INASE");
+            Move(1, "g05");
+            Film(1.2f, "and to GODDESS LUF");
+            game.picked[1] = true;
+            Film(0.8f, "confirmed: READY");
+            game.BeginMatch();
+            Film(3.2f, "the match begins");
+            string music = game.music != null
+                ? $",\"music\":{{\"path\":\"{AssetDatabase.GetAssetPath(game.music)}\",\"volume\":{game.musicVolume.ToString("F2", CultureInfo.InvariantCulture)}}}"
+                : "";
+            File.WriteAllText(Path.Combine(outDir, "timeline.json"), $"{{\"fps\":30,\"frames\":{shot}{music},\"sounds\":[]}}\n");
+            Debug.Log(log.Append($"\n[ROE]   {shot} frames to {frameDir}").ToString());
         }
 
         // ---- a Windows build to play

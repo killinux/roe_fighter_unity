@@ -25,7 +25,7 @@ namespace RoeFighter.EditorTools
         public static void BuildAll()
         {
             var manifest = RoeManifest.Load();
-            foreach (var c in manifest.WithModels)
+            foreach (var c in manifest.Chosen())     // -roeChars b10,g05: only these
                 Build(c);
             AssetDatabase.SaveAssets();
         }
@@ -180,17 +180,24 @@ namespace RoeFighter.EditorTools
             return added;
         }
 
-        /// <summary>wp_a08_l (outfit a08) -> material "wp_a_08_hd".</summary>
+        /// <summary>
+        /// wp_a08_l (outfit a08) -> material "wp_a_08_hd".  A suit with several weapons has one material each, named
+        /// after the weapon: b10's wp_ax -> "wp_b_10_axe_hd" (the renderer's word starts the material's).
+        /// </summary>
         static Material FindWeaponMaterial(RoeManifest.Character c, string rendererName)
         {
-            string name = $"wp_{c.Family}_{c.id.Substring(1)}_hd";
-            foreach (var guid in AssetDatabase.FindAssets(name + " t:Material", new[] { "Assets/ROE" }))
-            {
-                var mat = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guid));
-                if (mat != null && mat.name == name)
-                    return mat;
-            }
-            Debug.LogWarning($"[ROE] {c.id}: weapon material '{name}' not found for '{rendererName}'");
+            string prefix = $"wp_{c.Family}_{c.id.Substring(1)}";
+            var found = AssetDatabase.FindAssets(prefix + " t:Material", new[] { "Assets/ROE" })
+                .Select(g => AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(g)))
+                .Where(m => m != null && m.name.StartsWith(prefix) && m.name.EndsWith("_hd")).ToList();
+            var exact = found.FirstOrDefault(m => m.name == prefix + "_hd");
+            if (exact != null)
+                return exact;
+            var words = rendererName.Split('_').Skip(1).Where(w => w.Length > 1).Select(w => w.ToLowerInvariant()).ToList();
+            var named = found.FirstOrDefault(m => words.Any(w => m.name.Substring(prefix.Length).TrimStart('_').StartsWith(w)));
+            if (named != null)
+                return named;
+            Debug.LogWarning($"[ROE] {c.id}: weapon material '{prefix}_hd' (or '{prefix}_<weapon>_hd') not found for '{rendererName}'");
             return null;
         }
     }

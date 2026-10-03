@@ -52,8 +52,10 @@ namespace RoeFighter.Fight
 
         public string id;
         public string displayName;
+        public string outfit;                        // a word on the suit for the select screen ("goddess")
+        public Texture2D portrait;                   // the select screen's card (rendered when the scene is built)
         public Animator animator;
-        public AnimationClip stance;                 // layer 0: the game's battle stance
+        public AnimationClip stance;                 // layer 0: the game's battle stance (or a standing clip, if that floats)
         public List<NamedClip> clips = new List<NamedClip>();
         public List<NamedDirector> directors = new List<NamedDirector>();
         public List<NamedSound> sounds = new List<NamedSound>();
@@ -106,6 +108,17 @@ namespace RoeFighter.Fight
             int at = 0;
             foreach (var c in pack.clips.Where(c => c.clip != null))
                 clips.Insert(at++, new NamedClip { name = c.role, clip = c.clip, loop = c.loop });
+            // this fighter's own stance (and walks, if it has them) in place of the pack's: her strikes start from it
+            // (user 10-03: Luffee stands in Mai Shiranui's stance, DOA6 00000)
+            if (strikePack != null)
+                foreach (var c in strikePack.clips.Where(c => c.clip != null && MotionPack.Roles.Contains(c.role)))
+                {
+                    int i = clips.FindIndex(x => x.name == c.role && !x.game);
+                    if (i >= 0)
+                        clips[i] = new NamedClip { name = c.role, clip = c.clip, loop = c.loop };
+                    else
+                        clips.Insert(at++, new NamedClip { name = c.role, clip = c.clip, loop = c.loop });
+                }
             // this fighter's own strikes (strikePack) besides the pack's: their clips under their own names
             if (strikePack != null)
                 foreach (var c in strikePack.clips.Where(c => c.clip != null && strikePack.strikes.Any(m => m.clip == c.role)))
@@ -124,6 +137,15 @@ namespace RoeFighter.Fight
 
         /// <summary>This fighter's own strikes instead of the motion pack's (g04: Mai Shiranui's, from DOA6); null: the pack's.</summary>
         public MotionPack strikePack;
+
+        /// <summary>
+        /// Barefoot (g05): the motion capture's flat feet are right for her - a planted foot does not take the
+        /// stance's high-heeled angle (g05's standing clip has her on her toes, which tipped both feet onto them
+        /// and bent her knees), and the soles are where the toe and ankle bones are on flat feet: barefootSoles
+        /// (toe, ankle bone height), measured on the bind pose when the scene is built.
+        /// </summary>
+        public bool barefoot;
+        public Vector2 barefootSoles;
 
         /// <summary>Size of the weapons (g04's fan): 1 = the game's.  Scales the bone that carries each weapon's own bones.</summary>
         [Range(0.2f, 2f)] public float weaponScale = 1f;
@@ -165,6 +187,11 @@ namespace RoeFighter.Fight
                     footRest[i] = Quaternion.Inverse(Quaternion.LookRotation(ahead, Vector3.up)) * feet[i].rotation;
                     footAhead[i] = Quaternion.Inverse(feet[i].rotation) * ahead;
                     toeRest[i] = toes[i].localRotation;
+                }
+                if (barefoot && barefootSoles.y > 0f)
+                {
+                    toeSole = barefootSoles.x;
+                    ankleSole = barefootSoles.y;
                 }
             }
             helpers = animator.GetComponent<RoeHelperRig>();
@@ -477,7 +504,7 @@ namespace RoeFighter.Fight
                 // The foot keeps the direction the clip points it in; feet lifted by the clip (steps,
                 // kicks) keep the clip's angle, blended by how far the ankle is above its standing height.
                 float lowest = LowestSole();
-                for (int i = 0; i < 2; i++)
+                for (int i = 0; i < 2 && !barefoot; i++)
                 {
                     float above = feet[i].position.y - lowest - ankleSole;
                     float w = (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.03f, 0.12f, above))) * mocap;

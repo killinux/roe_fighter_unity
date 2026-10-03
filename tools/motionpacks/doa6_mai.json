@@ -1,11 +1,14 @@
 {
  "name": "doa6_mai",
  "title": "Mai Shiranui (DOA6)",
- "note": "g04's own strikes (user 10-03: Luffee strikes like Mai Shiranui). The BVH come from Dead or Alive 6's RRPreview.rdb: ripper_tpose scripts/doa6/g2a_bvh.py --g1m <MAI_COS_004.g1m> --out _work/mocap/doa6_mai <MAI00000_MAI.g1a and the clips>. Clips picked from out/motion_sheets/doa6_mai_candidates (RoeMotionPacks.Sheet): A 01000 lunging jab, B 01110 mid elbow, C 01002 lunging straight, D 01040 high kick. inPlace: DOA's strikes step in 0.6-0.7 m - the step is taken out of the clip and the fight moves her along.",
+ "note": "g04's own strikes (user 10-03: Luffee strikes like Mai Shiranui). The BVH come from Dead or Alive 6's RRPreview.rdb: ripper_tpose scripts/doa6/g2a_bvh.py --g1m <MAI_COS_004.g1m> --out _work/mocap/doa6_mai <MAI00000_MAI.g1a and the clips>. Clips picked from out/motion_sheets/doa6_mai_candidates (RoeMotionPacks.Sheet): A 01000 lunging jab, B 01110 mid elbow, C 01002 lunging straight, D 01040 high kick. inPlace: DOA's strikes step in 0.6-0.7 m - the step is taken out of the clip and the fight moves her along. Her stance too (user 10-03: \"把不知火舞的架势也给 Luffee 当站架\"): 00000 is the guard of g04 / g05 (FighterRig.strikePack roles replace the pack's). Every strike starts with the hips turned as the jab starts (face stance:mai_jab), as does the stance, so going from the stance into a strike and back does not twist her.",
  "strikesOnly": true,
  "measureOn": "g04",
  "source": "Dead or Alive 6 (Koei Tecmo): Mai Shiranui's moves, decoded by ripper_tpose scripts/doa6 (g2a.py, g2a_bvh.py)",
  "license": "game data - personal use only, never committed or shared",
+ "roles": {
+  "guard": "mai_stance"
+ },
  "bvh": {
   "folder": "_work/mocap/doa6_mai",
   "reference": "MAI00000_MAI.bvh",
@@ -20,17 +23,28 @@
    {
     "name": "mai_elbow",
     "file": "MAI01110_MAI.bvh",
-    "limb": "auto"
+    "limb": "auto",
+    "face": "stance:mai_jab"
    },
    {
     "name": "mai_lunge",
     "file": "MAI01002_MAI.bvh",
-    "limb": "auto"
+    "limb": "auto",
+    "face": "stance:mai_jab"
    },
    {
     "name": "mai_high_kick",
     "file": "MAI01040_MAI.bvh",
-    "limb": "auto"
+    "limb": "auto",
+    "face": "stance:mai_jab"
+   },
+   {
+    "name": "mai_stance",
+    "file": "MAI00000_MAI.bvh",
+    "loop": true,
+    "minCycle": 0.6,
+    "maxCycle": 1.4,
+    "face": "stance:mai_jab"
    }
   ]
  },

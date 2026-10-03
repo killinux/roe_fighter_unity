@@ -47,12 +47,12 @@ def main():
 
     for base in a.bases:
         for b in fnmatch.filter(bundles, f'chara_bare_pc_{base}_nk*'):
-            if '_fm_' not in b:
+            if '_fm_' not in b or '_fm' in base:
                 take(b, [f'pc_{base}_nk_body.asset', f'pc_{base}_nk.prefab', f'pc_{base}_nkAvatar.asset'])
         for b in fnmatch.filter(bundles, f'meta_bare_pc_{base}_nk'):
             take(b, [f'pc_{base}_nk_bs.prefab'])
         for b in fnmatch.filter(bundles, f'chara_mat_bare_pc_{base}_nk*') + fnmatch.filter(bundles, f'chara_tex_bare_pc_{base}_nk*'):
-            if '_fm_' not in b:
+            if '_fm_' not in b or '_fm' in base:
                 take(b, ['*'])
     for b in fnmatch.filter(bundles, 'chara_tex_bare_common_prelude') + ['heros_shader_collection']:
         if b in bundles:

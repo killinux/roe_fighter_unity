@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Text;
 using UnityEditor;
 using UnityEngine;
@@ -130,7 +131,8 @@ namespace RoeFighter.EditorTools
             }
 
             var skinned = new HashSet<Transform>(go.GetComponentsInChildren<SkinnedMeshRenderer>(true).SelectMany(r => r.bones).Where(b => b != null));
-            var helpers = skinned.Where(b => !human.ContainsKey(b) && LimbOwners.Contains(Owner(b)) && !b.name.ToLowerInvariant().Contains("chain"))
+            // chains and ribbons swing (RoeBoneCloth), they follow no limb (g05's ribbons on her arms fitted 26-85 degrees off)
+            var helpers = skinned.Where(b => !human.ContainsKey(b) && LimbOwners.Contains(Owner(b)) && !Regex.IsMatch(b.name, "chain|riband|ribbon", RegexOptions.IgnoreCase))
                 .OrderBy(b => Depth(b)).ToList();
             var candidates = map.Where(kv => !kv.Key.Contains(" ")).Select(kv => kv.Key).ToList();     // no fingers
             var tracked = new HashSet<Transform>(helpers.Concat(map.Values));
@@ -380,6 +382,13 @@ namespace RoeFighter.EditorTools
             RoeCapture.Pose(go, idle, 0f);
             var kinds = RoeBoneCloth.Classify(go.transform, new HashSet<Transform>(map.Values), null);
             var bones = kinds.Where(kv => kv.Value == "skirt").Select(kv => kv.Key).OrderBy(Depth).ThenBy(b => b.name).ToList();
+            if (bones.Count == 0)
+            {
+                // no skirt (b10 wears shorts; g05's front panel is a ribbon): nothing to fit
+                RoeCapture.EndPosing();
+                Object.DestroyImmediate(go);
+                return $"[ROE] skirt fit {c.id}: no skirt bones, nothing to fit";
+            }
             var index = new Dictionary<Transform, int>();
             for (int i = 0; i < bones.Count; i++)
                 index[bones[i]] = i;

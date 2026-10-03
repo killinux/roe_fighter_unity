@@ -70,5 +70,12 @@ namespace RoeFighter.EditorTools
         }
 
         public IEnumerable<Character> WithModels => characters.Where(c => c.HasModel);
+
+        /// <summary>The characters named by -roeChars b10,g05 (batch argument), else every one with a model.</summary>
+        public IEnumerable<Character> Chosen()
+        {
+            var ids = RoeCapture.Arg("-roeChars", null);
+            return string.IsNullOrEmpty(ids) ? WithModels : ids.Split(',').Select(id => Find(id.Trim())).Where(c => c.HasModel);
+        }
     }
 }

@@ -27,6 +27,44 @@ namespace RoeFighter.EditorTools
 
         public static string ClipPath(string id, string clip) => $"{RoeFighterBuilder.OutDir}/{id}/humanoid/{id}_{clip}.anim";
 
+        /// <summary>
+        /// The pose the fight stands a fighter in (FighterRig.stance: layer 0, the soles, how the feet stand, how the
+        /// skirts and ribbons hang): the battle stance idle_01, unless it does not stand on the floor (g05 floats,
+        /// sitting in the air) - then the first showcase clip that does (idle_02, react_01, react_02).
+        /// </summary>
+        public static AnimationClip Standing(string id, out string note)
+        {
+            var go = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var animator = go.GetComponent<Animator>();
+            var soles = new[] { HumanBodyBones.LeftToes, HumanBodyBones.RightToes, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot }
+                .Select(animator.GetBoneTransform).Where(t => t != null).ToArray();
+            AnimationClip chosen = null, first = null;
+            var tried = new List<string>();
+            foreach (var name in new[] { "idle_01", "idle_02", "react_01", "react_02" })
+            {
+                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(ClipPath(id, name));
+                if (clip == null)
+                    continue;
+                first = first ?? clip;
+                RoeCapture.Pose(go, clip, 0f);
+                float lowest = soles.Length > 0 ? soles.Min(t => t.position.y) : 0f;
+                tried.Add($"{name} lowest sole bone {lowest * 100f:F0} cm");
+                if (lowest < StandingSole)
+                {
+                    chosen = clip;
+                    break;
+                }
+            }
+            RoeCapture.EndPosing();
+            Object.DestroyImmediate(go);
+            note = $"stands in {(chosen ?? first)?.name ?? "nothing"} ({string.Join(", ", tried)})";
+            return chosen ?? first;
+        }
+
+        /// <summary>A pose stands on the floor when its lowest toe or ankle bone is this low (m; heels lift the ankles 10-15 cm).</summary>
+        public const float StandingSole = 0.12f;
+
         /// <summary>"Left Index 1 Stretched" (HumanTrait) -> "LeftHand.Index.1 Stretched" (curve attribute).</summary>
         static string MuscleAttribute(string traitName)
         {
@@ -135,6 +173,31 @@ namespace RoeFighter.EditorTools
             }
             var bindScale = map.ToDictionary(p => p.Value, p => fighterPrefab.transform.Find(PathOf(p.Value, root)).localScale);
 
+            // Non-human nodes on a limb bone: the avatar moves each limb's twist to the next joint (RoeHumanoid,
+            // upperArmTwist ... = 1), so in playback the limb lacks the twist the game gave it and everything hung on
+            // it turns about the limb with it.  Their curves are re-expressed against the limb as the avatar poses it
+            // (posed: a second instance that takes the muscles back).  g05's ribbons hang a metre down from her arms:
+            // their tips were 0.9-1.2 m off; the twist helpers 1-3 cm.
+            var limbs = new HashSet<Transform>(new[] { "LeftUpperArm", "RightUpperArm", "LeftLowerArm", "RightLowerArm",
+                    "LeftUpperLeg", "RightUpperLeg", "LeftLowerLeg", "RightLowerLeg" }.Where(map.ContainsKey).Select(k => map[k]));
+            var onLimb = fighter.GetComponentsInChildren<Transform>(true)
+                .Where(t => t != root && t.parent != null && limbs.Contains(t.parent) && !humanTransforms.Contains(t) && !dropped.Contains(t)
+                            && !rebake.Contains(t) && originalByName.ContainsKey(t.name)).ToList();
+            GameObject posed = null;
+            HumanPoseHandler posedHandler = null;
+            var posedParent = new Dictionary<Transform, Transform>();
+            if (onLimb.Count > 0)
+            {
+                posed = Object.Instantiate(fighterPrefab);
+                posed.transform.SetPositionAndRotation(root.position, root.rotation);
+                var posedByName = ByName(posed);
+                foreach (var t in onLimb)
+                    posedParent[t] = posedByName[t.parent.name];
+                posedHandler = new HumanPoseHandler(avatar, posed.transform);
+            }
+            var limbKeys = onLimb.ToDictionary(r => r, r => new Keys(10));
+            var lastLimbQ = onLimb.ToDictionary(r => r, r => Quaternion.identity);
+
             var handler = new HumanPoseHandler(avatar, root);
             var pose = new HumanPose();
             int muscles = HumanTrait.MuscleCount;
@@ -179,6 +242,25 @@ namespace RoeFighter.EditorTools
                         rebakeKeys[r].curves[i].Add(new Keyframe(time, v[i]));
                 }
 
+                if (posedHandler != null)
+                {
+                    posedHandler.SetHumanPose(ref pose);
+                    foreach (var r in onLimb)
+                    {
+                        // r holds the game's pose (copied); its parent as the avatar will pose it
+                        var parent = posedParent[r];
+                        var p = parent.InverseTransformPoint(r.position);
+                        var rq = Quaternion.Inverse(parent.rotation) * r.rotation;
+                        if (f > 0 && Quaternion.Dot(rq, lastLimbQ[r]) < 0f)
+                            rq = new Quaternion(-rq.x, -rq.y, -rq.z, -rq.w);
+                        lastLimbQ[r] = rq;
+                        var s = r.localScale;
+                        float[] v = { p.x, p.y, p.z, rq.x, rq.y, rq.z, rq.w, s.x, s.y, s.z };
+                        for (int i = 0; i < 10; i++)
+                            limbKeys[r].curves[i].Add(new Keyframe(time, v[i]));
+                    }
+                }
+
                 foreach (var pair in bindScale)
                 {
                     float d = (pair.Key.localScale - pair.Value).magnitude;
@@ -190,6 +272,9 @@ namespace RoeFighter.EditorTools
                 }
             }
             handler.Dispose();
+            posedHandler?.Dispose();
+            if (posed != null)
+                Object.DestroyImmediate(posed);
 
             var clip = new AnimationClip { name = $"{id}_{clipName}", frameRate = Fps };
             var bindings = new List<EditorCurveBinding>();
@@ -213,6 +298,7 @@ namespace RoeFighter.EditorTools
             var skip = new HashSet<Transform>(humanTransforms);
             skip.UnionWith(dropped);
             skip.UnionWith(rebake);
+            skip.UnionWith(onLimb);
             int kept = 0, replaced = 0, missing = 0;
             foreach (var binding in AnimationUtility.GetCurveBindings(source))
             {
@@ -254,6 +340,15 @@ namespace RoeFighter.EditorTools
                     curves.Add(Curve(rebakeKeys[r].curves[i]));
                 }
             }
+            foreach (var r in onLimb)
+            {
+                string path = PathOf(r, root);
+                for (int i = 0; i < 10; i++)
+                {
+                    bindings.Add(EditorCurveBinding.FloatCurve(path, typeof(Transform), trs[i]));
+                    curves.Add(Curve(limbKeys[r].curves[i]));
+                }
+            }
 
             AnimationUtility.SetEditorCurves(clip, bindings.ToArray(), curves.ToArray());
             clip.EnsureQuaternionContinuity();
@@ -276,7 +371,7 @@ namespace RoeFighter.EditorTools
             AssetDatabase.DeleteAsset(assetPath);
             AssetDatabase.CreateAsset(clip, assetPath);
             Debug.Log($"[ROE] {id} {clipName}: {assetPath} human={clip.humanMotion}; {frames + 1} keys x {muscles} muscles, " +
-                      $"{kept} curves kept, {replaced} replaced, {missing} without a target, {rebake.Count} nodes re-based" +
+                      $"{kept} curves kept, {replaced} replaced, {missing} without a target, {rebake.Count} nodes re-based, {onLimb.Count} on the limbs re-expressed" +
                       (worstScale > 0.01f ? $"; WARNING {worstScaleBone} is scaled by the clip ({worstScale:F2}) and loses that" : ""));
             return clip;
         }
@@ -324,7 +419,8 @@ namespace RoeFighter.EditorTools
         public static void ConvertAll()
         {
             var manifest = RoeManifest.Load();
-            foreach (var c in manifest.WithModels)
+            // -roeChars b10,g05: only these (rebuilding a fighter prefab drops what RoeHelperFit put on it)
+            foreach (var c in manifest.Chosen())
             {
                 var fighterPrefab = RoeHumanoid.BuildFighter(c);    // always rebuild: the clips depend on the avatar
                 if (fighterPrefab == null)

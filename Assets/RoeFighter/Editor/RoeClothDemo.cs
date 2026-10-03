@@ -79,7 +79,7 @@ namespace RoeFighter.EditorTools
             var own = new Dictionary<string, MotionPack>();
             Film(outDir, new[] { "pack", "own" }, (game, variant) =>
             {
-                foreach (var rig in game.rigs)
+                foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
                 {
                     if (rig.strikePack != null)
                         own[rig.id] = rig.strikePack;
@@ -88,7 +88,7 @@ namespace RoeFighter.EditorTools
             }, (game, variant, me) => me.rig.strikePack != null ? $"own strikes: {me.rig.strikePack.title}" : $"the motion pack's strikes: {game.Pack.title}");
             // as the scene has it again
             foreach (var game in Object.FindObjectsByType<FightGame>(FindObjectsSortMode.None))
-                foreach (var rig in game.rigs)
+                foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
                     if (own.TryGetValue(rig.id, out var p))
                         rig.strikePack = p;
         }
@@ -139,6 +139,9 @@ namespace RoeFighter.EditorTools
                     string pack = RoeCapture.Arg("-roeMotions", null);
                     if (pack != null)
                         game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+                    // she fights the scene's other pick (or takes 2P's place when she is not picked)
+                    if (game.roster.Length > 0 && game.roster[game.pick[0]].id != id && game.roster[game.pick[1]].id != id)
+                        game.PickIds(null, id);
                     apply(game, variant);
                     game.Setup();
                     while (game.phase != FightGame.Phase.Fight)

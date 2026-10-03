@@ -27,7 +27,7 @@ namespace RoeFighter
     ///      towards its root), the floor.
     /// Bone lengths are rigid.  The result is written as bone rotations, blended by a weight.
     ///
-    /// Chains are found by name (skirt / hair, braid, bangs / chains, waist ornaments / breasts);
+    /// Chains are found by name (skirt / hair, braid, bangs / ribbons / chains, waist ornaments / breasts);
     /// a bone with several simulated children is not simulated itself (its children hang on it).
     /// Chains of one set are linked when the skin has triangles across them.  The ROE skirts are keyed
     /// by hand in the game's own clips; the fight blends this in under the motion-capture moves only,
@@ -110,6 +110,15 @@ namespace RoeFighter
             return s;
         }
 
+        /// <summary>Ribbons and sashes (g05's Riband_*): light like hair, the segments collide (they pass the legs).</summary>
+        public static Settings Ribbon(bool legacy)
+        {
+            var s = Hair(legacy);
+            s.radius = 0.02f;
+            s.edge = true;
+            return s;
+        }
+
         // hair, chains and breasts: the add-on's presets, world inertia as their old inertia on the anchor
         public static Settings Hair(bool legacy) => new Settings
         {
@@ -135,6 +144,7 @@ namespace RoeFighter
             ("chain", new Regex(@"skirt_chain|^chain\d|chain_arm|dec_wrist", RegexOptions.IgnoreCase)),
             ("skirt", new Regex(@"skirt", RegexOptions.IgnoreCase)),
             ("hair", new Regex(@"hair|braid|bangs|hari", RegexOptions.IgnoreCase)),
+            ("ribbon", new Regex(@"riband|ribbon", RegexOptions.IgnoreCase)),
             ("breast", new Regex(@"breast|chest_[lr]", RegexOptions.IgnoreCase)),
         };
 
@@ -247,12 +257,15 @@ namespace RoeFighter
                 if (anchor == null)
                     continue;
                 var bones = group.OrderBy(Depth).ToArray();
-                var s = kind == "skirt" ? Skirt(legacy) : kind == "hair" ? Hair(legacy) : kind == "chain" ? Chain(legacy) : Breast(legacy);
+                var s = kind == "skirt" ? Skirt(legacy) : kind == "hair" ? Hair(legacy) : kind == "ribbon" ? Ribbon(legacy)
+                      : kind == "chain" ? Chain(legacy) : Breast(legacy);
                 Transform owner = anchor;
                 while (owner != null && !human.ContainsKey(owner))
                     owner = owner.parent;
                 var lower = owner != null && (human[owner] == HumanBodyBones.Hips || human[owner] == HumanBodyBones.Spine);
-                var cs = lower ? legs.ToArray()
+                // ribbons hang from anywhere (g05's from her arms, a metre down past her hips): the legs and the torso
+                var cs = kind == "ribbon" ? legs.Concat(torso != null ? new[] { torso } : new Capsule[0]).ToArray()
+                       : lower ? legs.ToArray()
                        : kind == "hair" && torso != null ? new[] { torso }
                        : new Capsule[0];
                 // inertia and the backstop's body axis come from the body part the chain belongs to

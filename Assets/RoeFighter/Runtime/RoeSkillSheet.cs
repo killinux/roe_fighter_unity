@@ -147,6 +147,20 @@ namespace RoeFighter
             public float BodyEnd => Body != null ? Body.end : duration;
 
             public IEnumerable<Hit> DamageHits => hits.Where(h => h.IsDamage);
+
+            /// <summary>
+            /// The blows of the skill in a fight: its damage numbers; a skill without any (g05's skill 2 and super heal
+            /// in the game) strikes at the moments its effects land instead, one blow per moment.
+            /// </summary>
+            public List<Hit> Blows
+            {
+                get
+                {
+                    var damage = DamageHits.OrderBy(h => h.time).ToList();
+                    return damage.Count > 0 ? damage
+                        : hits.GroupBy(h => h.time).OrderBy(g => g.Key).Select(g => new Hit { time = g.Key, ratio = 1f, what = "hurt" }).ToList();
+                }
+            }
         }
 
         public string unit, id, model;

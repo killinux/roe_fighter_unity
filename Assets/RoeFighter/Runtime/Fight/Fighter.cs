@@ -377,7 +377,7 @@ namespace RoeFighter.Fight
             specialDir = toFoe.sqrMagnitude > 1e-6f ? toFoe.normalized : Forward;
             specialStartYaw = Mathf.Atan2(specialDir.x, specialDir.z) * Mathf.Rad2Deg;
             yaw = specialStartYaw;
-            var hits = action.DamageHits.OrderBy(h => h.time).ToList();
+            var hits = action.Blows;
             specialHits = hits.Select(h => h.time).ToList();
             float total = hits.Sum(h => Mathf.Max(0f, h.ratio));
             specialRatios = hits.Select(h => total > 0f ? Mathf.Max(0f, h.ratio) / total : 1f / hits.Count).ToList();

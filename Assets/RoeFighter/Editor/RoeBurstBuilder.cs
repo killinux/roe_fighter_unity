@@ -57,6 +57,19 @@ namespace RoeFighter.EditorTools
             public string material;
             public string attachTo;                 // the suit renderer it goes next to (its space, bones and settings)
             public Outfit[] replace;                // the suit's skin it replaces (renderer + submesh)
+            public Fill[] fill;                     // more of the base where the suit has nothing (the neck under a collar)
+        }
+
+        /// <summary>
+        /// The base's triangles of another submesh that the suit lacks: the suit's head is the base's head cut off
+        /// under its collar (b10's turtleneck, g05's gold collar), so without the collar the neck was a hole.  These
+        /// are added with the material of the first suit renderer named (the face's).
+        /// </summary>
+        [Serializable]
+        public class Fill
+        {
+            public int submesh;                     // the base's submesh (its head, neck included)
+            public Outfit[] missingFrom;            // the suit renderers it is compared with: what they have is not taken again
         }
 
         [Serializable]
@@ -556,7 +569,8 @@ namespace RoeFighter.EditorTools
                     Object.DestroyImmediate(go);
                     continue;
                 }
-                var stance = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(id, "idle_01"));
+                var stance = RoeHumanoidClips.Standing(id, out var standing);
+                Debug.Log($"[ROE] burst {id}: {standing}");
                 if (stance != null)
                     RoeCapture.Pose(go, stance, 0f);
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
@@ -576,6 +590,13 @@ namespace RoeFighter.EditorTools
                 studio.Aim(body, forward, 18f, 6f, height * 2.6f, 26f);
                 RoeCapture.Render(studio.camera, 200, 200, Path.Combine(outDir, "_warm.png"));
                 RoeCapture.Render(studio.camera, 200, 200, Path.Combine(outDir, "_warm.png"));
+                // every piece of the outfit and the rule it falls under (for writing the rules)
+                var analysis = Analyse(go, Load(id));
+                File.WriteAllText(Path.Combine(outDir, $"{id}_pieces.txt"), "bone\tshares\ttriangles\tside\tlowest\thighest\tcentre\tgroup\n" +
+                    string.Join("\n", analysis.parts.OrderBy(p => p.bone).ThenByDescending(p => p.Triangles).Select(p =>
+                        $"{p.bone}\t{string.Join(" ", p.share.OrderByDescending(kv => kv.Value).Take(3).Select(kv => $"{kv.Key}:{kv.Value:F2}"))}\t" +
+                        $"{p.Triangles}\t{p.side}\t{p.lowest:F2}\t{p.highest:F2}\t{p.centre.x:F2},{p.centre.y:F2},{p.centre.z:F2}\t" +
+                        $"{(p.group != null ? $"{p.group.name} (stage {p.group.stage})" : "-")}")) + "\n");
                 // as the prefab has it, then split: the same picture (tools/burst_sheet.py compares them)
                 Shot($"{id}_unsplit_front.png", 15f);
                 Shot($"{id}_unsplit_back.png", 165f);

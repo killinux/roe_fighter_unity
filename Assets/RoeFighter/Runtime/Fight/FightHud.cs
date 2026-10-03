@@ -6,7 +6,8 @@ namespace RoeFighter.Fight
     /// <summary>
     /// Health bars, timer, round marks, special gauges and the big messages, built in code with
     /// uGUI.  Screen-space overlay in play mode; when the editor films a match the canvas is drawn
-    /// by the fight camera (screen-space camera), so it ends up in the pictures.
+    /// by the fight camera (screen-space camera), so it ends up in the pictures.  On the select screen
+    /// (FightGame.Phase.Select) a card per fighter of the roster instead, the two picked standing on the stage.
     /// </summary>
     public class FightHud : MonoBehaviour
     {
@@ -21,12 +22,21 @@ namespace RoeFighter.Fight
         Text timer, message, help, notice;
         float[] lag = { 1f, 1f };
         Font font;
+        Transform layer;                    // where Box and Label put what they make
+        GameObject fightLayer, selectLayer;
+
+        // the select screen
+        Image[] cardFrame;
+        Text[] cardTag;
+        Text selectTitle, selectWho, selectHelp;
+        readonly Text[] pickName = new Text[2], pickOutfit = new Text[2];
 
         static readonly Color Gold = new Color(1f, 0.82f, 0.25f);
         static readonly Color HpColor = new Color(1f, 0.78f, 0.2f);
         static readonly Color LagColor = new Color(0.85f, 0.15f, 0.12f);
         static readonly Color Dark = new Color(0.05f, 0.05f, 0.08f, 0.75f);
         static readonly Color MeterColor = new Color(0.25f, 0.65f, 1f);
+        static readonly Color[] SideColor = { new Color(0.95f, 0.27f, 0.22f), new Color(0.27f, 0.58f, 1f) };
 
         public void Build(FightGame game)
         {
@@ -56,6 +66,9 @@ namespace RoeFighter.Fight
             scaler.referenceResolution = new Vector2(1920, 1080);
             scaler.matchWidthOrHeight = 1f;
 
+            fightLayer = Layer("fight");
+            selectLayer = Layer("select");
+            layer = fightLayer.transform;
             for (int i = 0; i < 2; i++)
             {
                 bool left = i == 0;
@@ -86,25 +99,94 @@ namespace RoeFighter.Fight
                                      left ? new Vector2(0.28f, 0.11f) : new Vector2(0.97f, 0.11f));
             }
             timer = Label("timer", "60", 64, TextAnchor.MiddleCenter, new Vector2(0.455f, 0.875f), new Vector2(0.545f, 0.985f));
-            message = Label("message", "", 120, TextAnchor.MiddleCenter, new Vector2(0.1f, 0.4f), new Vector2(0.9f, 0.62f));
-            message.color = Gold;
-            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth   F5: skirt   F6: clothes burst",
-                         20, TextAnchor.LowerCenter, new Vector2(0.22f, 0.0f), new Vector2(0.78f, 0.04f));
-            notice = Label("notice", "", 26, TextAnchor.MiddleCenter, new Vector2(0.15f, 0.79f), new Vector2(0.85f, 0.86f));
+            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth   F5: skirt   F6: clothes burst   F7: select",
+                         20, TextAnchor.LowerCenter, new Vector2(0.2f, 0.0f), new Vector2(0.8f, 0.04f));
             help.gameObject.SetActive(showHelp && !drawnByCamera);
+            BuildSelect(game);
+            // over both screens
+            layer = transform;
+            message = Label("message", "", 120, TextAnchor.MiddleCenter, new Vector2(0.03f, 0.4f), new Vector2(0.97f, 0.62f));
+            message.color = Gold;
+            // long names ("GODDESS LUF WINS THE MATCH") get smaller instead of running off the screen
+            message.horizontalOverflow = HorizontalWrapMode.Wrap;
+            message.resizeTextForBestFit = true;
+            message.resizeTextMinSize = 48;
+            message.resizeTextMaxSize = 120;
+            notice = Label("notice", "", 26, TextAnchor.MiddleCenter, new Vector2(0.15f, 0.79f), new Vector2(0.85f, 0.86f));
             Refresh(game);
         }
 
-        static void Inset(RectTransform r)
+        /// <summary>A card per fighter along the bottom, the two picked by name on either side, whose turn it is at the top.</summary>
+        void BuildSelect(FightGame game)
         {
-            r.offsetMin = new Vector2(3, 3);
-            r.offsetMax = new Vector2(-3, -3);
+            layer = selectLayer.transform;
+            int n = game.roster != null ? game.roster.Length : 0;
+            cardFrame = new Image[n];
+            cardTag = new Text[n];
+            const float w = 0.085f, gap = 0.014f, y0 = 0.075f, y1 = 0.315f;
+            float x = 0.5f - (n * w + (n - 1) * gap) * 0.5f;
+            for (int k = 0; k < n; k++, x += w + gap)
+            {
+                var rig = game.roster[k];
+                var frame = Box($"card{k}", Dark, new Vector2(x - 0.004f, y0 - 0.007f), new Vector2(x + w + 0.004f, y1 + 0.007f));
+                cardFrame[k] = frame;
+                var inner = Box("inner", new Color(0.12f, 0.12f, 0.15f, 1f), Vector2.zero, Vector2.one, frame);
+                Inset(inner.rectTransform, 5f);
+                if (rig != null && rig.portrait != null)
+                {
+                    var go = new GameObject("portrait", typeof(RectTransform), typeof(RawImage));
+                    go.transform.SetParent(inner.transform, false);
+                    var rt = (RectTransform)go.transform;
+                    rt.anchorMin = Vector2.zero;
+                    rt.anchorMax = Vector2.one;
+                    rt.offsetMin = rt.offsetMax = Vector2.zero;
+                    var img = go.GetComponent<RawImage>();
+                    img.texture = rig.portrait;
+                    img.raycastTarget = false;
+                }
+                var band = Box("band", new Color(0f, 0f, 0f, 0.6f), new Vector2(0f, 0f), new Vector2(1f, 0.2f), inner);
+                var name = Label($"cardName{k}", rig != null ? rig.displayName : "?", 22, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
+                name.transform.SetParent(band.transform, false);
+                cardTag[k] = Label($"cardTag{k}", "", 28, TextAnchor.LowerCenter, new Vector2(x - 0.02f, y1 + 0.01f), new Vector2(x + w + 0.02f, y1 + 0.06f));
+            }
+            for (int i = 0; i < 2; i++)
+            {
+                bool left = i == 0;
+                pickName[i] = Label($"pick{i}", "", 64, left ? TextAnchor.LowerLeft : TextAnchor.LowerRight,
+                                    left ? new Vector2(0.04f, 0.4f) : new Vector2(0.56f, 0.4f), left ? new Vector2(0.44f, 0.5f) : new Vector2(0.96f, 0.5f));
+                pickName[i].color = SideColor[i];
+                pickOutfit[i] = Label($"outfit{i}", "", 28, left ? TextAnchor.UpperLeft : TextAnchor.UpperRight,
+                                      left ? new Vector2(0.04f, 0.35f) : new Vector2(0.56f, 0.35f), left ? new Vector2(0.44f, 0.4f) : new Vector2(0.96f, 0.4f));
+            }
+            selectTitle = Label("selectTitle", "CHARACTER SELECT", 64, TextAnchor.MiddleCenter, new Vector2(0.1f, 0.88f), new Vector2(0.9f, 0.97f));
+            selectTitle.color = Gold;
+            selectWho = Label("selectWho", "", 30, TextAnchor.MiddleCenter, new Vector2(0.1f, 0.83f), new Vector2(0.9f, 0.88f));
+            selectHelp = Label("selectHelp", "1P: A / D choose   J confirm   K back        2P: ← / → choose   1 confirm   2 back        F1 / F2: CPU on / off",
+                               22, TextAnchor.LowerCenter, new Vector2(0.1f, 0.005f), new Vector2(0.9f, 0.045f));
+            selectHelp.gameObject.SetActive(showHelp && !drawnByCamera);
+        }
+
+        GameObject Layer(string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(transform, false);
+            var rt = (RectTransform)go.transform;
+            rt.anchorMin = Vector2.zero;
+            rt.anchorMax = Vector2.one;
+            rt.offsetMin = rt.offsetMax = Vector2.zero;
+            return go;
+        }
+
+        static void Inset(RectTransform r, float by = 3f)
+        {
+            r.offsetMin = new Vector2(by, by);
+            r.offsetMax = new Vector2(-by, -by);
         }
 
         Image Box(string name, Color color, Vector2 min, Vector2 max, Image parent = null)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Image));
-            go.transform.SetParent(parent != null ? parent.transform : transform, false);
+            go.transform.SetParent(parent != null ? parent.transform : layer != null ? layer : transform, false);
             var rt = (RectTransform)go.transform;
             rt.anchorMin = min;
             rt.anchorMax = max;
@@ -118,7 +200,7 @@ namespace RoeFighter.Fight
         Text Label(string name, string text, int size, TextAnchor anchor, Vector2 min, Vector2 max)
         {
             var go = new GameObject(name, typeof(RectTransform), typeof(Text), typeof(Outline));
-            go.transform.SetParent(transform, false);
+            go.transform.SetParent(layer != null ? layer : transform, false);
             var rt = (RectTransform)go.transform;
             rt.anchorMin = min;
             rt.anchorMax = max;
@@ -142,6 +224,25 @@ namespace RoeFighter.Fight
         {
             if (timer == null || game.f[0] == null)
                 return;
+            bool selecting = game.phase == FightGame.Phase.Select;
+            if (fightLayer != null && fightLayer.activeSelf == selecting)
+                fightLayer.SetActive(!selecting);
+            if (selectLayer != null && selectLayer.activeSelf != selecting)
+                selectLayer.SetActive(selecting);
+            message.text = game.message;
+            if (notice != null)
+            {
+                notice.text = game.Notice;
+                // on the select screen along the top edge (below it: the title and whose turn it is)
+                var rt = notice.rectTransform;
+                rt.anchorMin = selecting ? new Vector2(0.05f, 0.962f) : new Vector2(0.15f, 0.79f);
+                rt.anchorMax = selecting ? new Vector2(0.95f, 0.998f) : new Vector2(0.85f, 0.86f);
+            }
+            if (selecting)
+            {
+                RefreshSelect(game);
+                return;
+            }
             for (int i = 0; i < 2; i++)
             {
                 var x = game.f[i];
@@ -160,9 +261,44 @@ namespace RoeFighter.Fight
                 }
             }
             timer.text = Mathf.CeilToInt(game.timer).ToString();
-            message.text = game.message;
-            if (notice != null)
-                notice.text = game.Notice;
+        }
+
+        void RefreshSelect(FightGame game)
+        {
+            if (cardFrame == null)
+                return;
+            bool alone = game.cpu[0] != game.cpu[1];
+            for (int k = 0; k < cardFrame.Length; k++)
+            {
+                bool p1 = game.pick[0] == k, p2 = game.pick[1] == k;
+                float blink = 0.6f + 0.4f * Mathf.Abs(Mathf.Sin(Time.unscaledTime * 6f));
+                Color c = Dark;
+                if (p1 && p2)
+                    c = Color.Lerp(SideColor[0], SideColor[1], Mathf.PingPong(Time.unscaledTime * 2f, 1f));
+                else if (p1)
+                    c = SideColor[0] * (game.picked[0] ? 1f : blink);
+                else if (p2)
+                    c = SideColor[1] * (game.picked[1] ? 1f : blink);
+                c.a = 1f;
+                cardFrame[k].color = p1 || p2 ? c : Dark;
+                string Tag(int side) => game.cpu[side] ? "CPU" : side == 0 ? "1P" : "2P";
+                cardTag[k].text = p1 && p2 ? $"{Tag(0)}  {Tag(1)}" : p1 ? Tag(0) : p2 ? Tag(1) : "";
+                cardTag[k].color = p1 && !p2 ? SideColor[0] : p2 && !p1 ? SideColor[1] : Color.white;
+            }
+            for (int i = 0; i < 2; i++)
+            {
+                var rig = game.rigs[i];
+                pickName[i].text = rig != null ? rig.displayName : "";
+                pickOutfit[i].text = rig != null ? $"{rig.outfit}  ({rig.id})" + (game.picked[i] ? "   OK" : "") : "";
+            }
+            if (game.picked[0] && game.picked[1])
+                selectWho.text = "READY";
+            else if (alone)
+                selectWho.text = game.choosing == (game.cpu[0] ? 0 : 1) ? "CHOOSE THE COMPUTER'S FIGHTER" : "CHOOSE YOUR FIGHTER";
+            else if (game.cpu[0] && game.cpu[1])
+                selectWho.text = "COMPUTER AGAINST COMPUTER";
+            else
+                selectWho.text = "1P AND 2P: CHOOSE";
         }
 
         static void SetFill(RectTransform r, float amount, bool fromLeft)

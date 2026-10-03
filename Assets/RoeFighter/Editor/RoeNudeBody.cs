@@ -32,6 +32,7 @@ namespace RoeFighter.EditorTools
     public static class RoeNudeBody
     {
         public const float SkinReach = 0.015f;       // the suit's skin this close is what the body copies
+        const float MaxFill = 0.3f;                  // a fill that would add more than this share of a submesh is not one
         const float Cell = 0.02f;
 
         class Grid
@@ -71,6 +72,49 @@ namespace RoeFighter.EditorTools
                                         into.Add((i, Mathf.Sqrt(d2)));
                                 }
             }
+        }
+
+        /// <summary>Points welded by place: the same place (within 0.3 mm) gets the same id.</summary>
+        class Places
+        {
+            readonly Dictionary<Vector3Int, List<(Vector3 p, int id)>> cells = new Dictionary<Vector3Int, List<(Vector3 p, int id)>>();
+            const float Tolerance = 0.0003f;
+            int count;
+
+            static Vector3Int Key(Vector3 p) => Vector3Int.FloorToInt(p / 0.001f);
+
+            public int Find(Vector3 p)
+            {
+                var c = Key(p);
+                for (int x = -1; x <= 1; x++)
+                    for (int y = -1; y <= 1; y++)
+                        for (int z = -1; z <= 1; z++)
+                            if (cells.TryGetValue(new Vector3Int(c.x + x, c.y + y, c.z + z), out var list))
+                                foreach (var (q, id) in list)
+                                    if ((q - p).sqrMagnitude <= Tolerance * Tolerance)
+                                        return id;
+                return -1;
+            }
+
+            public int Add(Vector3 p)
+            {
+                int id = Find(p);
+                if (id >= 0)
+                    return id;
+                var key = Key(p);
+                if (!cells.TryGetValue(key, out var list))
+                    cells[key] = list = new List<(Vector3 p, int id)>();
+                list.Add((p, id = count++));
+                return id;
+            }
+        }
+
+        static (int, int, int) Sorted(int a, int b, int c)
+        {
+            if (a > b) (a, b) = (b, a);
+            if (b > c) (b, c) = (c, b);
+            if (a > b) (a, b) = (b, a);
+            return (a, b, c);
         }
 
         /// <summary>
@@ -148,10 +192,73 @@ namespace RoeFighter.EditorTools
                 var subs = s.submesh >= 0 ? new[] { s.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
                 Add(r, subs.SelectMany(k => r.sharedMesh.GetIndices(k)).Distinct(), true, _ => false);
             }
+            var fills = (n.fill ?? new RoeBurstBuilder.Fill[0]).Where(f => f.missingFrom != null && f.missingFrom.Length > 0).ToList();
+            foreach (var o in fills.SelectMany(f => f.missingFrom))
+            {
+                // the skin the filled part continues (the suit's head above the cut neck): weights for it too
+                var r = renderers.FirstOrDefault(x => x.name == o.renderer);
+                if (r == null)
+                    continue;
+                var subs = o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
+                Add(r, subs.SelectMany(k => r.sharedMesh.GetIndices(k)).Distinct(), true, _ => false);
+            }
             // ---- the body's own vertices (the base's body submesh)
             var tris = mesh.GetTriangles(n.submesh);
-            var used = tris.Distinct().OrderBy(i => i).ToList();
             var nv = mesh.vertices;
+            // ---- more of the base where the suit has nothing (Fill): the triangles of another base submesh that the
+            // named suit renderers do not have, compared by the places of their corners (the suit's head is the base's
+            // head, cut under the collar)
+            var fillTris = new List<int>();
+            Material fillMaterial = null;
+            var fillNote = new StringBuilder();
+            foreach (var f in fills)
+            {
+                if (f.submesh < 0 || f.submesh >= mesh.subMeshCount)
+                    continue;
+                var places = new Places();
+                var suitTris = new HashSet<(int, int, int)>();
+                foreach (var o in f.missingFrom)
+                {
+                    var r = renderers.FirstOrDefault(x => x.name == o.renderer);
+                    if (r == null)
+                    {
+                        fillNote.Append($" (no renderer {o.renderer})");
+                        continue;
+                    }
+                    var toModel = ToModel(r.transform);
+                    var rv = r.sharedMesh.vertices;
+                    var subs = o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
+                    if (fillMaterial == null)
+                        fillMaterial = r.sharedMaterials[Mathf.Clamp(subs[0], 0, r.sharedMaterials.Length - 1)];
+                    foreach (int sub in subs)
+                    {
+                        var t = r.sharedMesh.GetTriangles(sub);
+                        for (int k = 0; k + 2 < t.Length; k += 3)
+                            suitTris.Add(Sorted(places.Add(toModel.MultiplyPoint3x4(rv[t[k]])), places.Add(toModel.MultiplyPoint3x4(rv[t[k + 1]])),
+                                                places.Add(toModel.MultiplyPoint3x4(rv[t[k + 2]]))));
+                    }
+                }
+                var baseTris = mesh.GetTriangles(f.submesh);
+                var missing = new List<int>();
+                for (int k = 0; k + 2 < baseTris.Length; k += 3)
+                {
+                    int a = places.Find(nudeToModel.MultiplyPoint3x4(nv[baseTris[k]]));
+                    int b = places.Find(nudeToModel.MultiplyPoint3x4(nv[baseTris[k + 1]]));
+                    int c = places.Find(nudeToModel.MultiplyPoint3x4(nv[baseTris[k + 2]]));
+                    if (a < 0 || b < 0 || c < 0 || !suitTris.Contains(Sorted(a, b, c)))
+                        missing.AddRange(new[] { baseTris[k], baseTris[k + 1], baseTris[k + 2] });
+                }
+                int total = baseTris.Length / 3, lacking = missing.Count / 3;
+                // a suit whose head is not cut out of this base would get the whole head twice
+                if (lacking > total * MaxFill)
+                {
+                    fillNote.Append($" submesh {f.submesh}: {lacking} of {total} triangles not in the suit - more than {MaxFill:P0}, NOT filled (the suit's is another mesh)");
+                    continue;
+                }
+                fillTris.AddRange(missing);
+                fillNote.Append($" submesh {f.submesh}: {lacking} of {total} triangles the suit lacks");
+            }
+            var used = tris.Concat(fillTris).Distinct().OrderBy(i => i).ToList();
             var position = new Dictionary<int, Vector3>();
             foreach (int i in used)
                 position[i] = nudeToModel.MultiplyPoint3x4(nv[i]);
@@ -292,9 +399,21 @@ namespace RoeFighter.EditorTools
                 keep.Add(b);
                 keep.Add(c);
             }
+            var keepFill = new List<int>();
+            for (int t = 0; t + 2 < fillTris.Count; t += 3)
+            {
+                int a = fillTris[t], b = fillTris[t + 1], c = fillTris[t + 2];
+                if (!weightsOf.ContainsKey(a) || !weightsOf.ContainsKey(b) || !weightsOf.ContainsKey(c))
+                    continue;
+                keepFill.Add(a);
+                keepFill.Add(b);
+                keepFill.Add(c);
+            }
+            if (fillMaterial == null)
+                keepFill.Clear();
 
             // ---- the mesh, in the suit renderer's space, on the suit's bones
-            var order = keep.Distinct().ToList();
+            var order = keep.Concat(keepFill).Distinct().ToList();
             var map = new Dictionary<int, int>();
             for (int k = 0; k < order.Count; k++)
                 map[order[k]] = k;
@@ -354,7 +473,10 @@ namespace RoeFighter.EditorTools
             outMesh.SetBoneWeights(counts, weights);
             counts.Dispose();
             weights.Dispose();
+            outMesh.subMeshCount = keepFill.Count > 0 ? 2 : 1;
             outMesh.SetTriangles(keep.Select(i => map[i]).ToArray(), 0, false);
+            if (keepFill.Count > 0)
+                outMesh.SetTriangles(keepFill.Select(i => map[i]).ToArray(), 1, false);
             outMesh.RecalculateBounds();
             var asset = RoeBurstBuilder.Commit(outMesh, meshPath);
 
@@ -367,7 +489,7 @@ namespace RoeFighter.EditorTools
             smr.sharedMesh = asset;
             smr.bones = bones.ToArray();
             smr.rootBone = target.rootBone;
-            smr.sharedMaterials = new[] { material };
+            smr.sharedMaterials = keepFill.Count > 0 ? new[] { material, fillMaterial } : new[] { material };
             smr.localBounds = target.localBounds;
             smr.updateWhenOffscreen = target.updateWhenOffscreen;
             smr.quality = target.quality;
@@ -387,7 +509,8 @@ namespace RoeFighter.EditorTools
                        $"{fromSkin} take the suit's skin (gap median {Pct(0.5f):F2} mm, p95 {Pct(0.95f):F2} mm), {fromOutfit} the outfit over them, " +
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
                        $"outfit pieces on the body {tightParts}, hanging away {looseParts}; " +
-                       $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material {material.name} ({material.shader.name})");
+                       $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material {material.name} ({material.shader.name})" +
+                       (fills.Count > 0 ? $"; fill:{fillNote} -> {keepFill.Count / 3} triangles added ({(fillMaterial != null ? fillMaterial.name : "no material")})" : ""));
             return smr;
         }
     }

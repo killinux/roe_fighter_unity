@@ -22,7 +22,10 @@ namespace RoeFighter.Fight
             public GameObject prefab;
         }
 
-        public FighterRig[] rigs = new FighterRig[2];
+        public FighterRig[] rigs = new FighterRig[2];     // the two of this match (roster[pick], set by Setup / the select screen)
+        public FighterRig[] roster = new FighterRig[0];   // everyone the scene holds; empty: rigs as built
+        public int[] pick = { 0, 1 };                      // roster entries of 1P and 2P
+        public bool selectFirst = true;                    // play mode, more than two in the roster: the select screen first
         public bool[] cpu = { false, true };
         public List<Move> moves = new List<Move>();
         public List<Special> specials = new List<Special>();
@@ -60,8 +63,11 @@ namespace RoeFighter.Fight
         public int round;
         public readonly int[] wins = new int[2];
         public string message = "";
-        public enum Phase { Intro, Fight, RoundOver, MatchOver }
-        public Phase phase;
+        public enum Phase { Select, Intro, Fight, RoundOver, MatchOver }
+        public Phase phase = Phase.Intro;
+        public readonly bool[] picked = new bool[2];   // the select screen: this side's fighter is confirmed
+        public int choosing;                           // the select screen: the side whose card the keys move (one human: hers, then the CPU's)
+        readonly Dictionary<int, FighterRig> twins = new Dictionary<int, FighterRig>();   // a second copy of a fighter, for a mirror match
         float phaseTime, hitStop, slowMotion;
         float accumulator;
         readonly FightAI[] ai = new FightAI[2];
@@ -101,23 +107,83 @@ namespace RoeFighter.Fight
 
         void Start()
         {
-            // the player: ROEFighter.exe -roeBurst 0 starts with the clothes burst off (F6 switches it)
+            // the player: ROEFighter.exe -roeBurst 0 starts with the clothes burst off (F6 switches it);
+            // -roeP1 b10 -roeP2 g05 picks the two; -roeSelect 0 goes straight into the match
             var args = Environment.GetCommandLineArgs();
-            int at = Array.IndexOf(args, "-roeBurst");
-            if (at >= 0 && at + 1 < args.Length)
-                RoeClothesBurst.Enabled = args[at + 1] != "0";
-            Setup();
+            string Arg(string name)
+            {
+                int at = Array.IndexOf(args, name);
+                return at >= 0 && at + 1 < args.Length ? args[at + 1] : null;
+            }
+            if (Arg("-roeBurst") != null)
+                RoeClothesBurst.Enabled = Arg("-roeBurst") != "0";
+            PickIds(Arg("-roeP1"), Arg("-roeP2"));
+            if (Arg("-roeSelect") != null)
+                selectFirst = Arg("-roeSelect") != "0";
+            if (Application.isPlaying && selectFirst && roster != null && roster.Length > 2)
+                EnterSelect();
+            else
+                Setup();
         }
 
+        /// <summary>Picks by character id (null or unknown: that side's pick stays).</summary>
+        public void PickIds(string p1, string p2)
+        {
+            if (roster == null)
+                return;
+            for (int i = 0; i < 2; i++)
+            {
+                string id = i == 0 ? p1 : p2;
+                int k = string.IsNullOrEmpty(id) ? -1 : Array.FindIndex(roster, r => r != null && r.id == id);
+                if (k >= 0)
+                    pick[i] = k;
+            }
+        }
+
+        /// <summary>The two fighters of the picks, the others put away; the same one on both sides gets a copy.</summary>
+        void ApplyPicks()
+        {
+            if (roster == null || roster.Length == 0)
+                return;
+            for (int i = 0; i < 2; i++)
+                pick[i] = Mathf.Clamp(pick[i], 0, roster.Length - 1);
+            var a = roster[pick[0]];
+            var b = pick[1] == pick[0] ? Twin(pick[1]) : roster[pick[1]];
+            rigs = new[] { a, b };
+            foreach (var r in roster.Concat(twins.Values))
+                if (r != null && r.gameObject.activeSelf != (r == a || r == b))
+                    r.gameObject.SetActive(r == a || r == b);
+        }
+
+        /// <summary>A second copy of a roster fighter (a mirror match), made the first time it is needed.</summary>
+        FighterRig Twin(int k)
+        {
+            if (!twins.TryGetValue(k, out var twin) || twin == null)
+            {
+                var go = Instantiate(roster[k].gameObject, roster[k].transform.parent);
+                go.name = roster[k].gameObject.name + " (2)";
+                go.hideFlags = HideFlags.DontSave;
+                twins[k] = twin = go.GetComponent<FighterRig>();
+            }
+            return twin;
+        }
+
+        /// <summary>A new match with the picked two.</summary>
         public void Setup()
         {
+            Prepare();
+            StartMatch();
+        }
+
+        /// <summary>The picked two ready to fight: the motion pack's moves, their rigs, whole outfits.</summary>
+        void Prepare()
+        {
             Application.targetFrameRate = 60;
+            ApplyPicks();
             // the basic moves of the chosen motion pack, on both fighters
             var pack = Pack;
             if (pack != null)
             {
-                foreach (var rig in rigs)
-                    rig.UseMotions(pack);
                 moves = pack.CopyStrikes();
                 foreach (var m in moves)
                     if (string.IsNullOrEmpty(m.hitSound))
@@ -125,51 +191,200 @@ namespace RoeFighter.Fight
                 noticeTime = 4f;
             }
             for (int i = 0; i < 2; i++)
-            {
-                rigs[i].Init();
-                f[i] = new Fighter { rig = rigs[i], game = this, index = i };
-                ai[i] = new FightAI(seed * 7919 + i * 104729);
-                // her own strikes (g04: Mai Shiranui's) or the pack's
-                var own = rigs[i].strikePack;
-                f[i].moves = own != null && own.strikes.Count > 0 ? own.CopyStrikes() : moves;
-                foreach (var m in f[i].moves)
-                    if (string.IsNullOrEmpty(m.hitSound))
-                        m.hitSound = "hit";
-            }
+                PrepareSide(i);
             f[0].foe = f[1];
             f[1].foe = f[0];
-            // a new match: the outfits are whole again
-            for (int i = 0; i < 2; i++)
+        }
+
+        void PrepareSide(int i)
+        {
+            if (Pack != null)
+                rigs[i].UseMotions(Pack);
+            rigs[i].Init();
+            f[i] = new Fighter { rig = rigs[i], game = this, index = i };
+            ai[i] = new FightAI(seed * 7919 + i * 104729);
+            // her own strikes (g04: Mai Shiranui's) or the pack's
+            var own = rigs[i].strikePack;
+            f[i].moves = own != null && own.strikes.Count > 0 ? own.CopyStrikes() : moves;
+            foreach (var m in f[i].moves)
+                if (string.IsNullOrEmpty(m.hitSound))
+                    m.hitSound = "hit";
+            // a new match: the outfit is whole again
+            var burst = rigs[i].burst;
+            if (burst != null)
             {
-                var burst = rigs[i].burst;
-                if (burst == null)
-                    continue;
                 burst.Restore(seed * 7919 + i * 104729 + 31);
                 var who = f[i];
                 burst.onPieceOff = (at, size, cloth) => PieceOff(who, at, size, cloth);
             }
+        }
+
+        // ---- the select screen: who fights (KOF-like: a card per fighter, the two picked stand on the stage)
+
+        /// <summary>To the select screen; the cards start on the current picks.</summary>
+        public void EnterSelect()
+        {
+            Prepare();
+            phase = Phase.Select;
+            phaseTime = 0f;
+            message = "";
+            picked[0] = picked[1] = false;
+            choosing = cpu[0] && !cpu[1] ? 1 : 0;
+            StandForSelect();
+            PlayMusic();
+            if (hud != null)
+                hud.Build(this);
+            SnapCamera();
+        }
+
+        void StandForSelect()
+        {
+            var a = centre - axis * (startGap * 0.5f);
+            var b = centre + axis * (startGap * 0.5f);
+            f[0].Reset(a, Yaw(b - a));
+            f[1].Reset(b, Yaw(a - b));
+            foreach (var x in f)
+                x.rig.Play(x.rig.Has("idle_02") ? "idle_02" : "guard", 1f, 0.2f);
+        }
+
+        /// <summary>Keys on the select screen: left / right move a card, the first attack button confirms, the second goes back.</summary>
+        void UpdateSelect()
+        {
+            int[] before = { pick[0], pick[1] };
+            bool human0 = !cpu[0], human1 = !cpu[1];
+            if (human0 && human1)
+            {
+                SelectKeys(0, 0);
+                SelectKeys(1, 1);
+            }
+            else if (human0 || human1)
+                SelectKeys(human0 ? 0 : 1, choosing);
+            else if (phaseTime > 2f && !picked[0])
+            {
+                // the computer on both sides: two at random
+                var rng = new System.Random(seed * 31 + frame);
+                pick[0] = rng.Next(roster.Length);
+                pick[1] = (pick[0] + 1 + rng.Next(roster.Length - 1)) % roster.Length;
+                picked[0] = picked[1] = true;
+            }
+            PicksChanged(before);
+            if (picked[0] && picked[1])
+            {
+                if (selectDone < 0f)
+                    selectDone = phaseTime;
+                if (phaseTime - selectDone > 0.6f)
+                {
+                    selectDone = -1f;
+                    StartMatch();
+                }
+            }
+            else
+                selectDone = -1f;
+        }
+
+        /// <summary>After a card moved on the select screen: the new fighter comes out on the stage.</summary>
+        public void PicksChanged(int[] before)
+        {
+            bool any = false;
+            for (int i = 0; i < 2; i++)
+                if (pick[i] != before[i])
+                {
+                    any = true;
+                    ApplyPicks();
+                    PrepareSide(i);
+                    if (pick[1 - i] == before[1 - i] && rigs[1 - i] != f[1 - i].rig)
+                        PrepareSide(1 - i);      // a twin came or went on the other side
+                }
+            if (!any)
+                return;
+            f[0].foe = f[1];
+            f[1].foe = f[0];
+            StandForSelect();
+            if (hud != null)
+                hud.Build(this);
+        }
+
+        /// <summary>The select screen is done (both picked): the match starts.</summary>
+        public void BeginMatch() => StartMatch();
+
+        float selectDone = -1f;
+        readonly float[] lastAxis = new float[2];
+
+        void SelectKeys(int keys, int side)
+        {
+            int move;
+            bool ok, back;
+            if (keys == 0)
+            {
+                float h = Input.GetAxisRaw("Horizontal");
+                int axisEdge = Mathf.Abs(h) > 0.5f && Mathf.Abs(lastAxis[0]) <= 0.5f && !Input.GetKey(KeyCode.LeftArrow) && !Input.GetKey(KeyCode.RightArrow)
+                    && !Input.GetKey(KeyCode.A) && !Input.GetKey(KeyCode.D) ? (h > 0f ? 1 : -1) : 0;
+                lastAxis[0] = h;
+                move = Input.GetKeyDown(KeyCode.A) ? -1 : Input.GetKeyDown(KeyCode.D) ? 1 : axisEdge;
+                ok = Input.GetKeyDown(KeyCode.J) || Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton0);
+                back = Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.Escape) || Input.GetKeyDown(KeyCode.JoystickButton1);
+            }
+            else
+            {
+                move = Input.GetKeyDown(KeyCode.LeftArrow) ? -1 : Input.GetKeyDown(KeyCode.RightArrow) ? 1 : 0;
+                ok = Input.GetKeyDown(KeyCode.Keypad1) || Input.GetKeyDown(KeyCode.KeypadEnter);
+                back = Input.GetKeyDown(KeyCode.Keypad2);
+            }
+            bool alone = cpu[0] != cpu[1];      // one human: she picks her fighter, then the computer's
+            if (back)
+            {
+                if (picked[side])
+                    picked[side] = false;
+                else if (alone && picked[1 - side])
+                {
+                    picked[1 - side] = false;
+                    choosing = 1 - side;
+                }
+                return;
+            }
+            if (picked[side])
+                return;
+            if (move != 0 && roster.Length > 0)
+                pick[side] = (pick[side] + move + roster.Length) % roster.Length;
+            if (ok)
+            {
+                picked[side] = true;
+                if (alone && !picked[1 - side])
+                    choosing = 1 - side;
+            }
+        }
+
+        void StartMatch()
+        {
             wins[0] = wins[1] = 0;
             round = 0;
             frame = 0;
             clock = 0f;
             soundLog.Clear();
-            if (music != null && Application.isPlaying)
-            {
-                if (musicSource == null)
-                {
-                    musicSource = gameObject.AddComponent<AudioSource>();
-                    musicSource.loop = true;
-                    musicSource.playOnAwake = false;
-                    musicSource.spatialBlend = 0f;
-                }
-                musicSource.clip = music;
-                musicSource.volume = musicVolume;
-                musicSource.Play();
-            }
+            PlayMusic();
             if (hud != null)
                 hud.Build(this);
             StartRound();
             SnapCamera();
+        }
+
+        /// <summary>The stage's music from the start (it goes on through the select screen and into the match).</summary>
+        void PlayMusic()
+        {
+            if (music == null || !Application.isPlaying)
+                return;
+            if (musicSource == null)
+            {
+                musicSource = gameObject.AddComponent<AudioSource>();
+                musicSource.loop = true;
+                musicSource.playOnAwake = false;
+                musicSource.spatialBlend = 0f;
+            }
+            if (musicSource.isPlaying && musicSource.clip == music)
+                return;
+            musicSource.clip = music;
+            musicSource.volume = musicVolume;
+            musicSource.Play();
         }
 
         void StartRound()
@@ -206,18 +421,22 @@ namespace RoeFighter.Fight
                 cpu[0] = !cpu[0];
             if (Input.GetKeyDown(KeyCode.F2))
                 cpu[1] = !cpu[1];
+            if ((Input.GetKeyDown(KeyCode.F1) || Input.GetKeyDown(KeyCode.F2)) && phase == Phase.Select)
+                choosing = cpu[0] && !cpu[1] ? 1 : picked[0] && cpu[1] ? 1 : 0;
             if (Input.GetKeyDown(KeyCode.F3) && motionPacks.Count > 1)
             {
-                // the next motion pack; the match starts over with it
+                // the next motion pack; the match starts over with it (on the select screen: the two take it up)
                 motionPack = (motionPack + 1) % motionPacks.Count;
-                Setup();
+                Restart();
             }
             if (Input.GetKeyDown(KeyCode.F4))
             {
                 // the next cloth backend (Magica-style bone cloth, the 10-02 one, none); the match starts over
                 FighterRig.ClothBackend = RoeClothBackends.Next(FighterRig.ClothBackend);
-                Setup();
+                Restart();
             }
+            if (Input.GetKeyDown(KeyCode.F7) && roster != null && roster.Length > 0 && phase != Phase.Select)
+                EnterSelect();
             if (Input.GetKeyDown(KeyCode.F5))
             {
                 // the skirt's animation pose: hanging on the body (RoeSkirtRig.Drape 1) or the fitted pose
@@ -235,8 +454,16 @@ namespace RoeFighter.Fight
                             rigs[i].burst.Restore(seed * 7919 + i * 104729 + 31 + frame);
                 noticeTime = 4f;
             }
+            // after the match: back to the select screen (the same two are still picked: confirm twice for a rematch)
             if (phase == Phase.MatchOver && phaseTime > 2f && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton7)))
-                Setup();
+            {
+                if (roster != null && roster.Length > 2)
+                    EnterSelect();
+                else
+                    Setup();
+            }
+            else if (phase == Phase.Select)
+                UpdateSelect();
             accumulator += Mathf.Min(Time.deltaTime, 0.1f);
             var pending = new FighterInput[2];
             for (int i = 0; i < 2; i++)
@@ -255,6 +482,18 @@ namespace RoeFighter.Fight
         }
 
         static FighterInput Held(FighterInput i) => new FighterInput { x = i.x, y = i.y };
+
+        void Restart()
+        {
+            if (phase == Phase.Select)
+            {
+                Prepare();
+                StandForSelect();
+                noticeTime = 4f;
+            }
+            else
+                Setup();
+        }
 
         /// <summary>One simulation step (1/60 s).  Human inputs in screen terms; CPU fighters decide here.</summary>
         public void Step(FighterInput[] inputs)

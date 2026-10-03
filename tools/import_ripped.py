@@ -4,10 +4,18 @@
 #
 #   python tools/import_ripped.py                       # _work/ripped -> Assets/ROE
 #   python tools/import_ripped.py --src <ExportedProject/Assets> --dst <Assets/ROE>
+#   python tools/import_ripped.py --src _work/ripped_more/ExportedProject/Assets    # more characters next to the ones there
 #
 # What is NOT copied: the game's shader stubs (AssetRipper cannot recover shader code; the
 # materials are re-pointed to the shaders in Assets/RoeFighter/Shaders), script stubs,
 # Cinemachine / audio-mixer packages.
+#
+# Adding characters later (a rip of only the new ones): AssetRipper gives every asset a new GUID on
+# each export, and the new rip also holds the shared bundles the project already has (family heads,
+# common textures, the skin LUT ...).  An asset the project already has keeps its GUID and is not
+# copied again; the new files' references to it are rewritten to that GUID, so nothing that already
+# points at it (prefabs, scenes, generated assets) breaks.  The manifest keeps the characters that are
+# not in this rip (--fresh-manifest: only this rip's).
 import argparse
 import hashlib
 import io
@@ -82,6 +90,8 @@ def main():
     ap.add_argument('--dst', default=os.path.join(PROJECT, 'Assets', 'ROE'))
     ap.add_argument('--keep-manifest', action='store_true',
                     help='leave roe_manifest*.json as they are (an extra rip, e.g. the nude bases, next to the fighters)')
+    ap.add_argument('--fresh-manifest', action='store_true',
+                    help='write the manifest from this rip only (default: the characters already listed stay)')
     a = ap.parse_args()
     src_ab = os.path.join(a.src, 'AssetBundles')
 
@@ -98,6 +108,30 @@ def main():
                     remap[g] = (m.group(1), shader_guid(SHADER_MAP[m.group(1)]))
     print(f'{len(remap)} game shaders mapped to project shaders')
 
+    # assets the project already has keep their GUIDs (see the top of this file): new GUID -> the project's
+    def target_dir(bundle, d):
+        rel = os.path.relpath(d, os.path.join(src_ab, bundle))
+        out_dir = os.path.join(a.dst, group_of(bundle), clean(bundle))
+        return out_dir if rel == '.' else os.path.join(out_dir, rel)
+
+    kept = {}
+    for bundle in sorted(os.listdir(src_ab)):
+        if not os.path.isdir(os.path.join(src_ab, bundle)) or bundle in SKIP_BUNDLES:
+            continue
+        for d, _dirs, files in os.walk(os.path.join(src_ab, bundle)):
+            for f in files:
+                if f.endswith('.meta') or not os.path.exists(os.path.join(d, f + '.meta')):
+                    continue
+                old_meta = os.path.join(target_dir(bundle, d), f + '.meta')
+                if os.path.exists(old_meta):
+                    new, old = read_guid(os.path.join(d, f + '.meta')), read_guid(old_meta)
+                    if new and old and new != old:
+                        kept[new] = old
+    guid_re = re.compile(r'guid: ([0-9a-f]{32})')
+
+    def keep_guids(text):
+        return guid_re.sub(lambda m: 'guid: ' + kept.get(m.group(1), m.group(1)), text) if kept else text
+
     copied = skipped = remapped = 0
     unmapped = {}
     manifest = {}
@@ -106,14 +140,23 @@ def main():
         if not os.path.isdir(bdir) or bundle in SKIP_BUNDLES:
             continue
         group = group_of(bundle)
-        out_dir = os.path.join(a.dst, group, clean(bundle))
         for d, _dirs, files in os.walk(bdir):
-            rel = os.path.relpath(d, bdir)
-            tdir = out_dir if rel == '.' else os.path.join(out_dir, rel)
+            tdir = target_dir(bundle, d)
             os.makedirs(tdir, exist_ok=True)
             for f in files:
                 s = os.path.join(d, f)
                 t = os.path.join(tdir, f)
+                if f.endswith('.meta'):
+                    # an asset the project has keeps its own .meta (its GUID)
+                    if not os.path.exists(t):
+                        shutil.copy2(s, t)
+                        copied += 1
+                    else:
+                        skipped += 1
+                    continue
+                if os.path.exists(t + '.meta') and os.path.exists(s + '.meta') and read_guid(t + '.meta') != read_guid(s + '.meta'):
+                    skipped += 1        # already in the project under its own GUID (an earlier rip)
+                    continue
                 if f.endswith('.mat'):
                     text = open(s, encoding='utf-8').read()
                     m = re.search(r'm_Shader: \{fileID: (-?\d+), guid: ([0-9a-f]{32}), type: 3\}', text)
@@ -122,6 +165,7 @@ def main():
                         remapped += 1
                     elif m:
                         unmapped.setdefault(m.group(2), []).append(f)
+                    text = keep_guids(text)
                     if not (os.path.exists(t) and open(t, encoding='utf-8').read() == text):
                         open(t, 'w', encoding='utf-8', newline='\n').write(text)
                         copied += 1
@@ -131,6 +175,17 @@ def main():
                 if os.path.exists(t) and os.path.getsize(t) == os.path.getsize(s) and os.path.getmtime(t) >= os.path.getmtime(s):
                     skipped += 1
                     continue
+                if kept and f.endswith(('.prefab', '.asset', '.anim', '.controller', '.overrideController', '.playable', '.mask')):
+                    with open(s, 'rb') as fh:
+                        yaml = fh.read(5) == b'%YAML'
+                    if yaml:
+                        text = open(s, encoding='utf-8', errors='surrogateescape').read()
+                        new_text = keep_guids(text)
+                        if new_text != text:
+                            open(t, 'w', encoding='utf-8', errors='surrogateescape', newline='').write(new_text)
+                            shutil.copystat(s, t)
+                            copied += 1
+                            continue
                 shutil.copy2(s, t)
                 copied += 1
         # the folder itself needs a .meta only if AssetRipper wrote one; Unity creates the rest
@@ -172,11 +227,18 @@ def main():
             entry['voice'][lang] += ['%s/%s' % (unity_dir, n) for n in sorted(names) if n.endswith(('.ogg', '.wav'))]
 
     manifest = {k: v for k, v in manifest.items() if any(v.get(x) for x in ('hd_prefab', 'clips', 'sfx', 'voice'))}
+    print(f'{len(kept)} assets of this rip were already in the project: their GUIDs kept')
     if a.keep_manifest:
         print(f'copied {copied}, unchanged {skipped}, materials re-pointed {remapped}; manifest left as it was')
         for g, mats in unmapped.items():
             print(f'  shader {g} has no project shader: {", ".join(sorted(mats))}')
         return
+    old_path = os.path.join(a.dst, 'roe_manifest.json')
+    if not a.fresh_manifest and os.path.exists(old_path):
+        old = json.load(open(old_path, encoding='utf-8'))
+        kept_ids = sorted(k for k in old if k not in manifest)
+        manifest = dict(sorted({**old, **manifest}.items()))
+        print(f'manifest: {", ".join(kept_ids) or "nothing"} kept from before, {", ".join(sorted(set(manifest) - set(kept_ids)))} from this rip')
     os.makedirs(a.dst, exist_ok=True)
     json.dump(manifest, open(os.path.join(a.dst, 'roe_manifest.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     # the same data as lists: Unity's JsonUtility cannot read dictionaries

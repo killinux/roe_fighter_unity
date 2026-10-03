@@ -1,7 +1,7 @@
 # ROE Fighter（Unity 版）
 
 用 Rise of Eros（ROE）的角色做的 3D 格斗游戏。引擎是 Unity 6000.4.12f1 + URP。原计划用 UFE 2（Universal Fighting Engine 2）做对战框架，暂时买不了，所以先自己写了一套能玩的格斗逻辑（见"格斗"一节）；角色、动作、技能、特效这些数据以后换 UFE 也照样能用。
-首发两个角色：a08（Inase）和 g04（Luf）。
+角色：a08（Inase）、g04（Luf）首发，10-03 晚加了 b10（Kart）和 g05（Luf 的女神套装）；开局先进选人界面。
 
 从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`_work`、`out`。
 这些素材来自商业游戏，只在本机自己用。
@@ -27,6 +27,9 @@
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | g04 的普通攻击换成不知火舞（DOA6）的四招；扇子缩到 0.7 倍 | 完成（10-03），见"不知火舞的普通攻击"一节；对比视频 `out\g04_mai_strikes.mp4`，扇子 `out\weapon_size\g04_fan_sizes.png` |
 | UFE 对战 | 暂时买不了；先用自己的格斗逻辑 |
+| b10（Kart）、g05（Luf 女神）加入战斗：模型、动作、技能和特效、音效，都能爆衣到全身 | 完成（10-03 晚），见"新角色：b10 和 g05"一节；爆衣演示 `out\clothes_burst_demo_b10_g05.mp4`，电脑对电脑整场 `out\fight_cpu_match_b10_g05.mp4`，检查图 `out\clothes_burst\unity\b10_sheet.png`、`g05_sheet.png` |
+| 选人界面：四个角色的头像卡片，选中的两人站在场上；两边选同一个角色时复制一份 | 完成（10-03 晚），见"选人界面"一节；演示 `out\select_screen_demo.mp4` |
+| Luffee（g04、g05）的站架也换成不知火舞的（DOA6 00000） | 完成（10-03 晚），对比视频 `out\luffee_mai_stance.mp4`（左：动作包的拳击架势；右：不知火舞的架势和四招） |
 | 爆衣（比赛中把衣服打掉） | 完成到第二步（10-03）：超必杀的最后一下打中、被 KO，各掉一段（每人四段），决胜的 KO 把剩下的全打掉，整场比赛不回来，F6 开关；衣服下面换成家族的裸体底模，所以能掉到全身（g04 留着鞋），见"爆衣"一节；演示 `out\clothes_burst_demo.mp4`，检查图 `out\clothes_burst\unity\a08_sheet.png`、`g04_sheet.png`，电脑对电脑整场 `out\fight_cpu_match_burst.mp4`。调研和后面几步（补身体、打哪破哪）见 [`docs/clothes-burst.md`](docs/clothes-burst.md) |
 
 ## 目录
@@ -50,8 +53,8 @@ out/                           （不入库）给人看的视频和图
 ```powershell
 cd E:\code\othercode\roe_fighter_unity
 
-# 1. 把两个角色用到的游戏包拷到 _work\bundles（94 个，约 430 MB）
-python tools\stage_bundles.py _work\bundles a08 g04
+# 1. 把角色用到的游戏包拷到 _work\bundles（a08、g04 两个是 94 个、约 430 MB）
+python tools\stage_bundles.py _work\bundles a08 g04 b10 g05
 
 # 2. 另开一个窗口启动 AssetRipper 并留着它，然后回到这个窗口导出成 Unity 工程
 #    （另一个窗口）E:\tools\AssetRipper_1.3.14\AssetRipper.GUI.Free.exe --headless --port 5599 --log-path _work\assetripper.log
@@ -60,10 +63,11 @@ python tools\rip.py          # 设置 → 读入（缺的依赖包自动补）�
 # 3. 拷进工程，材质改指向这里的着色器，写出清单
 python tools\import_ripped.py
 
-# 3b. 爆衣用的家族裸体底模（a08 用 a01，g04 用 g01）：单独还原，只挑身体、材质、贴图，不动角色清单（见"爆衣"一节）
-python tools\stage_bundles.py _work\bundles_nude --nude a01 g01
-python tools\rip.py --bundles _work\bundles_nude --out _work\ripped_nude --log _work\assetripper_nude.log
-python tools\import_nude.py a01 g01
+# 3b. 爆衣用的家族裸体底模（a08 用 a01，g04 用 g01，b10 用 b01，g05 用 g01_fm）：单独还原，只挑身体、材质、贴图，不动角色清单（见"爆衣"一节）
+#     （--log 必须是 AssetRipper 服务启动时给的那个日志文件，rip.py 靠它找缺的依赖包）
+python tools\stage_bundles.py _work\bundles_nude --nude a01 g01 b01 g01_fm
+python tools\rip.py --bundles _work\bundles_nude --out _work\ripped_nude --log _work\assetripper.log
+python tools\import_nude.py a01 g01 b01 g01_fm
 
 # 4. Unity 里的步骤（都是命令行，不用开编辑器）
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeProjectSetup.Run -Graphics        # 渲染管线，只需一次
@@ -312,7 +316,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics                             # → out\ROEFighter\ROEFighter.exe
 ```
 
-双击 `out\ROEFighter\ROEFighter.exe` 就能玩（窗口 1600×900，可以拉大；整个文件夹 703 MB，打包约 4.5 分钟，不能单独拷 exe）。
+双击 `out\ROEFighter\ROEFighter.exe` 就能玩（窗口 1600×900，可以拉大；整个文件夹 703 MB，四个角色以后 1.1 GB，打包 1.5–4.5 分钟，不能单独拷 exe）。开局先进选人界面（见"选人界面"一节）。
 也可以在编辑器里打开 `Assets\RoeFighter\Scenes\Fight_e23_steel_s02.unity` 按 Play。默认 1P 是人、2P 是电脑。
 第一次打包失败过一次：Unity 自带的 `MovedFromExtractor` 处理 `UnityEngine.IMGUIModule.dll` 时退出码 3、没有任何输出，原样重跑就成功了。
 按键：
@@ -328,6 +332,8 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
 | 电脑接管 1P / 2P | F1 / F2 | |
+| 选人界面：换卡片 / 确认 / 退回（只有 1P 是人时，先选自己的，再替电脑选） | A、D / J（或回车、空格）/ K | ←、→ / 小键盘 1 / 小键盘 2 |
+| 回选人界面（比赛结束后按回车也回到这里，上一场的两人还选着，确认两次就是再来一场） | F7 | |
 
 结构（`Assets\RoeFighter\Runtime\Fight\`）：
 
@@ -789,7 +795,8 @@ g04 的鞋一直穿着：她的脚和底模的高跟角度不同（差 1–1.4 �
   - **结果**：
     - a08：19,880 个顶点，17,760 个抄套装皮肤（最近顶点距离中位 1.5 毫米），2,120 个抄护甲；
     - g04：19,751 个顶点，11,294 个抄皮肤（中位 3.9 毫米），8,457 个抄衣服——她的上衣、手套、内裤下面删掉的皮肤多，体形也和底模差得多一些。
-  - **规则表里的写法**：`"nude"` 一段写底模的预制体、身体渲染器、子网格、材质，要接到的套装渲染器（`attachTo`），以及它代替的皮肤（`replace`）。
+  - **规则表里的写法**：`"nude"` 一段写底模的预制体、身体渲染器、子网格、材质，要接到的套装渲染器（`attachTo`），以及它代替的皮肤（`replace`）；
+    `fill` 写从底模的哪个子网格补套装没有的部分（`missingFrom`：拿来比对的套装渲染器），b10、g05 用它补领子下面的脖子（见"新角色：b10 和 g05"）。
   - **顺手修了一个老问题：皮肤 LUT 一直缺着**。
     - 套装的皮肤和脸的材质都引用游戏的皮肤散射查找表 `pc_common_skin_rgbx_Lut`，它在 `chara_tex_bare_common_prelude` 包里，当初没导进来。着色器一直用默认的白图，人物的皮肤和脸偏白偏平。
     - 这次导底模时这张图进来了。我在 `Assets\ROE\common\chara_tex_bare_common_prelude\` 给它加了一个用原引用编号（guid `0a100c…`）的副本，套装和脸也用上了，三者肤色一致，更接近游戏。
@@ -895,7 +902,103 @@ python tools\burst_video.py                                                     
   - 默认 g04 0.7 倍（`-roeWeaponScale g04=0.7`）。
   - 对比图 `out\weapon_size\g04_fan_sizes.png`：原来 / 0.7 / 0.5，用 `RoeWeaponSize.Stills` 出。
   - 扇子还是只在技能、开场、胜利时出现（用户 10-02 定的）。
-- **已知**：不知火舞的招从她自己的架势起手，站架却是动作包的拳击架势，出招、收招那 0.06–0.15 秒的混合里能看出姿势在切换。想更像，可以把她的架势（DOA6 的 00000）也做成 g04 自己的站架。
+- **站架也换了**（用户 10-03 晚："把不知火舞的架势也给 Luffee 当站架"）：
+  - DOA6 的 00000 是她的格斗架势，切出 1 秒一个循环（首尾差 0.0004），写进 `doa6_mai.json` 的 `roles.guard`；
+  - 角色自己的包里有站架时，`FighterRig.UseMotions` 用它换掉动作包的站架（防御、侧步的上半身也是它），走路、后退还是动作包的；
+  - 四招和站架都按刺拳起手时的朝向对齐（`face: stance:mai_jab`），出招时再平滑转向出手方向：从站架出招、收回站架，身体不会再拧一下；
+  - 这是个前倾的低架势：躯干前倾 37–41°，髋高 0.78 米（拳击架势是 4°、1.11 米）。DOA6 原始数据里就是 36–43°，转换没有放大（`RoeFightProbe.Lean` 量的）；
+  - g05 也是 Luffee（女神套装），默认也用这一套（`-roeOwnStrikes g04=doa6_mai,g05=doa6_mai`）。
+  - 对比视频 `out\luffee_mai_stance.mp4`：左边动作包的拳击架势和招式，右边不知火舞的架势和四招，g04、g05 各一段。
+
+### 新角色：b10 和 g05（10-03 晚）
+
+用户 10-03 晚："目前b10，G05也把nude补全，加入战斗"。
+
+- **b10 = Kart 的第 10 套**（游戏里的单位 `suit_kart_10`）：红色短夹克、牛仔短裤、大腿枪套、长靴，手拿斧头，技能里用双枪。家族裸体底模 b01。
+- **g05 = Luf 的第 5 套**（`suit_luf_5`）：悬空坐着的女神，头后心形光环和两枝金色月桂，白色披帛、长裙片和金饰，光脚。底模是 g01 的 `fm` 版身体（`pc_g01_fm_nk`，用 g01 的皮肤材质）。
+- 两个底模都和套装皮肤完全重合（贴合误差中位 0.00 / 0.01 毫米）：套装皮肤就是从这两个身体上裁下来的。
+
+#### 加一个角色的步骤（b10、g05 就是这样加的）
+
+```powershell
+# 1. 只拷新角色的包、还原、导入（工程里已有的公共资源保留原来的 GUID，清单里原有的角色保留）
+python tools\stage_bundles.py _work\bundles_more b10 g05
+python tools\rip.py --bundles _work\bundles_more --out _work\ripped_more --log _work\assetripper.log
+python tools\import_ripped.py --src _work\ripped_more\ExportedProject\Assets
+# 2. 家族裸体底模（爆衣用）
+python tools\stage_bundles.py _work\bundles_nude_b --nude b01
+python tools\rip.py --bundles _work\bundles_nude_b --out _work\ripped_nude_b --log _work\assetripper.log
+python tools\import_nude.py b01 --src _work\ripped_nude_b\ExportedProject\Assets\AssetBundles --sel _work\ripped_nude_b_sel
+# 3. 技能：玩法预制体（拉进约 1000 个依赖包，导入时只拷用得到的）和技能表
+copy "<游戏包目录>\gameplay_prefab_suit_kart_10.ab" _work\bundles_skills_more\
+copy "<游戏包目录>\gameplay_prefab_suit_luf_5.ab" _work\bundles_skills_more\
+python tools\rip.py --bundles _work\bundles_skills_more --out _work\ripped_skills_more --log _work\assetripper.log
+python tools\import_skills.py suit_kart_10 suit_luf_5 --src _work\ripped_skills_more\ExportedProject\Assets
+python tools\skill_sheet.py suit_kart_10 b10 suit_luf_5 g05
+# 4. Unity：只处理新角色（-roeChars），不动 a08、g04 已经拟合好的预制体
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFighterBuilder.BuildAll -Extra '-roeChars','b10,g05'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHumanoidClips.ConvertAll -Extra '-roeChars','b10,g05'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.Run -Extra '-roeChars','b10,g05'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.FitSkirt -Extra '-roeChars','b10,g05'    # 没裙子就跳过
+# 5. 爆衣规则表 Editor\Burst\<id>.json，看检查图改到分组对
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','b10,g05'
+python tools\burst_sheet.py --chars b10,g05
+# 6. 比赛场景（名单默认 a08,g04,b10,g05，-roeRoster 改），exe
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+```
+
+为了能加新角色，改了这些（都是通用的，没有写死哪个角色）：
+
+- **导入保留旧 GUID**（`import_ripped.py`）：AssetRipper 每次导出都给资源新编号，只还原新角色时，包里还带着工程里已有的公共包（家族头部、公共贴图、皮肤 LUT……）。
+  现在工程里已有的资源保留原编号、不重新拷，新文件里指向它们的引用改写成原编号，已有的预制体、场景不会断（这次 116 个）。
+  清单（`roe_manifest*.json`）合并：这次没有的角色原样保留（`--fresh-manifest` 才只写这次的）。
+- **只处理指定的角色**：`RoeFighterBuilder.BuildAll`、`RoeHumanoid.BuildAll`、`RoeHumanoidClips.ConvertAll` 认 `-roeChars`（不写还是全部）。重建人形预制体会丢掉 `RoeHelperFit` 挂上去的组件，所以加角色时不要碰已有的。
+- **包的筛选**：套装自己的 `chara_bare_pc_<id>_nk*` 是 H 场景的骨架和动作，不再拷；`--nude g01_fm` 这种 `fm` 版身体要明确点名才拷。
+- **武器材质**：一套有几件武器时材质按武器起名（b10 的斧头 `wp_ax` → `wp_b_10_axe_hd`），按渲染器名里的词去配。g05 战斗里没有武器（低模和技能都没用 `wp_g05`）。
+- **挂在手臂、腿上的东西**（`RoeHumanoidClips.Convert`）：人形骨架把肢体的扭转挪到下一节，挂在上臂、前臂上的东西就少转了这一下。
+  g05 的两条飘带从手臂一直垂到膝盖，末端差了 0.9–1.2 米。现在这些节点的曲线按人形骨架实际摆出的肢体重算：g05 最大误差 1.7 厘米（手指），b10 1.4 厘米；
+  扭转辅助骨也一起变准了（之前 1–3 厘米）。a08、g04 没有重转，要重转的话记得再跑 `RoeHelperFit`。
+- **飘带交给布料**：`RoeBoneCloth` 按名字认的链加了一类"飘带"（`riband|ribbon`），参数用头发那套轻的，碰撞体用腿和躯干、骨段整段碰；
+  `RoeHelperFit` 不再把飘带当辅助骨拟合（g05 的飘带拟合误差 26–85°，硬跟着手臂反而不对）。g05 现在 5 条飘带由布料模拟（游戏自己的动作里还是游戏的关键帧）。
+- **站姿基准**（`RoeHumanoidClips.Standing`）：格斗里的鞋底高度、脚怎么站、裙子飘带怎么垂，都从角色的站姿里量。g05 的战斗待机是浮在空中坐着（最低的脚骨离地 23 厘米），
+  这时自动改用第一个站着的展示动作（g05 是 `idle_02`），日志里写着用的是哪个。检查图、头像、比赛都用它。
+- **光脚**（`FighterRig.barefoot`，`-roeBarefoot g05=1`）：动捕的站脚原本会套上站姿里的"高跟鞋站法"。g05 的站姿 `idle_02` 第一帧踮着脚尖（左脚朝下 75°），
+  套上以后两只脚都踮起来、膝盖往下弯，看着像往后仰。光脚的角色站脚不套站姿，鞋底高度从绑定姿势里量（建场景时量好存在角色上）。
+  ROE 的光脚本身就是"踩着看不见的高跟"的脚形（绑定姿势里脚掌朝下 72°），现在 g05 前掌着地站，和游戏里一样。
+- **治疗技能当攻击**（`RoeSkillSheet.Action.Blows`）：g05 的技能 2 和超必杀在游戏里是治疗（没有伤害数字，只有 heal、regen 这些效果）。格斗里在效果生效的时刻（2.17 秒、2.80 秒）当成一击，
+  所以她的超必杀打中也会让对手掉衣服。有伤害数字的技能照旧。
+- **脖子补洞**（爆衣规则表 `nude.fill`）：b10 的高领在夹克上，g05 的金项圈连着长裙片，套装的头部网格只到领子上沿，衣服掉了脖子就是个洞。
+  现在从底模的头部子网格里挑出"套装头部没有的三角形"（按三个角的位置比对，0.3 毫米内算同一个点）补进身体，用套装脸的材质，权重照样从附近抄。
+  b10 补了 784 个三角形，g05 补了 2,060 个；超过底模这块 30% 时认为不是同一个头，不补（日志里写）。
+
+两人掉什么（`Editor\Burst\b10.json`、`g05.json`）：
+
+| | 第一段 | 第二段 | 第三段 | 第四段 |
+|---|---|---|---|---|
+| b10 Kart | 枪套、腿上的绑带、枪套挂绳、左臂小包：4,046 个三角形 | 红色短夹克和胸前皮带：6,417 个 | 手套和靴子：5,066 个 | 牛仔短裤和腰带：3,884 个 |
+| g05 Luf 女神 | 心形光环和月桂枝：9,042 个 | 肩上的白色披帛：2,072 个 | 金饰（手镯、腿环、脚链、戒指）：4,312 个 | 白色长裙片：7,780 个 |
+
+两人都没有"一直留着"的东西，掉完就是全身（b10 光脚，脚就是底模的脚）。
+
+演示：
+
+- `out\clothes_burst_demo_b10_g05.mp4`：b10、g05 各当一次挨打的一方，对手是另一个，打两局，四段全掉；
+- `out\fight_cpu_match_b10_g05.mp4`：电脑对电脑一整场（120 秒，g05 二比零，b10 最后全身）；
+- `RoeBurstDemo.Run -roeChars b10,g05 -roeFoes g05,b10`、`RoeFightScene.Record -roeP1 b10 -roeP2 g05` 可以重录。
+
+显示名：a08 INASE，g04 LUF，b10 KART，g05 GODDESS LUF；选人卡片上另有一个词：Valkyrie、Porcelain、Agent、Goddess（`RoeFightScene.DisplayNames` / `Outfits`）。
+
+### 选人界面（10-03 晚）
+
+- 场景里放着名单上的所有人（`-roeRoster`，默认 `a08,g04,b10,g05`），开局先进选人界面；没选上的收起来（不显示、不计算）。
+- 下面一排卡片，头像是建场景时在影棚里拍的（`Generated\<id>\<id>_portrait.png`）；选中的两人站在场上，播她们的展示待机。上方写着轮到谁选。
+- 1P 是人、2P 是电脑（默认）：1P 先选自己的，确认后接着替电脑选；两边都是人就各选各的；两边都是电脑（F1 + F2）就随机选好直接开打。
+- 两边选同一个角色时，复制一份那个角色（第一次用到时复制，之后留着）。
+- 比赛结束按回车回到这里（上一场的两人还选着，确认两次就是再来一场）；F7 随时回来；F3、F4 在这里按也有效（两人换上新动作包 / 新布料）。
+- `ROEFighter.exe -roeP1 b10 -roeP2 g05` 预先选好这两人；`-roeSelect 0` 跳过选人直接开打。
+- 演示 `out\select_screen_demo.mp4`（`RoeFightScene.SelectDemo`：批处理里没有键盘，用脚本按同样的步骤换卡片）：1P 从 INASE 换到 LUF（两边都是 LUF 时复制了一份）再到 KART、确认，替电脑从 LUF 换到 INASE 再到 GODDESS LUF、确认，开打。
+- 坑：拍头像时开了景深，而影棚的后期设置文件（`Settings\RoeStudioVolume.asset`）比赛场景也在用，焦点 1.45 米的景深就留在了比赛里，exe 整个画面是虚的（批处理录像没受影响）。现在头像不开景深。
 
 ## 已知问题和待定的事
 
@@ -931,6 +1034,12 @@ python tools\burst_video.py                                                     
     - 掉了的裙片停掉它的布料链。
   - 用户 10-03："做完这个demo，还希望把 Riseoferos 其他的角色也加到这个游戏中，可以爆衣，可以适配动作和衣服"，之后再讨论。
     加角色的现成做法见"爆衣"一节最后。要补的主要是每个角色的规则表，以及"哪里缺皮肤"的测量。
+- **新角色**（10-03 晚）：
+  - g05 在游戏自己的动作（技能、受击）里浮在空中，基础动作里站在地上，两者之间的切换比别人明显；
+  - g05 受击时两条长飘带按游戏的关键帧向两边甩出去，像两块板（游戏原样）；
+  - g05 的技能 2 和超必杀是把游戏的治疗时刻当成攻击，不是游戏的本意，用户可以改成"给自己回血"；
+  - b10 用的是动作包的拳击动作，手里的斧头和双枪只在技能里出现；
+  - a08、g04 的动作没有按新的"肢体上的节点重算"重转，要重转的话连 `RoeHelperFit.Run`、`FitSkirt` 一起重跑。
 - 动作包现在有 `bandai1`（默认）和 `accad_male2` 两个，买来的 Unity 动作照"动作包"一节的 JSON 接进来。`accad_male2` 是右脚在前的拳击架势，
   g04 举着大扇子打拳击架势时扇子挡在身前；只有四个攻击键，ACCAD 里还有勾拳、上勾拳、侧踢、前踢、防御、闪避、胜利动作没用上，CMU 的空手道也可以补进来。
 - 一个角色播另一个角色的技能时，辅助骨用的还是原角色动作里的数值；`RoeHelperRig` 也可以用在这里，还没接。

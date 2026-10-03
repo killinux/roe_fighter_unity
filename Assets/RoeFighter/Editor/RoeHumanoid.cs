@@ -344,7 +344,7 @@ namespace RoeFighter.EditorTools
         [MenuItem("ROE Fighter/Build/Humanoid fighters")]
         public static void BuildAll()
         {
-            foreach (var c in RoeManifest.Load().WithModels)
+            foreach (var c in RoeManifest.Load().Chosen())     // -roeChars b10,g05: only these
                 BuildFighter(c);
             AssetDatabase.SaveAssets();
         }

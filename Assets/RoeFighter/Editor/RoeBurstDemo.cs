@@ -17,7 +17,7 @@ namespace RoeFighter.EditorTools
     /// the CPU against the victim left on 1 HP until the KO (stage 2).  Filmed by two cameras, the fight's
     /// own (with the HUD) and a close one on the victim; frames, captions and the sounds per take for
     /// tools/burst_video.py.
-    ///   -executeMethod RoeFighter.EditorTools.RoeBurstDemo.Run [-roeChars g04,a08] [-roeOut dir] [-roeSize 960x540]
+    ///   -executeMethod RoeFighter.EditorTools.RoeBurstDemo.Run [-roeChars g04,a08] [-roeFoes b10,g05] [-roeOut dir] [-roeSize 960x540]
     /// </summary>
     public static class RoeBurstDemo
     {
@@ -29,6 +29,8 @@ namespace RoeFighter.EditorTools
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             string outDir = RoeCapture.Arg("-roeOut", Path.Combine(ProjectDir, "_work", "burst_demo"));
             var victims = RoeCapture.Arg("-roeChars", "g04,a08").Split(',');
+            // who each one fights (same order; empty: the scene's picks, the victim in place of 2P if she is not in them)
+            var foes = RoeCapture.Arg("-roeFoes", "").Split(',');
             var size = RoeCapture.Arg("-roeSize", "960x540").Split('x');
             int width = int.Parse(size[0]), height = int.Parse(size[1]);
             ShaderUtil.allowAsyncCompilation = false;
@@ -54,8 +56,14 @@ namespace RoeFighter.EditorTools
             var log = new StringBuilder("[ROE] burst demo:");
             var takes = new List<string>();
 
-            foreach (var id in victims)
+            for (int vi = 0; vi < victims.Length; vi++)
             {
+                string id = victims[vi];
+                string foe = vi < foes.Length ? foes[vi].Trim() : "";
+                if (foe.Length > 0)
+                    game.PickIds(foe, id);
+                else if (game.roster.Length > 0 && game.roster[game.pick[0]].id != id && game.roster[game.pick[1]].id != id)
+                    game.PickIds(null, id);
                 game.cpu = new[] { false, false };
                 game.Setup();
                 int v = game.f[0].rig.id == id ? 0 : 1;

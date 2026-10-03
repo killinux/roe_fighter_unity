@@ -1471,7 +1471,9 @@ namespace RoeFighter.EditorTools
             var game = Object.FindFirstObjectByType<FightGame>();
             game.cpu = new[] { false, false };
             game.hud.gameObject.SetActive(false);
-            foreach (var rig in game.rigs)
+            if (game.rigs.All(r => r.id != id))
+                game.PickIds(null, id);      // she takes 2P's place
+            foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
                 foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
             var table = new System.Text.StringBuilder();
@@ -1616,6 +1618,91 @@ namespace RoeFighter.EditorTools
             Object.DestroyImmediate(baked);
             System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, "feet.txt"), table.ToString());
             Debug.Log("[ROE] feet:\n" + table);
+        }
+
+        /// <summary>
+        /// The same in the fight: a fighter standing in her guard (real fight logic, no input), every 0.25 s the
+        /// hips-to-neck line against vertical (+ forward, towards where she faces), the hips' height, where the ankles
+        /// are against the hips (+ ahead), and the mixer weights.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.FightLean -roeChars g04,g05 [-roeMotions bandai1]
+        /// </summary>
+        public static void FightLean()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            string pack = RoeCapture.Arg("-roeMotions", null);
+            if (pack != null)
+                game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            var sb = new System.Text.StringBuilder("[ROE] lean in the fight:");
+            if (RoeCapture.Arg("-roeOwn", "1") == "0")
+                foreach (var r in game.roster)
+                    r.strikePack = null;        // the motion pack's guard and strikes for everyone
+            foreach (var id in RoeCapture.Arg("-roeChars", "g04,g05").Split(','))
+            {
+                if (game.rigs.All(r => r.id != id))
+                    game.PickIds(null, id);
+                game.cpu = new[] { false, false };
+                game.Setup();
+                while (game.phase != FightGame.Phase.Fight)
+                    game.Step(new FighterInput[2]);
+                var me = game.f[game.f[0].rig.id == id ? 0 : 1];
+                var an = me.rig.animator;
+                var hips = an.GetBoneTransform(HumanBodyBones.Hips);
+                var neck = an.GetBoneTransform(HumanBodyBones.Neck) ?? an.GetBoneTransform(HumanBodyBones.Head);
+                var feet = new[] { an.GetBoneTransform(HumanBodyBones.LeftFoot), an.GetBoneTransform(HumanBodyBones.RightFoot) };
+                sb.Append($"\n[ROE]   {id} ({me.rig.Current}):");
+                for (int s = 0; s <= 90; s++)
+                {
+                    game.Step(new FighterInput[2]);
+                    if (s % 15 != 0)
+                        continue;
+                    var fwd = me.Forward;
+                    var up = neck.position - hips.position;
+                    float lean = Mathf.Atan2(Vector3.Dot(up, fwd), up.y) * Mathf.Rad2Deg;
+                    float ahead = feet.Average(f => Vector3.Dot(f.position - hips.position, fwd));
+                    sb.Append($"\n[ROE]     t{s / 60f:F2} lean {lean:F0} hips {hips.position.y - me.pos.y:F2} m ankles ahead {ahead:F2} m | {me.rig.MixerWeights()}");
+                }
+            }
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
+        /// How far forward the body leans in humanoid clips: each clip posed on each fighter (prefab, no fight logic)
+        /// at a few times - hips height, the hips-to-neck line from vertical, the hips' pitch.  For checking a
+        /// retarget against the source (DOA6 Mai's stance leans 36-43 degrees in the BVH).
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Lean -roeChars g04,g05 -roeClips path1,path2
+        /// </summary>
+        public static void Lean()
+        {
+            var ids = RoeCapture.Arg("-roeChars", "g04").Split(',');
+            var clips = RoeCapture.Arg("-roeClips", "").Split(',').Where(x => x.Length > 0).ToArray();
+            var sb = new System.Text.StringBuilder("[ROE] lean:");
+            foreach (var id in ids)
+            {
+                var go = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+                go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                var an = go.GetComponent<Animator>();
+                var hips = an.GetBoneTransform(HumanBodyBones.Hips);
+                var neck = an.GetBoneTransform(HumanBodyBones.Neck) ?? an.GetBoneTransform(HumanBodyBones.Head);
+                foreach (var path in clips)
+                {
+                    var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(path);
+                    if (clip == null)
+                        continue;
+                    sb.Append($"\n[ROE]   {id} {clip.name}:");
+                    for (float t = 0f; t <= clip.length + 1e-4f; t += Mathf.Max(0.1f, clip.length / 6f))
+                    {
+                        RoeCapture.Pose(go, clip, t);
+                        var up = neck.position - hips.position;
+                        float lean = Vector3.Angle(up, Vector3.up);
+                        sb.Append($" t{t:F1} hips {hips.position.y:F2} m lean {lean:F0}");
+                    }
+                }
+                RoeCapture.EndPosing();
+                Object.DestroyImmediate(go);
+            }
+            Debug.Log(sb.ToString());
         }
 
         /// <summary>
