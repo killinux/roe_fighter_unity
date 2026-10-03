@@ -32,8 +32,13 @@ namespace RoeFighter.EditorTools
         /// skirts and ribbons hang): the battle stance idle_01, unless it does not stand on the floor (g05 floats,
         /// sitting in the air) - then the first showcase clip that does (idle_02, react_01, react_02).
         /// </summary>
-        public static AnimationClip Standing(string id, out string note)
+        public static AnimationClip Standing(string id, out string note) => Standing(id, out note, out _);
+
+        /// <summary>The same; hover: how high the battle stance holds the lowest sole bone when it does not stand (m; g05 0.23), else 0.</summary>
+        public static AnimationClip Standing(string id, out string note, out float hover)
         {
+            hover = 0f;
+            float battle = 0f;
             var go = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
             go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             var animator = go.GetComponent<Animator>();
@@ -50,6 +55,8 @@ namespace RoeFighter.EditorTools
                 RoeCapture.Pose(go, clip, 0f);
                 float lowest = soles.Length > 0 ? soles.Min(t => t.position.y) : 0f;
                 tried.Add($"{name} lowest sole bone {lowest * 100f:F0} cm");
+                if (name == "idle_01")
+                    battle = lowest;
                 if (lowest < StandingSole)
                 {
                     chosen = clip;
@@ -59,6 +66,8 @@ namespace RoeFighter.EditorTools
             RoeCapture.EndPosing();
             Object.DestroyImmediate(go);
             note = $"stands in {(chosen ?? first)?.name ?? "nothing"} ({string.Join(", ", tried)})";
+            if (chosen != null && !chosen.name.EndsWith("idle_01"))
+                hover = battle;
             return chosen ?? first;
         }
 
@@ -419,10 +428,15 @@ namespace RoeFighter.EditorTools
         public static void ConvertAll()
         {
             var manifest = RoeManifest.Load();
-            // -roeChars b10,g05: only these (rebuilding a fighter prefab drops what RoeHelperFit put on it)
+            // -roeChars b10,g05: only these (rebuilding a fighter prefab drops what RoeHelperFit put on it).
+            // -roeKeepPrefab 1: the clips again on the fighter prefab as it is (its avatar, the helper and skirt rigs
+            // fitted on it stay): after a fix in the conversion itself (10-03: the limbs, for a08 and g04)
+            bool keep = RoeCapture.Arg("-roeKeepPrefab", "0") == "1";
             foreach (var c in manifest.Chosen())
             {
-                var fighterPrefab = RoeHumanoid.BuildFighter(c);    // always rebuild: the clips depend on the avatar
+                var fighterPrefab = keep ? AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(c.id)) : null;
+                if (fighterPrefab == null)
+                    fighterPrefab = RoeHumanoid.BuildFighter(c);    // always rebuilt otherwise: the clips depend on the avatar
                 if (fighterPrefab == null)
                     continue;
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeFighterBuilder.PrefabPath(c.id));

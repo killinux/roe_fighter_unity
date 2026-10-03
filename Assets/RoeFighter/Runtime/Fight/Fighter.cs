@@ -431,7 +431,9 @@ namespace RoeFighter.Fight
                 special = null;
                 state = FightState.Idle;
                 t = 0f;
-                rig.Play("guard", 1f, 0.3f, false);
+                // one who hovers in the game's clips (g05) may end a skill high in the air: she floats down, longer the higher she is
+                float fade = rig.gameHover > 0f ? Mathf.Clamp(0.3f + 0.4f * rig.SoleHeight, 0.3f, 0.8f) : 0.3f;
+                rig.Play("guard", 1f, fade, false);
                 rig.ShowWeapons(false);
             }
         }

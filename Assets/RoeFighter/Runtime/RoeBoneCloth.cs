@@ -195,6 +195,15 @@ namespace RoeFighter
         Quaternion worldRot = Quaternion.identity, worldRotPrev = Quaternion.identity;
         public float weight = 1f;
         public float Weight { get => weight; set => weight = value; }
+
+        /// <summary>
+        /// Kinds that are simulated over the game's own clips too (at alwaysWeight), not only under the motion capture
+        /// (Weight): g05's sashes - her battle clips key them almost rigid, and in a hurt they swung out a metre like
+        /// boards.  The keys stay their animated pose: the angle limits hold the cloth near them, so a skill's swirl
+        /// is still there, only it bends and trails.
+        /// </summary>
+        public static readonly HashSet<string> AlwaysKinds = new HashSet<string> { "ribbon" };
+        public float alwaysWeight = 1f;
         public static bool NoColliders, NoBackstop;     // for checks (RoeFightProbe.SkirtSwing -roeVariant)
         /// <summary>
         /// The skirt's animated pose already rests on the skin (RoeSkirtRig.Drape; FighterRig sets this each
@@ -1173,14 +1182,15 @@ namespace RoeFighter
 
         const float MaxPush = 0.025f;
 
-        /// <summary>Write the simulated rotations, blended with the animated ones by ``weight``.</summary>
+        /// <summary>Write the simulated rotations, blended with the animated ones by ``weight`` (``alwaysWeight`` for AlwaysKinds).</summary>
         void Write(ChainSet c)
         {
-            if (weight <= 0f)
+            float w = AlwaysKinds.Contains(c.kind) ? alwaysWeight : weight;
+            if (w <= 0f)
                 return;
             foreach (var lv in c.levels)
                 foreach (int i in lv)
-                    c.bones[i].rotation = weight >= 1f ? c.rot[i] : Quaternion.Slerp(c.bones[i].rotation, c.rot[i], weight);
+                    c.bones[i].rotation = w >= 1f ? c.rot[i] : Quaternion.Slerp(c.bones[i].rotation, c.rot[i], w);
         }
     }
 }

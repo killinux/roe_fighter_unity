@@ -347,13 +347,26 @@ namespace RoeFighter.EditorTools
 
             // clips: the game's own here; the basic moves come from a motion pack (BuildScene, FightGame.Setup).  The
             // stance is the battle stance, or a showcase clip that stands when that one floats (g05 sits in the air)
-            rig.stance = RoeHumanoidClips.Standing(c.id, out var standing);
+            rig.stance = RoeHumanoidClips.Standing(c.id, out var standing, out float hover);
+            // ...and when the battle stance floats, the game's battle clips float as high (g05 23 cm): the fight brings
+            // them down to the floor, the skills rise to the game's height (FighterRig.gameHover).  -roeHover g05=0 leaves
+            // every clip as high as the game has it; -roeSkillsHover 0 brings the skills down too.
+            if (Table("-roeHover", "").TryGetValue(c.id, out var hoverArg))
+                hover = float.Parse(hoverArg, CultureInfo.InvariantCulture);
+            rig.gameHover = hover;
+            bool skillsHover = RoeCapture.Arg("-roeSkillsHover", "1") != "0";
             foreach (var name in GameClips)
             {
                 var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(c.id, name));
                 if (clip != null)
-                    rig.clips.Add(new FighterRig.NamedClip { name = name, clip = clip, loop = Loops.Contains(name), game = true });
+                    rig.clips.Add(new FighterRig.NamedClip
+                    {
+                        name = name, clip = clip, loop = Loops.Contains(name), game = true, hovers = skillsHover && name.StartsWith("skill_"),
+                    });
             }
+            if (rig.gameHover > 0f)
+                standing += $"; the game's clips hover {rig.gameHover * 100f:F0} cm: reactions come down to the floor, " +
+                            (skillsHover ? "skills rise to it" : "skills too");
             rig.skillSheetJson = AssetDatabase.LoadAssetAtPath<TextAsset>(RoeSkillSheet.PathOf(c.id));
 
             // weapons only show during the game's own clips (skills, intro, victory): in the basic moves a08's
@@ -367,24 +380,22 @@ namespace RoeFighter.EditorTools
                 rig.strikePack = OwnStrikes(own);
             if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
                 rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
-            // barefoot (-roeBarefoot g05=1): flat feet under the motion capture, the soles from the bind pose
-            string feetNote = "";
-            if (Table("-roeBarefoot", "g05=1").TryGetValue(c.id, out var bare) && bare != "0")
+            // heels or flat feet (user 10-03: "有的角色是有高跟鞋的，有的角色是没有的，得区分一下"): measured on her own standing
+            // clips (RoeFeet); -roeFeet g05=flat,b10=heels overrides
+            var feetKind = RoeFeet.Measure(c.id);
+            if (Table("-roeFeet", "").TryGetValue(c.id, out var feetArg))
+                feetKind.heels = feetArg != "flat";
+            rig.flatFeet = !feetKind.heels;
+            if (rig.flatFeet)
             {
-                rig.barefoot = true;
-                var an = model.GetComponent<Animator>();
-                var toes = new[] { an.GetBoneTransform(HumanBodyBones.LeftToes), an.GetBoneTransform(HumanBodyBones.RightToes) };
-                var feet = new[] { an.GetBoneTransform(HumanBodyBones.LeftFoot), an.GetBoneTransform(HumanBodyBones.RightFoot) };
-                if (toes.All(t => t != null) && feet.All(t => t != null))
-                {
-                    // the prefab's human bones stand in the bind pose, its feet on the floor (the model's origin)
-                    float floor = model.transform.position.y;
-                    rig.barefootSoles = new Vector2(toes.Average(t => t.position.y) - floor, feet.Average(t => t.position.y) - floor);
-                    float pitch = feet.Average(f => Vector3.Angle(toes[System.Array.IndexOf(feet, f)].position - f.position,
-                        Vector3.ProjectOnPlane(toes[System.Array.IndexOf(feet, f)].position - f.position, Vector3.up)));
-                    feetNote = $", barefoot (soles from the bind pose: toe {rig.barefootSoles.x:F3} m, ankle {rig.barefootSoles.y:F3} m, foot pitch {pitch:F0} deg)";
-                }
+                rig.flatRest = feetKind.rest;
+                rig.flatAhead = feetKind.ahead;
+                rig.flatToe = feetKind.toe;
+                rig.flatAxis = feetKind.pitchAxis;
+                rig.flatPitch = feetKind.pitchFix;
+                rig.flatSoles = new Vector2(feetKind.toeSole, feetKind.ankleSole);
             }
+            string feetNote = $", feet {(rig.flatFeet ? "flat" : "in heels")}{(feetArg != null ? $" (-roeFeet {feetArg})" : "")} - {feetKind.note}";
 
             // sounds the skills use, by clip name; the game's voice lines in Japanese
             var names = new HashSet<string>();

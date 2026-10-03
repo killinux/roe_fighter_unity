@@ -34,6 +34,7 @@ namespace RoeFighter.Fight
             public AnimationClip clip;
             public bool loop;
             public bool game;       // the game's clip: moves every bone (layer 2); else motion capture (layer 1)
+            public bool hovers;     // a game clip that keeps the game's hover (gameHover): the skills, their effects placed for it
         }
 
         [Serializable]
@@ -139,13 +140,44 @@ namespace RoeFighter.Fight
         public MotionPack strikePack;
 
         /// <summary>
-        /// Barefoot (g05): the motion capture's flat feet are right for her - a planted foot does not take the
-        /// stance's high-heeled angle (g05's standing clip has her on her toes, which tipped both feet onto them
-        /// and bent her knees), and the soles are where the toe and ankle bones are on flat feet: barefootSoles
-        /// (toe, ankle bone height), measured on the bind pose when the scene is built.
+        /// Flat feet - no heels (g05 is barefoot) - as the scene build measured them (Editor RoeFeet: her planted feet in
+        /// the game's standing clips keep the ankle 8 cm up, heels keep it 15-16).  The motion capture's feet stay in the
+        /// bind pose's angle, and ROE models bare feet pointed 72 degrees like a high heel: she stood and walked on the tips
+        /// of her toes.  So under the motion capture her feet are turned up about the ankle by flatPitch (the bind pose's
+        /// pitch less her standing one), a planted foot takes her stand from the game's clips (flatRest / flatAhead /
+        /// flatToe: foot against the direction it points along the floor, the foot's axis that points ahead, the toe
+        /// bone) instead of the battle stance's, and the soles are that stand's toe and ankle heights (flatSoles).
+        /// Heels keep the stance's high-heeled angle (the stance has them on their heels).
         /// </summary>
-        public bool barefoot;
-        public Vector2 barefootSoles;
+        public bool flatFeet;
+        public Quaternion[] flatRest = new Quaternion[2], flatToe = new Quaternion[2];
+        public Vector3[] flatAhead = new Vector3[2], flatAxis = new Vector3[2];
+        public float[] flatPitch = new float[2];
+        public Vector2 flatSoles;
+
+        /// <summary>
+        /// How high the game's battle clips hold her above the floor (m), measured when the scene is built: g05 hovers
+        /// 23 cm in her battle stance and in every battle clip that starts from it (hurt, die, the skills); 0 = they
+        /// stand on the floor.  The fight stands her on the floor - her basic moves walk on it - and a hit lifted her
+        /// 23 cm into the air in 0.04 s.  So the game's clips come down by up to this much: never further than putting
+        /// the lowest sole on the floor (a pose that lifts her higher keeps the rest of its lift), and not at all once
+        /// the soles are below their standing height (lying on the floor at the end of a fall).  Clips that hover
+        /// (NamedClip.hovers: the skills, whose effects the game places for the hovering body) rise to the game's
+        /// height instead, over HoverRise seconds, and come down again when she leaves them.
+        /// </summary>
+        public float gameHover;
+        public const float HoverRise = 0.3f;
+        /// <summary>
+        /// ...and never so far that a bone of the body (all human bones but the feet) comes closer to the floor than
+        /// this (m): falling back, her legs fly up while her back comes down - brought down by the soles, the hips
+        /// went 8 cm into the floor.
+        /// </summary>
+        public const float BodyClearance = 0.1f;
+        float hoverWeight, hoverTarget;     // how much of the game's hover the clips keep (1: all of it)
+        Transform[] body;                   // the human bones but the feet and toes
+
+        /// <summary>How far the game's clips were brought down in the last step (m; for checks).</summary>
+        public float HoverDrop { get; private set; }
 
         /// <summary>Size of the weapons (g04's fan): 1 = the game's.  Scales the bone that carries each weapon's own bones.</summary>
         [Range(0.2f, 2f)] public float weaponScale = 1f;
@@ -174,6 +206,9 @@ namespace RoeFighter.Fight
             toes = new[] { animator.GetBoneTransform(HumanBodyBones.LeftToes), animator.GetBoneTransform(HumanBodyBones.RightToes) };
             feet = new[] { animator.GetBoneTransform(HumanBodyBones.LeftFoot), animator.GetBoneTransform(HumanBodyBones.RightFoot) };
             grounded = stance != null && toes.All(t => t != null) && feet.All(t => t != null);
+            body = Enum.GetValues(typeof(HumanBodyBones)).Cast<HumanBodyBones>()
+                .Where(b => b != HumanBodyBones.LastBone).Select(animator.GetBoneTransform)
+                .Where(t => t != null && !toes.Contains(t) && !feet.Contains(t)).ToArray();
             if (grounded)
             {
                 float floor = animator.transform.position.y;
@@ -188,10 +223,17 @@ namespace RoeFighter.Fight
                     footAhead[i] = Quaternion.Inverse(feet[i].rotation) * ahead;
                     toeRest[i] = toes[i].localRotation;
                 }
-                if (barefoot && barefootSoles.y > 0f)
+                // flat feet stand the way her flattest stand in the game's clips has them (RoeFeet), not as the stance
+                if (flatFeet && flatSoles.y > 0f && flatRest.Length == 2 && flatAhead.Length == 2 && flatToe.Length == 2)
                 {
-                    toeSole = barefootSoles.x;
-                    ankleSole = barefootSoles.y;
+                    toeSole = flatSoles.x;
+                    ankleSole = flatSoles.y;
+                    for (int i = 0; i < 2; i++)
+                    {
+                        footRest[i] = flatRest[i];
+                        footAhead[i] = flatAhead[i];
+                        toeRest[i] = flatToe[i];
+                    }
                 }
             }
             helpers = animator.GetComponent<RoeHelperRig>();
@@ -247,6 +289,8 @@ namespace RoeFighter.Fight
             System.Array.Clear(plantWeight, 0, plantWeight.Length);
             plantValid = false;
             stanceTime = 0f;
+            hoverWeight = hoverTarget = 0f;
+            HoverDrop = 0f;
 
             graph = PlayableGraph.Create($"{id} fighter");
             graph.SetTimeUpdateMode(DirectorUpdateMode.Manual);
@@ -437,11 +481,13 @@ namespace RoeFighter.Fight
                 if (clips[k].game == game)
                     target[k] = k == i ? 1f : 0f;
             gameTarget = game ? 1f : 0f;
+            hoverTarget = game && clips[i].hovers ? 1f : 0f;
             if (fadeSeconds <= 0f)
             {
                 for (int k = 0; k < weight.Length; k++)
                     weight[k] = target[k];
                 gameWeight = gameTarget;
+                hoverWeight = hoverTarget;
                 ApplyWeights();
             }
             current = i;
@@ -494,17 +540,29 @@ namespace RoeFighter.Fight
                     w.localScale *= weaponScale;
             StepLinger(dt);
             float mocap = 1f - gameWeight;
+            if (dt > 0f)
+                hoverWeight = Mathf.MoveTowards(hoverWeight, hoverTarget, dt / HoverRise);
+            // the share of the game's hover that comes down (gameHover)
+            float unhover = gameHover > 0f ? gameWeight * (1f - hoverWeight) : 0f;
+            HoverDrop = 0f;
             // motion capture on the floor: retargeted onto these long-legged, high-heeled bodies it
-            // floats 11-18 cm; the lowest sole goes down to the floor (the game's clips stay as they are)
-            if (grounded && mocap > 0f)
+            // floats 11-18 cm; the lowest sole goes down to the floor (the game's clips stay as they are,
+            // but for a hover that comes down: gameHover)
+            if (grounded && (mocap > 0f || unhover > 0f))
             {
+                // Flat feet (flatFeet): the motion capture leaves her feet in the bind pose's angle, pointed like a
+                // high heel - turned up about the ankle to her standing angle first.
+                if (flatFeet && mocap > 0f && flatPitch.Length == 2 && flatAxis.Length == 2)
+                    for (int i = 0; i < 2; i++)
+                        feet[i].localRotation *= Quaternion.AngleAxis(flatPitch[i] * mocap, flatAxis[i]);
                 // A planted foot stands in its high-heeled shoe the way the game's stance has it.  The
                 // motion capture's feet are flat shoes': put on these heels as they were, a standing foot
                 // tipped onto its toes, the heel spike 10 cm in the air and the toes 2-3 cm in the floor.
+                // (Flat feet stand the way her flattest stand in the game's clips has them.)
                 // The foot keeps the direction the clip points it in; feet lifted by the clip (steps,
                 // kicks) keep the clip's angle, blended by how far the ankle is above its standing height.
                 float lowest = LowestSole();
-                for (int i = 0; i < 2 && !barefoot; i++)
+                for (int i = 0; i < 2 && mocap > 0f; i++)
                 {
                     float above = feet[i].position.y - lowest - ankleSole;
                     float w = (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.03f, 0.12f, above))) * mocap;
@@ -515,7 +573,17 @@ namespace RoeFighter.Fight
                 }
                 lowest = LowestSole();
                 groundOffset = animator.transform.position.y - lowest;
-                hips.position += Vector3.up * (groundOffset * mocap);
+                if (unhover > 0f)
+                {
+                    float floor = animator.transform.position.y, room = float.MaxValue;
+                    foreach (var b in body)
+                        room = Mathf.Min(room, b.position.y - floor - BodyClearance);
+                    HoverDrop = Mathf.Min(Mathf.Clamp(-groundOffset, 0f, gameHover), Mathf.Max(0f, room)) * unhover;
+                }
+                hips.position += Vector3.up * (groundOffset * mocap - HoverDrop);
+            }
+            if (grounded && mocap > 0f)
+            {
                 // The other foot: retargeted onto these legs, a foot the actor had on the floor often
                 // hovers 1-3 cm above it.  A foot that stays put and is that close goes down to the
                 // floor (two-bone IK); a foot that is travelling (a step, a kick) is left alone.
@@ -570,7 +638,10 @@ namespace RoeFighter.Fight
             if (cloth != null)
             {
                 if (cloth is RoeBoneCloth boneCloth)
+                {
                     boneCloth.skirtOnSkin = skirtRig != null && skirtRig.Ready && RoeSkirtRig.Drape > 0f;
+                    boneCloth.alwaysWeight = clothWeight;     // sashes: over the game's clips too (RoeBoneCloth.AlwaysKinds)
+                }
                 cloth.Weight = mocap * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
@@ -798,6 +869,9 @@ namespace RoeFighter.Fight
 
         /// <summary>Vertical shift that put the motion capture on the floor in the last step (for checks).</summary>
         public float GroundOffset => groundOffset;
+
+        /// <summary>How high the lowest sole stands above the floor in the current pose (m; for checks, and how slowly a hovering fighter comes down after a skill).</summary>
+        public float SoleHeight => grounded ? LowestSole() - animator.transform.position.y : 0f;
 
         /// <summary>The direction the hips face along the floor (from the thighs).</summary>
         public Quaternion HipHeading()

@@ -1668,6 +1668,99 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>
+        /// How high the game's own clips hold a fighter (g05 hovers in hers): each game clip played on its own in the
+        /// fight's rig (real Init, Tick at 30 Hz, the opponent far away), per clip the lowest sole above the floor
+        /// (toe and ankle bones against their standing heights) at the start, its lowest and highest, the hips'
+        /// height and the lowest humanoid bone; side views of the chosen fighters every 0.4 s.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Hover [-roeChars a08,g04,b10,g05] [-roeShots g05] [-roeOut dir]
+        /// </summary>
+        public static void Hover()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            var ids = RoeCapture.Arg("-roeChars", "a08,g04,b10,g05").Split(',');
+            var shots = new HashSet<string>(RoeCapture.Arg("-roeShots", "g05").Split(','));
+            string outDir = RoeCapture.Arg("-roeOut", System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "hover"));
+            if (System.IO.Directory.Exists(outDir))
+                System.IO.Directory.Delete(outDir, true);
+            System.IO.Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.cpu = new[] { false, false };
+            game.hud.gameObject.SetActive(false);
+            foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
+                foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
+            var sb = new System.Text.StringBuilder("[ROE] hover (cm; sole = lowest sole above the floor):");
+            bool warmed = false;
+            foreach (var id in ids)
+            {
+                if (game.rigs.All(r => r.id != id))
+                    game.PickIds(null, id);
+                game.Setup();
+                while (game.phase != FightGame.Phase.Fight)
+                    game.Step(new FighterInput[2]);
+                var me = game.f[game.f[0].rig.id == id ? 0 : 1];
+                me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 6f;
+                me.foe.Place();
+                var rig = me.rig;
+                var an = rig.animator;
+                var hips = an.GetBoneTransform(HumanBodyBones.Hips);
+                var human = new List<Transform>();
+                foreach (HumanBodyBones b in System.Enum.GetValues(typeof(HumanBodyBones)))
+                    if (b != HumanBodyBones.LastBone && an.GetBoneTransform(b) != null)
+                        human.Add(an.GetBoneTransform(b));
+                sb.Append($"\n[ROE]   {id} (stance {rig.stance?.name}, feet {(rig.flatFeet ? "flat" : "heels")}):");
+                foreach (var c in rig.clips.Where(c => c.game))
+                {
+                    rig.Play(c.name, 1f, 0f);
+                    float length = Mathf.Min(c.clip.length, 6f);
+                    var soles = new List<float>();
+                    float hipsLow = float.MaxValue, hipsHigh = float.MinValue, boneLow = float.MaxValue;
+                    float startSole = 0f;
+                    int n = 0;
+                    float nextShot = 0f;
+                    for (float t = 0f; t <= length + 1e-4f; t += 1f / 30f, n++)
+                    {
+                        rig.Tick(n == 0 ? 0f : 1f / 30f);
+                        float floor = an.transform.position.y;
+                        float sole = rig.SoleHeight;
+                        if (n == 0)
+                            startSole = sole;
+                        soles.Add(sole);
+                        hipsLow = Mathf.Min(hipsLow, hips.position.y - floor);
+                        hipsHigh = Mathf.Max(hipsHigh, hips.position.y - floor);
+                        boneLow = Mathf.Min(boneLow, human.Min(b => b.position.y) - floor);
+                        if (shots.Contains(id) && t >= nextShot)
+                        {
+                            var fwd = me.Forward;
+                            var side = Vector3.Cross(Vector3.up, fwd).normalized;
+                            var mid = new Vector3(hips.position.x, floor + 0.85f, hips.position.z);
+                            var cam = game.cam;
+                            cam.fieldOfView = 35f;
+                            cam.transform.position = mid - side * 4.2f + fwd * 0.6f;
+                            cam.transform.LookAt(mid, Vector3.up);
+                            if (!warmed)
+                            {
+                                RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
+                                RoeCapture.Render(cam, 320, 180, System.IO.Path.Combine(outDir, "_warm.jpg"), 80);
+                                warmed = true;
+                            }
+                            RoeCapture.Render(cam, 360, 480, System.IO.Path.Combine(outDir, $"{id}_{c.name}_{Mathf.RoundToInt(t * 10f):D3}.jpg"), 88);
+                            nextShot = t + 0.4f;
+                        }
+                    }
+                    var sorted = soles.OrderBy(x => x).ToList();
+                    sb.Append($"\n[ROE]     {c.name,-9} {c.clip.length,5:F2}s sole start {startSole * 100f,5:F1} low {sorted[0] * 100f,5:F1} " +
+                              $"median {sorted[sorted.Count / 2] * 100f,5:F1} high {sorted[sorted.Count - 1] * 100f,5:F1} | hips {hipsLow * 100f:F0}..{hipsHigh * 100f:F0} " +
+                              $"| lowest bone {boneLow * 100f:F1}");
+                }
+            }
+            System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, "hover.txt"), sb.ToString());
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
         /// How far forward the body leans in humanoid clips: each clip posed on each fighter (prefab, no fight logic)
         /// at a few times - hips height, the hips-to-neck line from vertical, the hips' pitch.  For checking a
         /// retarget against the source (DOA6 Mai's stance leans 36-43 degrees in the BVH).
