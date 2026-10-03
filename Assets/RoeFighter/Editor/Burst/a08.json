@@ -1,0 +1,18 @@
+{
+  "id": "a08",
+  "note": "Inase's battle suit. Only pieces with the whole body under them come off (docs/clothes-burst.md section 6). Stage 1 (a super lands on her): the skirt round the hips - the two long panels, the hip armour they hang from, the chains, the back flap, the small pieces at the waist. Stage 2 (her KO): the upper armour - the left shoulder armour with its chain, the collar, the chain round the right upper arm. Stays on: the crown, the bra armour and the crotch guard, the forearm and shin guards (no skin under them), sandals, rings, the earring, the tassel at the left wrist. The first rule that matches a piece decides; pieces no rule matches stay on.",
+  "outfit": [
+    { "renderer": "pc_a08_hd_body2" }
+  ],
+  "groups": [
+    { "name": "skirt chains", "title": "裙链", "stage": 1, "anyBone": "^Skirt_Chain" },
+    { "name": "long skirt panels", "title": "长裙片", "stage": 1, "cloth": true, "bone": "^Skirt_[LR]_(0[1-9]|1\\d)$" },
+    { "name": "hip armour", "title": "胯甲", "stage": 1, "bone": "^Skirt_[LR]_00$" },
+    { "name": "back flap", "title": "后腰垂片", "stage": 1, "cloth": true, "together": true, "anyBone": "^Skirt_M" },
+    { "name": "waist pieces", "title": "腰侧细带", "stage": 1, "bone": "^Bip001 (Spine|Pelvis)$" },
+    { "name": "shoulder armour", "title": "肩甲和肩链", "stage": 2, "bone": "^(Scapular|chain_arm)" },
+    { "name": "collar", "title": "项圈", "stage": 2, "together": true, "bone": "^(Bip001 Spine2|Collar|Bip001 [LR] Clavicle)$" },
+    { "name": "arm chain", "title": "右上臂链", "stage": 2, "bone": "^Bip001 R UpperArm$" },
+    { "name": "crown", "title": "头冠", "stage": 0, "bone": "^Bip001 Head$" }
+  ]
+}

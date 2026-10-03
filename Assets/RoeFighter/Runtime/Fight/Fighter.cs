@@ -42,6 +42,7 @@ namespace RoeFighter.Fight
         List<float> specialHits = new List<float>();
         List<float> specialRatios = new List<float>();
         public int specialOutcome;           // 0 not decided yet, 1 hits, 2 blocked, 3 missed
+        public Vector3 lastHitDir;           // the way the last blow that hit her went (flat)
         readonly List<int> history = new List<int>();     // numpad directions, newest last
         float dieLength, downFor;
 
@@ -292,6 +293,9 @@ namespace RoeFighter.Fight
             hp = Mathf.Max(0, hp - damage);
             meter = Mathf.Min(100f, meter + 3f);
             slideVel = push;
+            var away = push.sqrMagnitude > 1e-6f ? push : pos - foe.pos;
+            away.y = 0f;
+            lastHitDir = away.sqrMagnitude > 1e-6f ? away.normalized : -Forward;
             rig.ShowTimeline(null, 0f);
             if (hp <= 0)
             {
@@ -327,6 +331,22 @@ namespace RoeFighter.Fight
         }
 
         // ---- specials: the game's skills
+
+        /// <summary>
+        /// How close the opponent must be for a special to connect: a skill that slides up to her (the skill
+        /// sheet has an "attack" move) as far as it may start at all; the others only as far as their blows
+        /// reach (FightGame.SpecialHit).  0 if the special is missing.
+        /// </summary>
+        public float SpecialReach(string name)
+        {
+            var s = game.specials.FirstOrDefault(x => x.name == name);
+            var action = s != null && rig.sheet != null ? rig.sheet.Find(s.action) : null;
+            if (action == null)
+                return 0f;
+            if (action.moves.Any(m => m.kind == "attack"))
+                return s.range;
+            return Mathf.Min(s.range, (foe.rig.sheet != null ? foe.rig.sheet.receiveRadius : 1f) + FightGame.SpecialReachExtra);
+        }
 
         bool StartSpecial(string name)
         {

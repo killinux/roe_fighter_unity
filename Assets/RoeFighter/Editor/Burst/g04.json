@@ -1,0 +1,15 @@
+{
+  "id": "g04",
+  "note": "Luf's battle suit. Only pieces with the whole body under them come off (docs/clothes-burst.md section 6): that is the skirt and what hangs on it. Stage 1 (a super lands on her): the outer layers - the front panel, the long ribbon on the left, the back panel with its fur hem, the ornaments and tassels. Stage 2 (her KO): the skirt itself (the long front and back panels with the band round the waist). Stays on: the top, collar, belt, gloves, panties (skin missing under them), shoes, hair ornaments. The first rule that matches a piece decides; pieces no rule matches stay on.",
+  "outfit": [
+    { "renderer": "pc_g04_hd_body", "submesh": 2 }
+  ],
+  "groups": [
+    { "name": "front panel", "title": "前片", "stage": 1, "cloth": true, "together": true, "bone": "^Skirt_front" },
+    { "name": "left ribbon", "title": "左飘带", "stage": 1, "cloth": true, "together": true, "bone": "^Skirt_Left" },
+    { "name": "back panel", "title": "后片和下摆毛边", "stage": 1, "cloth": true, "together": true, "bone": "^Skirt_Back" },
+    { "name": "skirt ornaments", "title": "裙饰和流苏", "stage": 1, "bone": "^(Skirt_Dec|Skirt_dec|dec_wrist)" },
+    { "name": "skirt", "title": "主裙", "stage": 2, "cloth": true, "together": true, "bone": "^Bip001 Pelvis$", "lowestBelow": 0.5 },
+    { "name": "hair ornaments", "title": "头饰", "stage": 0, "bone": "^(Bip001 Head|dec_hari)" }
+  ]
+}

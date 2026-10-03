@@ -61,6 +61,7 @@ namespace RoeFighter.Fight
         public Renderer[] weaponRenderers;           // shown only during skills (a08's sword)
         public AudioSource audioSource;
         public Transform unitRoot;
+        public RoeClothesBurst burst;                // the outfit's pieces that come off (爆衣), on the model; null: none
 
         [NonSerialized] public RoeSkillSheet sheet;
         PlayableGraph graph;

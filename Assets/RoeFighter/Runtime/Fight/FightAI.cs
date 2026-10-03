@@ -58,10 +58,15 @@ namespace RoeFighter.Fight
                     {
                         fwd = 0;
                         up = 0;
-                        if (me.meter >= 100f && dist < 4.5f && R() < 0.25f)
+                        // a skill that does not slide up to her (the supers, skill 2) is used only where its blows reach
+                        if (me.meter >= 100f && dist < me.SpecialReach("skill3") - 0.3f && R() < 0.25f)
                             button = "S3";
                         else if (dist < 4.5f && R() < 0.06f)
-                            button = R() < 0.5f ? "S1" : "S2";
+                        {
+                            string pick = R() < 0.5f ? "S1" : "S2";
+                            if (dist < me.SpecialReach(pick == "S1" ? "skill1" : "skill2") - 0.3f)
+                                button = pick;
+                        }
                         else if (dist < 1.25f && R() < 0.75f)
                         {
                             // in range: pick a strike that reaches

@@ -48,7 +48,8 @@ namespace RoeFighter.Fight
         /// <summary>A line under the timer: the motion pack and the cloth in use, for a few seconds after a switch or a new match.</summary>
         public string Notice => noticeTime <= 0f ? "" :
             string.Join("    ", new[] { Pack != null ? $"MOTIONS: {Pack.title}" : null, $"CLOTH: {RoeClothBackends.Find(FighterRig.ClothBackend).title}",
-                                       RoeClothBackends.Find(FighterRig.ClothBackend).skinnedSkirt ? $"SKIRT: {(RoeSkirtRig.Drape > 0f ? "hangs" : "fitted")}" : null }.Where(s => s != null));
+                                       RoeClothBackends.Find(FighterRig.ClothBackend).skinnedSkirt ? $"SKIRT: {(RoeSkirtRig.Drape > 0f ? "hangs" : "fitted")}" : null,
+                                       rigs.Any(r => r != null && r.burst != null) ? $"CLOTHES BURST: {(RoeClothesBurst.Enabled ? "on" : "off")}" : null }.Where(s => s != null));
 
         public MotionPack Pack => motionPacks.Count > 0 ? motionPacks[Mathf.Clamp(motionPack, 0, motionPacks.Count - 1)] : null;
 
@@ -100,6 +101,11 @@ namespace RoeFighter.Fight
 
         void Start()
         {
+            // the player: ROEFighter.exe -roeBurst 0 starts with the clothes burst off (F6 switches it)
+            var args = Environment.GetCommandLineArgs();
+            int at = Array.IndexOf(args, "-roeBurst");
+            if (at >= 0 && at + 1 < args.Length)
+                RoeClothesBurst.Enabled = args[at + 1] != "0";
             Setup();
         }
 
@@ -126,6 +132,16 @@ namespace RoeFighter.Fight
             }
             f[0].foe = f[1];
             f[1].foe = f[0];
+            // a new match: the outfits are whole again
+            for (int i = 0; i < 2; i++)
+            {
+                var burst = rigs[i].burst;
+                if (burst == null)
+                    continue;
+                burst.Restore(seed * 7919 + i * 104729 + 31);
+                var who = f[i];
+                burst.onPieceOff = (at, size, cloth) => PieceOff(who, at, size, cloth);
+            }
             wins[0] = wins[1] = 0;
             round = 0;
             frame = 0;
@@ -163,6 +179,10 @@ namespace RoeFighter.Fight
                     DestroyAny(x.instance);
             live.Clear();
             schedule.Clear();
+            // what came off stays off for the whole match; the pieces still lying about go
+            foreach (var rig in rigs)
+                if (rig.burst != null)
+                    rig.burst.ClearDebris();
             phase = Phase.Intro;
             phaseTime = 0f;
             message = $"ROUND {round}";
@@ -197,6 +217,16 @@ namespace RoeFighter.Fight
                 // the skirt's animation pose: hanging on the body (RoeSkirtRig.Drape 1) or the fitted pose
                 // (0, as of 52f11de); takes effect at once
                 RoeSkirtRig.Drape = RoeSkirtRig.Drape > 0f ? 0f : 1f;
+                noticeTime = 4f;
+            }
+            if (Input.GetKeyDown(KeyCode.F6))
+            {
+                // clothes burst on / off; off puts every outfit back on at once
+                RoeClothesBurst.Enabled = !RoeClothesBurst.Enabled;
+                if (!RoeClothesBurst.Enabled)
+                    for (int i = 0; i < 2; i++)
+                        if (rigs[i].burst != null)
+                            rigs[i].burst.Restore(seed * 7919 + i * 104729 + 31 + frame);
                 noticeTime = 4f;
             }
             if (phase == Phase.MatchOver && phaseTime > 2f && (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.JoystickButton7)))
@@ -388,6 +418,9 @@ namespace RoeFighter.Fight
                 slowMotion = 0.25f;
         }
 
+        /// <summary>A skill's blows reach this far beyond the opponent's own radius (the game's receiveRadius).</summary>
+        public const float SpecialReachExtra = 1.0f + 0.9f;
+
         /// <summary>
         /// A damage moment of a skill.  The first one decides: the opponent blocks it (holding back),
         /// has stepped out of reach (a miss), or is hit.  A hit or a block then holds the opponent
@@ -398,7 +431,7 @@ namespace RoeFighter.Fight
             var vic = atk.foe;
             if (atk.specialOutcome == 0)
             {
-                float reach = (vic.rig.sheet != null ? vic.rig.sheet.receiveRadius : 1f) + 1.0f + 0.9f;
+                float reach = (vic.rig.sheet != null ? vic.rig.sheet.receiveRadius : 1f) + SpecialReachExtra;
                 atk.specialOutcome = !vic.Hittable || Vector3.Distance(atk.pos, vic.pos) > reach ? 3 : vic.CanBlock ? 2 : 1;
             }
             if (atk.specialOutcome == 3 || !vic.Hittable)
@@ -416,6 +449,32 @@ namespace RoeFighter.Fight
             vic.TakeHit(damage, last ? 0.6f : hold, dir * (last ? 2.5f : 0.4f), knockdown);
             atk.meter = Mathf.Min(100f, atk.meter + (s.meterCost > 0f ? 0f : 4f));
             hitStop = last ? 0.12f : 0.04f;
+            // the super's finishing blow takes the next stage of her outfit off
+            if (knockdown)
+                BurstClothes(vic, dir);
+        }
+
+        // ---- clothes burst (爆衣): a super that lands and a KO each take the next stage of the victim's outfit off
+
+        /// <summary>Take the next stage of a fighter's outfit off; false if burst is off or nothing is left.</summary>
+        public bool BurstClothes(Fighter who, Vector3 dir)
+        {
+            var burst = who.rig.burst;
+            return burst != null && burst.Drop(dir, who.pos.y);
+        }
+
+        int burstSoundFrame = -1;
+
+        /// <summary>A piece came off: armour gives a spark; one sound per fighter and step.</summary>
+        void PieceOff(Fighter who, Vector3 at, float size, bool cloth)
+        {
+            if (!cloth)
+                Spark(at, Mathf.Clamp(size * 2.5f, 0.5f, 1.2f));
+            if (burstSoundFrame != frame * 2 + who.index)
+            {
+                burstSoundFrame = frame * 2 + who.index;
+                PlaySound(who, "hit", 0.8f);
+            }
         }
 
         void At(float time, Action run)
@@ -484,6 +543,9 @@ namespace RoeFighter.Fight
 
         void StepEffects(float dt)
         {
+            foreach (var rig in rigs)
+                if (rig.burst != null)
+                    rig.burst.Step(dt, centre, arenaRadius);
             for (int i = 0; i < live.Count; i++)
             {
                 var e = live[i];
@@ -544,6 +606,11 @@ namespace RoeFighter.Fight
                         message = ko0 || ko1 ? "K.O." : "TIME UP";
                         if (ko0 || ko1)
                             slowMotion = 0.8f;
+                        // a KO takes the next stage of the loser's outfit off
+                        if (ko0)
+                            BurstClothes(f[0], f[0].lastHitDir);
+                        if (ko1)
+                            BurstClothes(f[1], f[1].lastHitDir);
                         if (winner >= 0)
                             wins[winner]++;
                         phase = Phase.RoundOver;

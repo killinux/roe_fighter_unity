@@ -266,6 +266,8 @@ namespace RoeFighter.EditorTools
             model.transform.localScale = ghost.localScale;
             rig.animator = model.GetComponent<Animator>();
             rig.animator.runtimeAnimatorController = null;
+            // the outfit's pieces that can come off (爆衣): each its own renderer (Editor/Burst/<id>.json)
+            rig.burst = RoeBurstBuilder.Apply(model, c.id);
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 smr.forceMatrixRecalculationPerRender = false;
 
@@ -314,7 +316,8 @@ namespace RoeFighter.EditorTools
 
             Debug.Log($"[ROE] fighter {c.id}: unit {sheet.unit} ({stripped} game scripts stripped, {hidden} ghost renderers hidden, " +
                       $"{rig.directors.Count} timelines: {string.Join(" ", rig.directors.Select(d => d.action))}), " +
-                      $"{rig.clips.Count} clips, {rig.weaponRenderers.Length} weapon renderers, {rig.sounds.Count} sounds " +
+                      $"{rig.clips.Count} clips, {rig.weaponRenderers.Length} weapon renderers, {rig.sounds.Count} sounds, " +
+                      $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")} " +
                       $"(hit sound {(hit.p != null ? Path.GetFileName(hit.p) : "none")}; sfx: {string.Join(" ", c.sfx.Take(12).Select(Path.GetFileNameWithoutExtension))})");
             return rig;
         }
@@ -374,6 +377,7 @@ namespace RoeFighter.EditorTools
             int width = int.Parse(size[0]), height = int.Parse(size[1]);
             int seed = int.Parse(RoeCapture.Arg("-roeSeed", "1"));
             int every = int.Parse(RoeCapture.Arg("-roeEvery", "2"));      // 60 steps per second, every 2nd filmed = 30 fps
+            RoeClothesBurst.Enabled = RoeCapture.Arg("-roeBurst", "1") != "0";
 
             ShaderUtil.allowAsyncCompilation = false;
             string path = ScenePath(stage);
