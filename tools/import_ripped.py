@@ -80,6 +80,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default=os.path.join(PROJECT, '_work', 'ripped', 'ExportedProject', 'Assets'))
     ap.add_argument('--dst', default=os.path.join(PROJECT, 'Assets', 'ROE'))
+    ap.add_argument('--keep-manifest', action='store_true',
+                    help='leave roe_manifest*.json as they are (an extra rip, e.g. the nude bases, next to the fighters)')
     a = ap.parse_args()
     src_ab = os.path.join(a.src, 'AssetBundles')
 
@@ -170,6 +172,11 @@ def main():
             entry['voice'][lang] += ['%s/%s' % (unity_dir, n) for n in sorted(names) if n.endswith(('.ogg', '.wav'))]
 
     manifest = {k: v for k, v in manifest.items() if any(v.get(x) for x in ('hd_prefab', 'clips', 'sfx', 'voice'))}
+    if a.keep_manifest:
+        print(f'copied {copied}, unchanged {skipped}, materials re-pointed {remapped}; manifest left as it was')
+        for g, mats in unmapped.items():
+            print(f'  shader {g} has no project shader: {", ".join(sorted(mats))}')
+        return
     os.makedirs(a.dst, exist_ok=True)
     json.dump(manifest, open(os.path.join(a.dst, 'roe_manifest.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     # the same data as lists: Unity's JsonUtility cannot read dictionaries

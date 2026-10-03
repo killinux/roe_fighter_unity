@@ -286,6 +286,12 @@ namespace RoeFighter.EditorTools
             // (user 10-02: "小招的时候就不显示扇子了，大招再用扇子")
             rig.weaponRenderers = model.GetComponentsInChildren<Renderer>(true)
                 .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_"))).ToArray();
+            // her own strikes instead of the motion pack's (user 10-03: g04 strikes like Mai Shiranui, from DOA6;
+            // -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her weapon (user 10-03: a smaller fan; -roeWeaponScale g04=0.7)
+            if (Table("-roeOwnStrikes", "g04=doa6_mai").TryGetValue(c.id, out var own))
+                rig.strikePack = OwnStrikes(own);
+            if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
+                rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
 
             // sounds the skills use, by clip name; the game's voice lines in Japanese
             var names = new HashSet<string>();
@@ -317,9 +323,29 @@ namespace RoeFighter.EditorTools
             Debug.Log($"[ROE] fighter {c.id}: unit {sheet.unit} ({stripped} game scripts stripped, {hidden} ghost renderers hidden, " +
                       $"{rig.directors.Count} timelines: {string.Join(" ", rig.directors.Select(d => d.action))}), " +
                       $"{rig.clips.Count} clips, {rig.weaponRenderers.Length} weapon renderers, {rig.sounds.Count} sounds, " +
-                      $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")} " +
+                      $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")}, " +
+                      $"own strikes {(rig.strikePack != null ? $"{rig.strikePack.name} ({string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}"))})" : "none")}, " +
+                      $"weapon size {rig.weaponScale:F2} " +
                       $"(hit sound {(hit.p != null ? Path.GetFileName(hit.p) : "none")}; sfx: {string.Join(" ", c.sfx.Take(12).Select(Path.GetFileNameWithoutExtension))})");
             return rig;
+        }
+
+        /// <summary>"g04=doa6_mai,a08=x" (the argument, else the fallback) as a table.</summary>
+        static Dictionary<string, string> Table(string arg, string fallback) =>
+            RoeCapture.Arg(arg, fallback).Split(',').Select(p => p.Split('='))
+                .Where(p => p.Length == 2 && p[0].Trim().Length > 0 && p[1].Trim().Length > 0)
+                .ToDictionary(p => p[0].Trim(), p => p[1].Trim());
+
+        /// <summary>A strike pack by name, imported from tools/motionpacks/&lt;name&gt;.json if it was not built yet.</summary>
+        static MotionPack OwnStrikes(string name)
+        {
+            var pack = RoeMotionPacks.Load(name);
+            string spec = Path.Combine(ProjectDir, "tools", "motionpacks", name + ".json");
+            if (pack == null && File.Exists(spec))
+                pack = RoeMotionPacks.ImportSpec(JsonUtility.FromJson<RoeMotionPacks.Spec>(File.ReadAllText(spec)));
+            if (pack == null)
+                Debug.LogWarning($"[ROE] own strikes '{name}': no pack and no tools/motionpacks/{name}.json");
+            return pack;
         }
 
         static string FindAudio(RoeManifest.Character c, string clipName)

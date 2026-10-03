@@ -79,7 +79,7 @@ namespace RoeFighter.EditorTools
                 Vector3 eye = Vector3.zero;
                 float sideSign = 0f;
                 captions.Append($"0\t{Title(victim)}：开场（衣服完整）\n");
-                for (int s = 0; s < 60 * 40; s++)
+                for (int s = 0; s < 60 * 90; s++)
                 {
                     var inputs = new FighterInput[2];
                     partTime += FightGame.Dt;
@@ -126,8 +126,25 @@ namespace RoeFighter.EditorTools
                         case "ko":
                             if (game.phase != FightGame.Phase.Fight || partTime > 15f)
                             {
+                                // the next round the same again (its KO ends the match: all that is left comes off)
+                                part = game.phase == FightGame.Phase.RoundOver ? "between" : "end";
+                                partTime = 0f;
+                                game.cpu[attacker.index] = false;
+                            }
+                            break;
+                        case "between":
+                            if (game.phase == FightGame.Phase.MatchOver || partTime > 12f)
+                            {
                                 part = "end";
                                 partTime = 0f;
+                            }
+                            else if (game.phase == FightGame.Phase.Fight)
+                            {
+                                part = "super";
+                                partTime = 0f;
+                                superPressed = false;
+                                attacker.meter = 100f;
+                                captions.Append($"{shot}\t第 {game.round} 局\n");
                             }
                             break;
                     }
@@ -136,7 +153,8 @@ namespace RoeFighter.EditorTools
                     if (burst != null && burst.Dropped != dropped)
                     {
                         dropped = burst.Dropped;
-                        captions.Append($"{shot}\t第 {dropped} 段掉了（{(dropped == 1 ? "超必杀命中" : "KO")}）：" +
+                        string why = part == "super" ? "超必杀命中" : game.wins.Max() >= game.roundsToWin ? "决胜的 KO，剩下的全掉" : "KO";
+                        captions.Append($"{shot}\t第 {dropped} 段掉了（{why}）：" +
                                         string.Join("、", burst.pieces.Where(p => p.stage == dropped).Select(p => p.title).Distinct()) + "\n");
                     }
                     if (part == "end" && after < 0)

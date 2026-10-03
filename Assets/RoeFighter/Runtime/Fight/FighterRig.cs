@@ -106,10 +106,29 @@ namespace RoeFighter.Fight
             int at = 0;
             foreach (var c in pack.clips.Where(c => c.clip != null))
                 clips.Insert(at++, new NamedClip { name = c.role, clip = c.clip, loop = c.loop });
+            // this fighter's own strikes (strikePack) besides the pack's: their clips under their own names
+            if (strikePack != null)
+                foreach (var c in strikePack.clips.Where(c => c.clip != null && strikePack.strikes.Any(m => m.clip == c.role)))
+                {
+                    if (clips.Any(x => x.name == c.role))
+                    {
+                        Debug.LogWarning($"[ROE] {id}: own strike clip '{c.role}' has the name of a clip of motion pack {pack.name} - left out");
+                        continue;
+                    }
+                    clips.Insert(at++, new NamedClip { name = c.role, clip = c.clip, loop = false });
+                }
             motions = pack;
         }
 
         [NonSerialized] public MotionPack motions;
+
+        /// <summary>This fighter's own strikes instead of the motion pack's (g04: Mai Shiranui's, from DOA6); null: the pack's.</summary>
+        public MotionPack strikePack;
+
+        /// <summary>Size of the weapons (g04's fan): 1 = the game's.  Scales the bone that carries each weapon's own bones.</summary>
+        [Range(0.2f, 2f)] public float weaponScale = 1f;
+        [NonSerialized] Transform[] weaponRoots;
+        [NonSerialized] Vector3[] weaponRootScale;
         public string Current => current >= 0 ? clips[current].name : "";
         public float CurrentTime => current >= 0 ? (float)playables[current].GetTime() : 0f;
         public float CurrentRate => current >= 0 ? rate[current] : 0f;
@@ -120,6 +139,8 @@ namespace RoeFighter.Fight
                 graph.Destroy();
             if (skillSheetJson != null)
                 sheet = RoeSkillSheet.FromJson(skillSheetJson.text);
+            if (weaponRoots == null)
+                FindWeaponRoots();
             // The Animator takes its default values from the bones as they are now: put the model in
             // its battle stance first, so bones no clip animates rest there (closed fan, not the bind pose).
             if (stance != null)
@@ -436,7 +457,14 @@ namespace RoeFighter.Fight
             }
             ApplyWeights();
             cloth?.Rest();                    // cloth bones no clip animates start from their rest pose again
+            // the weapons at their own size: back to the bone's scale before the clips write the frame (a scale
+            // no clip animates must not compound), scaled after
+            for (int k = 0; k < weaponRoots.Length; k++)
+                weaponRoots[k].localScale = weaponRootScale[k];
             graph.Evaluate(0f);
+            if (weaponScale != 1f)
+                foreach (var w in weaponRoots)
+                    w.localScale *= weaponScale;
             StepLinger(dt);
             float mocap = 1f - gameWeight;
             // motion capture on the floor: retargeted onto these long-legged, high-heeled bodies it
@@ -853,6 +881,52 @@ namespace RoeFighter.Fight
                 return;
             director.time = Mathf.Clamp(time, 0f, (float)director.duration);
             director.Evaluate();
+        }
+
+        /// <summary>
+        /// The bone that carries each weapon's own bones - the lowest one above all the bones of the weapon's
+        /// mesh that no body mesh uses (g04's fan: All_Fan_ctrl, the fan's pivot).  Never the skeleton itself:
+        /// a weapon skinned straight to the hand is left at its size.  Found once (Init runs again on F3 / F4
+        /// and must not take a scaled bone for the original).
+        /// </summary>
+        void FindWeaponRoots()
+        {
+            weaponRoots = WeaponRoots(animator, weaponRenderers);
+            weaponRootScale = weaponRoots.Select(t => t.localScale).ToArray();
+        }
+
+        /// <summary>The bones that carry the given weapons (see FindWeaponRoots), for tools too.</summary>
+        public static Transform[] WeaponRoots(Animator animator, Renderer[] weaponRenderers)
+        {
+            var weapons = new HashSet<Renderer>(weaponRenderers ?? new Renderer[0]);
+            var body = new HashSet<Transform>();
+            foreach (var r in animator.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                if (!weapons.Contains(r))
+                    foreach (var b in r.bones)
+                        if (b != null)
+                            body.Add(b);
+            var hipsBone = animator.GetBoneTransform(HumanBodyBones.Hips);
+            var roots = new List<Transform>();
+            foreach (var r in weapons)
+            {
+                if (r == null)
+                    continue;
+                Transform top = r.transform;
+                if (r is SkinnedMeshRenderer s)
+                {
+                    var own = s.bones.Where(b => b != null && !body.Contains(b)).ToList();
+                    top = null;
+                    if (own.Count > 0)
+                        for (var t = own[0]; t != null && top == null; t = t.parent)
+                            if (own.All(b => b.IsChildOf(t)))
+                                top = t;
+                }
+                if (top == null || body.Contains(top) || top == animator.transform || (hipsBone != null && hipsBone.IsChildOf(top)))
+                    continue;
+                if (!roots.Contains(top))
+                    roots.Add(top);
+            }
+            return roots.ToArray();
         }
 
         public void ShowWeapons(bool show)

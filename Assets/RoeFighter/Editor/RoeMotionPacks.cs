@@ -19,8 +19,12 @@ namespace RoeFighter.EditorTools
     ///     "folder": "Assets/ThirdParty/SomePack",          // searched for AnimationClips (FBX sub-assets, .anim)
     ///     "humanoid": true,                                 // set the FBX files there to Humanoid first
     ///     "roles": { "guard": "Fight_Idle", "walk": "Walk_Fwd", "walk_back": "Walk_Bwd", "run": "Run" },
-    ///     "strikes": [ { "button": "A", "name": "jab", "clip": "Punch_Jab", "speed": 1.0, "damage": 40 }, ... ]
+    ///     "strikes": [ { "button": "A", "name": "jab", "clip": "Punch_Jab", "speed": 1.0, "damage": 40, "inPlace": false }, ... ]
     ///   }
+    ///   Also: "bvh" (motion capture to convert first, RoeMocap.Source), "strikesOnly" (a character's own strikes - no
+    ///   stance or walks, not in the F3 list; FighterRig.strikePack), "measureOn" (the fighter the strikes are measured
+    ///   on, default a08), and per strike "inPlace" (its step forward is taken out of the clip and the fight moves the
+    ///   fighter along: Move.travel).  Example: tools/motionpacks/doa6_mai.json (g04's strikes from DOA6's Mai).
     ///   Clips are found by name (case does not matter; "file.fbx:clip" picks one file).  Locomotion
     ///   clips are copied as loops with their travel taken out (the fight moves the body); every strike
     ///   is measured on a fighter model: which hand or foot hits, how far it reaches, when (the frames
@@ -33,16 +37,19 @@ namespace RoeFighter.EditorTools
         public const string Dir = "Assets/RoeFighter/Generated/motionpacks";
         public static string PackPath(string name) => $"{Dir}/{name}.asset";
 
-        /// <summary>All packs, the Bandai one first.</summary>
+        /// <summary>All packs the fight can switch between (F3), the Bandai one first; strike-only packs are left out.</summary>
         public static List<MotionPack> All()
         {
             if (!Directory.Exists(Dir))
                 return new List<MotionPack>();
             return AssetDatabase.FindAssets("t:MotionPack", new[] { Dir })
                 .Select(g => AssetDatabase.LoadAssetAtPath<MotionPack>(AssetDatabase.GUIDToAssetPath(g)))
-                .Where(p => p != null)
+                .Where(p => p != null && !p.strikesOnly)
                 .OrderBy(p => p.name == "bandai1" ? 0 : 1).ThenBy(p => p.name).ToList();
         }
+
+        /// <summary>A pack by name (null if it was not built).</summary>
+        public static MotionPack Load(string name) => AssetDatabase.LoadAssetAtPath<MotionPack>(PackPath(name));
 
         // ---- the Bandai Namco motion capture (RoeMocap)
 
@@ -134,6 +141,8 @@ namespace RoeFighter.EditorTools
         {
             public string name, title, source, license, folder;
             public bool humanoid = true;
+            public bool strikesOnly;            // a character's own strikes only (no stance or walks; not in the F3 list)
+            public string measureOn;            // the fighter the strikes are measured on (reach, when they hit); default a08
             public float walkSpeed, backSpeed;  // m/s; 0: the fight's own (MotionPack)
             public RoeMocap.Source bvh;         // motion capture to convert first (its segments become the clips)
             public RoleMap roles = new RoleMap();
@@ -151,6 +160,8 @@ namespace RoeFighter.EditorTools
         {
             public string button, name, clip, level;
             public float speed = 1f, hitstun, blockstun, push, radius, meter;
+            public bool inPlace;                // the clip's travel is taken out and the fight moves the fighter along instead
+                                                // (strikes that step in: DOA's lunge 0.6-0.7 m, which would jump back at the end)
             public int damage;
             public bool knockdown;
         }
@@ -214,6 +225,7 @@ namespace RoeFighter.EditorTools
             pack.license = spec.license;
             pack.walkSpeed = spec.walkSpeed;
             pack.backSpeed = spec.backSpeed;
+            pack.strikesOnly = spec.strikesOnly;
             foreach (var (role, key) in new[] { ("guard", spec.roles.guard), ("walk", spec.roles.walk), ("walk_back", spec.roles.walk_back), ("run", spec.roles.run) })
             {
                 var src = Find(key);
@@ -221,16 +233,17 @@ namespace RoeFighter.EditorTools
                     continue;
                 Add(pack, role, Copy(src, $"{outDir}/{role}.anim", loop: true, inPlace: role != "guard"), true);
             }
-            var model = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath("a08"));
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(string.IsNullOrEmpty(spec.measureOn) ? "a08" : spec.measureOn));
             foreach (var s in spec.strikes)
             {
                 var src = Find(s.clip);
                 if (src == null)
                     continue;
                 string name = string.IsNullOrEmpty(s.name) ? s.clip : s.name;
-                var clip = Copy(src, $"{outDir}/{name}.anim", loop: false, inPlace: false);
+                // measured as it is (reach and timing with its own step), then copied - in place if asked
+                var info = Measure(src, model, name);
+                var clip = Copy(src, $"{outDir}/{name}.anim", loop: false, inPlace: s.inPlace);
                 Add(pack, name, clip, false);
-                var info = Measure(clip, model, name);
                 var d = ButtonDefaults.TryGetValue(s.button, out var v) ? v : ButtonDefaults["B"];
                 var level = string.IsNullOrEmpty(s.level) ? (info.height > 1.2f ? Level.High : info.height < 0.5f ? Level.Low : Level.Mid)
                                                            : (Level)Enum.Parse(typeof(Level), s.level, true);
@@ -238,9 +251,70 @@ namespace RoeFighter.EditorTools
                                       s.hitstun > 0f ? s.hitstun : d.Item2, s.blockstun > 0f ? s.blockstun : d.Item3,
                                       s.push > 0f ? s.push : d.Item4, level, s.radius > 0f ? s.radius : d.Item5, s.meter > 0f ? s.meter : d.Item6);
                 move.knockdown = s.knockdown;
+                if (s.inPlace)
+                {
+                    move.travel = info.travel;
+                    move.travelSide = info.travelSide;
+                }
                 pack.strikes.Add(move);
             }
             return Save(pack, spec.name);
+        }
+
+        /// <summary>
+        /// A contact sheet of a pack's strikes: a fighter plays each one, 8 frames across it, in the studio, with
+        /// what was measured (which hand or foot, reach, when it can hit).  Frames to &lt;out&gt;/&lt;pack&gt;/, the table to
+        /// strikes.tsv (tools/strike_sheet.py puts them on one picture).
+        ///   -executeMethod RoeFighter.EditorTools.RoeMotionPacks.Sheet -roePack doa6_mai [-roeChars g04] [-roeOut dir] [-roeShots 8]
+        /// </summary>
+        [MenuItem("ROE Fighter/Motions/Strike contact sheet")]
+        public static void Sheet()
+        {
+            string name = RoeCapture.Arg("-roePack", "bandai1");
+            var pack = Load(name);
+            if (pack == null)
+                throw new Exception($"no motion pack {name} at {PackPath(name)}");
+            string id = RoeCapture.Arg("-roeChars", "g04").Split(',')[0];
+            string outDir = Path.Combine(RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "out", "motion_sheets")), name);
+            int shots = int.Parse(RoeCapture.Arg("-roeShots", "8"));
+            Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            var studio = RoeStudio.Build();
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+            var table = new System.Text.StringBuilder("clip\tbutton\tbone\treach\theight\thitStart\thitEnd\tlength\n");
+            foreach (var m in pack.strikes)
+            {
+                var clip = pack.Get(m.clip);
+                if (clip == null)
+                    continue;
+                var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                var animator = go.GetComponent<Animator>();
+                var bones = go.GetComponentsInChildren<SkinnedMeshRenderer>(true).SelectMany(r => r.bones).Where(b => b != null).Distinct().ToArray();
+                RoeCapture.Pose(go, clip, 0f);
+                studio.LightFrom(Vector3.forward);
+                studio.SetFocus(0f, 0f, 0f);
+                var hits = animator.GetBoneTransform(m.bone);
+                for (int i = 0; i < shots; i++)
+                {
+                    float time = clip.length * i / Mathf.Max(1, shots - 1);
+                    RoeCapture.Pose(go, clip, time);
+                    var hips = animator.GetBoneTransform(HumanBodyBones.Hips).position;
+                    // from her front-right, far enough for a kick at full stretch
+                    studio.Aim(new Vector3(hips.x, 0.95f, hips.z + 0.35f), Vector3.forward, 55f, 6f, 4.6f, 30f);
+                    if (i == 0)
+                    {
+                        RoeCapture.Render(studio.camera, 240, 240, Path.Combine(outDir, "_warm.jpg"), 80);
+                        RoeCapture.Render(studio.camera, 240, 240, Path.Combine(outDir, "_warm.jpg"), 80);
+                    }
+                    RoeCapture.Render(studio.camera, 420, 520, Path.Combine(outDir, $"{m.clip}_{i}.jpg"), 90);
+                }
+                RoeCapture.EndPosing();
+                UnityEngine.Object.DestroyImmediate(go);
+                table.Append($"{m.clip}\t{m.button}\t{m.bone}\t{m.reach:F2}\t{m.level}\t{m.hitStart:F2}\t{m.hitEnd:F2}\t{m.length:F2}\n");
+            }
+            File.WriteAllText(Path.Combine(outDir, "strikes.tsv"), table.ToString());
+            Debug.Log($"[ROE] strike sheet of {name} on {id}: {pack.strikes.Count} strikes to {outDir}");
         }
 
         /// <summary>The FBX files of a folder imported as Humanoid (an avatar made from each model).</summary>
@@ -320,12 +394,14 @@ namespace RoeFighter.EditorTools
             int frames = Mathf.Max(2, Mathf.CeilToInt(clip.length * 60f) + 1);
             var reach = new float[bones.Length, frames];
             var height = new float[bones.Length, frames];
-            Vector3 hips0 = Vector3.zero;
+            Vector3 hips0 = Vector3.zero, hipsEnd = Vector3.zero;
             for (int f = 0; f < frames; f++)
             {
                 RoeCapture.Pose(go, clip, Mathf.Min(clip.length, f / 60f));
                 if (f == 0)
                     hips0 = animator.GetBoneTransform(HumanBodyBones.Hips).position;
+                if (f == frames - 1)
+                    hipsEnd = animator.GetBoneTransform(HumanBodyBones.Hips).position;
                 for (int k = 0; k < bones.Length; k++)
                 {
                     var p = animator.GetBoneTransform(bones[k]).position;
@@ -353,6 +429,7 @@ namespace RoeFighter.EditorTools
             {
                 name = name, bone = bones[best].ToString(), length = clip.length, reach = max, height = height[best, peak],
                 hitStart = a / 60f, hitPeak = peak / 60f, hitEnd = b / 60f,
+                travel = hipsEnd.z - hips0.z, travelSide = hipsEnd.x - hips0.x,
             };
         }
     }

@@ -29,6 +29,8 @@ namespace RoeFighter.Fight
         public float meterGain = 6f;       // special gauge for the attacker on hit (half on block)
         public float reach;                // metres from the hips at the farthest, for the CPU
         public string hitSound;            // sound name in the rig
+        public float travel, travelSide;   // metres the strike carries her forward / to her right over the clip (taken out of
+                                           // the clip; the fight moves her along, so she does not jump back when it ends)
     }
 
     /// <summary>A skill of the game used as a special move.</summary>

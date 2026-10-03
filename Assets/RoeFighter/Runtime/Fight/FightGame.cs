@@ -129,6 +129,12 @@ namespace RoeFighter.Fight
                 rigs[i].Init();
                 f[i] = new Fighter { rig = rigs[i], game = this, index = i };
                 ai[i] = new FightAI(seed * 7919 + i * 104729);
+                // her own strikes (g04: Mai Shiranui's) or the pack's
+                var own = rigs[i].strikePack;
+                f[i].moves = own != null && own.strikes.Count > 0 ? own.CopyStrikes() : moves;
+                foreach (var m in f[i].moves)
+                    if (string.IsNullOrEmpty(m.hitSound))
+                        m.hitSound = "hit";
             }
             f[0].foe = f[1];
             f[1].foe = f[0];
@@ -456,11 +462,23 @@ namespace RoeFighter.Fight
 
         // ---- clothes burst (爆衣): a super that lands and a KO each take the next stage of the victim's outfit off
 
-        /// <summary>Take the next stage of a fighter's outfit off; false if burst is off or nothing is left.</summary>
-        public bool BurstClothes(Fighter who, Vector3 dir)
+        /// <summary>The KO that ends the match takes everything left off the loser (user 10-03: "让爆衣都爆掉").</summary>
+        public bool burstAllOnFinalKO = true;
+
+        /// <summary>Take the next stage of a fighter's outfit off (all stages left: one after the other); false if burst is off or nothing is left.</summary>
+        public bool BurstClothes(Fighter who, Vector3 dir, bool all = false)
         {
             var burst = who.rig.burst;
-            return burst != null && burst.Drop(dir, who.pos.y);
+            if (burst == null)
+                return false;
+            bool any = false;
+            while (burst.Drop(dir, who.pos.y))
+            {
+                any = true;
+                if (!all)
+                    break;
+            }
+            return any;
         }
 
         int burstSoundFrame = -1;
@@ -606,11 +624,12 @@ namespace RoeFighter.Fight
                         message = ko0 || ko1 ? "K.O." : "TIME UP";
                         if (ko0 || ko1)
                             slowMotion = 0.8f;
-                        // a KO takes the next stage of the loser's outfit off
+                        // a KO takes the next stage of the loser's outfit off; the KO that ends the match all that is left
+                        bool final = winner >= 0 && wins[winner] + 1 >= roundsToWin && burstAllOnFinalKO;
                         if (ko0)
-                            BurstClothes(f[0], f[0].lastHitDir);
+                            BurstClothes(f[0], f[0].lastHitDir, final && winner == 1);
                         if (ko1)
-                            BurstClothes(f[1], f[1].lastHitDir);
+                            BurstClothes(f[1], f[1].lastHitDir, final && winner == 0);
                         if (winner >= 0)
                             wins[winner]++;
                         phase = Phase.RoundOver;

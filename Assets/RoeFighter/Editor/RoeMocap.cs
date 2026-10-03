@@ -624,6 +624,7 @@ namespace RoeFighter.EditorTools
             public string name, bone;           // humanoid bone that hits
             public float length, reach, height; // reach: farthest the bone gets towards the opponent, from where the hips started
             public float hitStart, hitPeak, hitEnd;
+            public float travel, travelSide;    // how far the hips get forward / to the right from the first frame to the last
         }
 
         [Serializable]

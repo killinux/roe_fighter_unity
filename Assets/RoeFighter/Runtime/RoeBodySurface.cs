@@ -100,8 +100,9 @@ namespace RoeFighter
                 if (v.Length == 0 || w.Length != v.Length || nrm.Length != v.Length)
                     continue;
                 var skin = new bool[v.Length];
+                // skin: the suit's *_skin materials, or anything on the skin shader (the nude body, RoeNudeBody)
                 for (int s = 0; s < baked.subMeshCount && s < mats.Length; s++)
-                    if (mats[s] != null && mats[s].name.ToLowerInvariant().Contains("_skin"))
+                    if (mats[s] != null && (mats[s].name.ToLowerInvariant().Contains("_skin") || (mats[s].shader != null && mats[s].shader.name == "ROE/Skin")))
                         foreach (int i in baked.GetIndices(s))
                             skin[i] = true;
                 var toWorld = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);

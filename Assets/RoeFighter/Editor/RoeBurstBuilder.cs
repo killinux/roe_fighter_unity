@@ -46,6 +46,17 @@ namespace RoeFighter.EditorTools
             public string id, note;
             public Outfit[] outfit;
             public Group[] groups;
+            public Nude nude;                       // the family's nude body in place of the suit's skin (RoeNudeBody)
+        }
+
+        [Serializable]
+        public class Nude
+        {
+            public string prefab, renderer;         // the nude base and its body renderer
+            public int submesh;                     // the body (the base's other submeshes are the head, eyes, lashes)
+            public string material;
+            public string attachTo;                 // the suit renderer it goes next to (its space, bones and settings)
+            public Outfit[] replace;                // the suit's skin it replaces (renderer + submesh)
         }
 
         [Serializable]
@@ -273,6 +284,22 @@ namespace RoeFighter.EditorTools
                 burst = model.AddComponent<RoeClothesBurst>();
             burst.pieces.Clear();
             var log = new StringBuilder($"[ROE] burst {id}: floor {a.floor:F3}, pelvis {a.pelvis}, right {a.right}; {a.parts.Count} pieces in the outfit");
+            // the family's nude body under the outfit, in place of the suit's skin (before anything is split)
+            var nude = RoeNudeBody.Build(model, id, rules, a, dir, log);
+            var replaced = new Dictionary<SkinnedMeshRenderer, HashSet<int>>();      // renderer -> submeshes gone whole
+            if (nude != null)
+                foreach (var s in rules.nude.replace ?? new Outfit[0])
+                {
+                    var r = model.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault(x => x.name == s.renderer);
+                    if (r == null)
+                        continue;
+                    if (!replaced.TryGetValue(r, out var set))
+                        replaced[r] = set = new HashSet<int>();
+                    if (s.submesh >= 0)
+                        set.Add(s.submesh);
+                    else
+                        set.UnionWith(Enumerable.Range(0, r.sharedMesh.subMeshCount));
+                }
 
             // the pieces of one group on one side of one renderer come off together
             var units = a.parts.Where(p => p.group != null && p.group.stage > 0)
@@ -296,7 +323,8 @@ namespace RoeFighter.EditorTools
                                 list.AddRange(new[] { t[n * 3], t[n * 3 + 1], t[n * 3 + 2] });
                     return list;
                 }).ToArray();
-                var mesh = SaveMesh(Subset(src, lists, $"{r.name} {name}"), $"{dir}/{Safe(r.name)}__{Safe(name)}.asset");
+                string piecePath = $"{dir}/{Safe(r.name)}__{Safe(name)}.asset";
+                var mesh = Commit(Subset(src, lists, MeshAsset(piecePath)), piecePath);
                 var mats = r.sharedMaterials;
                 var smr = AddRenderer(r, "burst " + name, mesh, subs.Select(s => mats[Mathf.Min(s, mats.Length - 1)]).ToArray());
                 int count = lists.Sum(l => l.Count) / 3;
@@ -311,7 +339,10 @@ namespace RoeFighter.EditorTools
                 log.Append($"\n[ROE]   stage {u.Key.group.stage} {(u.Key.group.cloth ? "cloth " : "armour")} {name,-22} {u.Count(),4} pieces {count,6} triangles  " +
                            $"bones {string.Join(" ", u.Select(p => p.bone).Distinct().Take(6))}");
             }
-            // what stays on each renderer
+            // what stays on each renderer (the suit's skin the nude body replaces goes as well)
+            foreach (var r in replaced.Keys)
+                if (!taken.ContainsKey(r))
+                    taken[r] = new List<Part>();
             foreach (var kv in taken)
             {
                 var r = kv.Key;
@@ -329,13 +360,16 @@ namespace RoeFighter.EditorTools
                     var t = src.GetTriangles(s);
                     var list = new List<int>(t.Length);
                     gone.TryGetValue(s, out var set);
+                    if (replaced.TryGetValue(r, out var whole) && whole.Contains(s))
+                        return list;
                     for (int n = 0; n * 3 + 2 < t.Length; n++)
                         if (set == null || !set.Contains(n))
                             list.AddRange(new[] { t[n * 3], t[n * 3 + 1], t[n * 3 + 2] });
                     return list;
                 }).ToArray();
                 int before = src.triangles.Length / 3, after = lists.Sum(l => l.Count) / 3;
-                r.sharedMesh = SaveMesh(Subset(src, lists, $"{r.name} stays"), $"{dir}/{Safe(r.name)}__stays.asset");
+                string staysPath = $"{dir}/{Safe(r.name)}__stays.asset";
+                r.sharedMesh = Commit(Subset(src, lists, MeshAsset(staysPath)), staysPath);
                 log.Append($"\n[ROE]   {r.name}: {before} -> {after} triangles stay on it ({src.name} -> {r.sharedMesh.name})");
             }
             // what stays on, and pieces no rule took
@@ -352,13 +386,13 @@ namespace RoeFighter.EditorTools
             return burst;
         }
 
-        static string Safe(string s) => Regex.Replace(s, @"[^A-Za-z0-9_\-]+", "_");
+        internal static string Safe(string s) => Regex.Replace(s, @"[^A-Za-z0-9_\-]+", "_");
 
         /// <summary>
         /// Some triangles of a mesh as a mesh of their own: only the vertices they use, every vertex
         /// stream, every bone influence, the same bind poses; one submesh per list.
         /// </summary>
-        static Mesh Subset(Mesh src, List<int>[] indices, string name)
+        static Mesh Subset(Mesh src, List<int>[] indices, Mesh m)
         {
             var map = new Dictionary<int, int>();
             var order = new List<int>();
@@ -376,7 +410,7 @@ namespace RoeFighter.EditorTools
                     r[k] = all[order[k]];
                 return r;
             }
-            var m = new Mesh { name = name, indexFormat = order.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16 };
+            m.indexFormat = order.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16;
             m.vertices = Pick(src.vertices);
             if (src.HasVertexAttribute(VertexAttribute.Normal))
                 m.normals = Pick(src.normals);
@@ -441,20 +475,28 @@ namespace RoeFighter.EditorTools
             return m;
         }
 
-        /// <summary>Saved as an asset; an existing one is rewritten in place (scenes that use it keep the link).</summary>
-        static Mesh SaveMesh(Mesh mesh, string path)
+        /// <summary>
+        /// The mesh asset at a path, emptied to be filled anew - or a new mesh, saved by Commit.  An existing asset is
+        /// rewritten in place (scenes that use it keep the link) through the mesh API: copying another mesh over it
+        /// (CopySerialized) left its drawable copy stale, and renderers drew nothing until the editor restarted.
+        /// </summary>
+        internal static Mesh MeshAsset(string path)
         {
-            var existing = AssetDatabase.LoadAssetAtPath<Mesh>(path);
-            if (existing == null)
-            {
+            var mesh = AssetDatabase.LoadAssetAtPath<Mesh>(path);
+            if (mesh == null)
+                return new Mesh { name = Path.GetFileNameWithoutExtension(path) };
+            mesh.Clear(false);
+            mesh.name = Path.GetFileNameWithoutExtension(path);
+            return mesh;
+        }
+
+        internal static Mesh Commit(Mesh mesh, string path)
+        {
+            if (AssetDatabase.Contains(mesh))
+                EditorUtility.SetDirty(mesh);
+            else
                 AssetDatabase.CreateAsset(mesh, path);
-                return mesh;
-            }
-            EditorUtility.CopySerialized(mesh, existing);
-            existing.name = Path.GetFileNameWithoutExtension(path);
-            EditorUtility.SetDirty(existing);
-            Object.DestroyImmediate(mesh);
-            return existing;
+            return mesh;
         }
 
         /// <summary>A renderer next to the original, on its bones, with its settings.</summary>
@@ -537,7 +579,11 @@ namespace RoeFighter.EditorTools
                 // as the prefab has it, then split: the same picture (tools/burst_sheet.py compares them)
                 Shot($"{id}_unsplit_front.png", 15f);
                 Shot($"{id}_unsplit_back.png", 165f);
+                // split out of the posing (a renderer that gets another mesh while posed draws nothing), then posed again
+                RoeCapture.EndPosing();
                 var burst = Apply(go, id);
+                if (stance != null)
+                    RoeCapture.Pose(go, stance, 0f);
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 for (int stage = 0; stage <= burst.stages; stage++)

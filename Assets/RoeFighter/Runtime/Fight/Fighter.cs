@@ -43,6 +43,7 @@ namespace RoeFighter.Fight
         List<float> specialRatios = new List<float>();
         public int specialOutcome;           // 0 not decided yet, 1 hits, 2 blocked, 3 missed
         public Vector3 lastHitDir;           // the way the last blow that hit her went (flat)
+        public List<Move> moves;             // her strikes: her own (FighterRig.strikePack) or the fight's (FightGame.moves)
         readonly List<int> history = new List<int>();     // numpad directions, newest last
         float dieLength, downFor;
 
@@ -191,6 +192,13 @@ namespace RoeFighter.Fight
                 case FightState.Attack:
                 {
                     float clipTime = t * move.speed;
+                    // a strike that steps in (its travel taken out of the clip): she moves along with it
+                    if (move.length > 0f && (move.travel != 0f || move.travelSide != 0f))
+                    {
+                        float before = Mathf.Clamp(clipTime - dt * move.speed, 0f, move.length), now = Mathf.Min(clipTime, move.length);
+                        var right = Quaternion.Euler(0f, yaw, 0f) * Vector3.right;
+                        pos += (Forward * move.travel + right * move.travelSide) * ((now - before) / move.length);
+                    }
                     if (connected && clipTime >= move.length * move.cancel && TryStart(input, strikesOnly: true))
                         break;
                     if (clipTime >= move.length * move.recover)
@@ -252,7 +260,7 @@ namespace RoeFighter.Fight
             string button = input.a ? "A" : input.b ? "B" : input.c ? "C" : input.d ? "D" : null;
             if (button == null)
                 return false;
-            var m = game.moves.FirstOrDefault(x => x.button == button);
+            var m = (moves ?? game.moves).FirstOrDefault(x => x.button == button);
             if (m == null || !rig.Has(m.clip))
                 return false;
             move = m;

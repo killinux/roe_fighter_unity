@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 FONT = r'C:\Windows\Fonts\msyh.ttc'
-STAGE_NAMES = ['原样', '第一段掉了（超必杀命中）', '第二段掉了（KO）', '第三段掉了', '第四段掉了']
+STAGE_NAMES = ['原样', '第一段掉了', '第二段掉了', '第三段掉了', '第四段掉了', '第五段掉了']
 
 
 def main():

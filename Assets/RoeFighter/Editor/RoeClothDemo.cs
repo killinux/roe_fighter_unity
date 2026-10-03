@@ -71,6 +71,28 @@ namespace RoeFighter.EditorTools
             RoeSkirtRig.Drape = 1f;
         }
 
+        /// <summary>A fighter's own strikes (FighterRig.strikePack, g04: Mai Shiranui's) against the motion pack's: takes "pack" and "own".</summary>
+        [MenuItem("ROE Fighter/Fight/Own strikes demo")]
+        public static void OwnStrikes()
+        {
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "strike_demo"));
+            var own = new Dictionary<string, MotionPack>();
+            Film(outDir, new[] { "pack", "own" }, (game, variant) =>
+            {
+                foreach (var rig in game.rigs)
+                {
+                    if (rig.strikePack != null)
+                        own[rig.id] = rig.strikePack;
+                    rig.strikePack = variant == "own" && own.TryGetValue(rig.id, out var p) ? p : null;
+                }
+            }, (game, variant, me) => me.rig.strikePack != null ? $"own strikes: {me.rig.strikePack.title}" : $"the motion pack's strikes: {game.Pack.title}");
+            // as the scene has it again
+            foreach (var game in Object.FindObjectsByType<FightGame>(FindObjectsSortMode.None))
+                foreach (var rig in game.rigs)
+                    if (own.TryGetValue(rig.id, out var p))
+                        rig.strikePack = p;
+        }
+
         [MenuItem("ROE Fighter/Fight/Motion pack demo")]
         public static void Packs()
         {

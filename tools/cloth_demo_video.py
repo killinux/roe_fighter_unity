@@ -17,10 +17,12 @@ STEPS = {'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '�
 MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回旋踢', 'slash': '挥砍', 'hook': '勾拳',
          'uppercut': '上勾拳', 'roundhouse_lead': '前腿回旋踢', 'front_kick': '前踢', 'side_kick': '侧踢', 'roundhouse': '后腿回旋踢', 'low_kick': '低踢',
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
-         'back_fist': '里拳', 'chop': '手刀'}
+         'back_fist': '里拳', 'chop': '手刀',
+         'mai_jab': '冲步刺拳', 'mai_elbow': '肘击', 'mai_lunge': '扑身冲拳', 'mai_high_kick': '高踢'}
 NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase'}
 TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '新版：照 Magica 的做法',
-          'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）'}
+          'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）',
+          'pack': '原来的普通攻击（Bandai 动捕）', 'own': '不知火舞的普通攻击（DOA6）'}
 
 
 def read_takes(folder):
