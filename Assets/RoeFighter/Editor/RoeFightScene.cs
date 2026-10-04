@@ -45,8 +45,9 @@ namespace RoeFighter.EditorTools
 
         /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
         /// kas comes in when her DOA6 files are there, DoaFighter.IsDoa; kas011 is her pirate dress, COS_011, whose skirt and
-        /// sleeves are the game's grid cloth).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011";
+        /// sleeves are the game's grid cloth; "再加入一个角色吧，vindictus里的fiona，用 PCF_005 这个版本" - fio005, VdfFighter, with
+        /// her game's KawaiiPhysics and UFE 2's reactions and specials).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -92,9 +93,12 @@ namespace RoeFighter.EditorTools
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 smr.forceMatrixRecalculationPerRender = false;
 
-            // her stance and strikes (her strike pack), and from the same converted BVH her game clips
-            rig.strikePack = OwnStrikes(def.pack);
-            rig.stance = rig.strikePack != null ? rig.strikePack.Get("guard") : null;
+            // her stance and strikes (her strike pack), and from the same converted BVH her game clips; without a pack of her
+            // own (Vindictus' Fiona) she fights with the fight's pack (F3) and stands in the definition's stance clip
+            rig.strikePack = string.IsNullOrEmpty(def.pack) ? null : OwnStrikes(def.pack);
+            rig.stance = DoaStance(def, rig.strikePack);
+            if (rig.stance == null)
+                Debug.LogWarning($"[ROE] {id}: no stance clip ({def.pack} / {def.stance})");
             var clips = new Dictionary<string, AnimationClip>();
             Directory.CreateDirectory($"{DoaFighter.Dir(id)}/clips");
             foreach (var g in def.game)
@@ -117,10 +121,25 @@ namespace RoeFighter.EditorTools
             rig.audioSource = root.AddComponent<AudioSource>();
             rig.audioSource.playOnAwake = false;
             rig.audioSource.spatialBlend = 0f;
-            Debug.Log($"[ROE] fighter {id} (DOA6): stance {(rig.stance != null ? rig.stance.name : "none")}, own strikes " +
+            Debug.Log($"[ROE] fighter {id} ({def.source}): stance {(rig.stance != null ? rig.stance.name : "none")}, own strikes " +
                       $"{(rig.strikePack != null ? string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}")) : "none")}, " +
                       $"{rig.clips.Count} clips ({string.Join(" ", rig.clips.Select(c => c.name))}), DOA6 physics {(rig.animator.GetComponent<RoeDoaRig>() != null ? "yes" : "none")}");
             return rig;
+        }
+
+        /// <summary>The clip a character from another game stands in: her own pack's guard, else the definition's stance
+        /// ("pack:role" or a clip's asset path).</summary>
+        static AnimationClip DoaStance(DoaFighter.Definition def, MotionPack own = null)
+        {
+            var pack = own ?? (string.IsNullOrEmpty(def.pack) ? null : RoeMotionPacks.Load(def.pack));
+            if (pack != null && pack.Get("guard") != null)
+                return pack.Get("guard");
+            if (string.IsNullOrEmpty(def.stance))
+                return null;
+            int colon = def.stance.IndexOf(':');
+            return !def.stance.StartsWith("Assets/") && colon > 0
+                ? RoeMotionPacks.Load(def.stance.Substring(0, colon))?.Get(def.stance.Substring(colon + 1))
+                : DoaFighter.PackClip(def.pack, def.stance);
         }
 
         public static string BuildScene(string stage, string p1, string p2)
@@ -233,7 +252,7 @@ namespace RoeFighter.EditorTools
                 if (prefab == null)
                     continue;
                 // a DOA6 character stands in her own stance (the guard of her strike pack)
-                var stance = DoaFighter.IsDoa(id) ? RoeMotionPacks.Load(DoaFighter.Load(id).pack)?.Get("guard") : RoeHumanoidClips.Standing(id, out _);
+                var stance = DoaFighter.IsDoa(id) ? DoaStance(DoaFighter.Load(id)) : RoeHumanoidClips.Standing(id, out _);
                 var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
                 if (stance != null)
                     RoeCapture.Pose(go, stance, 0f);

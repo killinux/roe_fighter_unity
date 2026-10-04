@@ -153,6 +153,19 @@ namespace RoeFighter
             ("breast", new Regex(@"breast|chest_[lr]", RegexOptions.IgnoreCase)),
         };
 
+        // Vindictus (UE5 / MetaHuman rigs, first match wins; "" = not cloth): the face rig's FACIAL_*Hair* joints are hairline
+        // skin; a *_root only hangs a group (Fiona_hair_root carries the whole scalp: simulated, the bob would swing as one);
+        // of the breast rig only breast_physics_02 / 03 swing - the eight rays under each are shape helpers that ride on
+        // them; feathers (PCF_005's tiara, collar and arm bands) and the tiara's earrings swing like hair (in her game one
+        // KawaiiPhysics node holds the tiara's feathers and earrings together: kind "hair" in both).
+        static readonly (string kind, Regex name)[] UeKinds =
+        {
+            ("", new Regex(@"^FACIAL_|_root$|^breast_[lr]$|^breast_physics_0[145]_|^breast_physics_0[23]_[a-h]_", RegexOptions.IgnoreCase)),
+            ("breast", new Regex(@"^breast_physics_0[23]_[lr]$", RegexOptions.IgnoreCase)),
+            ("skirt", new Regex(@"_skirt_", RegexOptions.IgnoreCase)),
+            ("hair", new Regex(@"_hair_|feather|earring", RegexOptions.IgnoreCase)),
+        };
+
         public class Capsule
         {
             public string name;
@@ -328,16 +341,19 @@ namespace RoeFighter
         public static Dictionary<Transform, string> Classify(Transform root, ICollection<Transform> human, ICollection<Transform> exclude)
         {
             var kindOf = new Dictionary<Transform, string>();
-            foreach (var t in root.GetComponentsInChildren<Transform>(true))
+            var all = root.GetComponentsInChildren<Transform>(true);
+            bool ue = all.Any(t => t.name == "pelvis") && all.Any(t => t.name == "spine_01");
+            foreach (var t in all)
             {
                 if (t == root || human.Contains(t) || (exclude != null && exclude.Contains(t)) || t.GetComponent<Renderer>() != null)
                     continue;
                 if (t.name.EndsWith("_ALL") || t.name.Contains("Dummy") || t.name.Contains("Nub") || t.name.Contains("nub"))
                     continue;
-                foreach (var (kind, re) in Kinds)
+                foreach (var (kind, re) in ue ? UeKinds : Kinds)
                     if (re.IsMatch(t.name))
                     {
-                        kindOf[t] = kind;
+                        if (kind.Length > 0)
+                            kindOf[t] = kind;
                         break;
                     }
             }

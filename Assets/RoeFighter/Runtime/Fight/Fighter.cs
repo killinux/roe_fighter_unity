@@ -46,6 +46,7 @@ namespace RoeFighter.Fight
         public List<Move> moves;             // her strikes: her own (FighterRig.strikePack) or the fight's (FightGame.moves)
         readonly List<int> history = new List<int>();     // numpad directions, newest last
         float dieLength, downFor;
+        float getupLength;                   // a get-up clip of her own ("getup": Fiona's, from UFE 2); 0: fade back to the guard
 
         public const float BodyRadius = 0.32f;
         // the walk clips play at the rate that keeps a planted foot still (FighterRig.StrideSpeed)
@@ -78,6 +79,7 @@ namespace RoeFighter.Fight
             rig.ShowWeapons(true);
             rig.Play(rig.Has("react_02") ? "react_02" : "guard", 1f, 0f);
             dieLength = rig.Length("die");
+            getupLength = rig.Has("getup") ? rig.Length("getup") : 0f;
             Place();
             rig.ResetCloth();
         }
@@ -221,12 +223,15 @@ namespace RoeFighter.Fight
                     {
                         state = FightState.Getup;
                         t = 0f;
-                        rig.Play("guard", 1f, 0.45f);
+                        if (getupLength > 0f)
+                            rig.Play("getup", 1f, 0.2f);
+                        else
+                            rig.Play("guard", 1f, 0.45f);
                     }
                     break;
 
                 case FightState.Getup:
-                    if (t >= 0.5f)
+                    if (t >= (getupLength > 0f ? getupLength : 0.5f))
                         Enter(FightState.Idle);
                     break;
 

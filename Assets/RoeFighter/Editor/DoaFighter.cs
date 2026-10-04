@@ -20,14 +20,24 @@ namespace RoeFighter.EditorTools
     /// </summary>
     public static class DoaFighter
     {
-        public static string Dir(string id) => $"Assets/DOA/{id}";
+        /// <summary>Her files: Assets/VDF/&lt;id&gt; for a Vindictus character (VdfFighter), else Assets/DOA/&lt;id&gt;.</summary>
+        public static string Dir(string id) => Directory.Exists($"Assets/VDF/{id}") ? $"Assets/VDF/{id}" : $"Assets/DOA/{id}";
 
-        /// <summary>A DOA6 character in the fight: tools/doa/&lt;id&gt;.json (name, outfit, her motion pack, which of its clips are her "game clips").</summary>
+        /// <summary>
+        /// A character from another game in the fight: tools/doa/&lt;id&gt;.json (DOA6) or tools/vdf/&lt;id&gt;.json (Vindictus) - name,
+        /// outfit, her motion pack, which clips are her "game clips".
+        /// </summary>
         [System.Serializable]
         public class Definition
         {
-            public string id, name, outfit, pack;
-            /// <summary>The fight's clip names (hurt, die, rip, react_02 intro, idle_02 win, skill_01..03) -> segment names of her pack's BVH.</summary>
+            public string id, name, outfit, pack;   // pack: her own stance and strikes (empty: the fight's motion pack, F3)
+            public string source = "DOA6";      // the game she comes from (the log)
+            /// <summary>Without an own pack: the clip she stands in (FighterRig.stance: soles, bones no clip moves), "pack:role" or a clip path.</summary>
+            public string stance;
+            /// <summary>
+            /// The fight's clip names (hurt, die, rip, react_02 intro, idle_02 win, skill_01..03) -> segment names of her pack's
+            /// BVH, or a humanoid clip's asset path ("Assets/.../x.anim", "Assets/.../x.fbx:clip").
+            /// </summary>
             public List<Pair> game = new List<Pair>();
             /// <summary>Her three specials: when the blows land (s from the start; found from her limbs if empty), how far she slides in.</summary>
             public List<SkillSpec> skills = new List<SkillSpec>();
@@ -47,15 +57,32 @@ namespace RoeFighter.EditorTools
             public float radius = 0.6f;
         }
 
-        public static string DefinitionPath(string id) => Path.Combine(Path.GetDirectoryName(Application.dataPath), "tools", "doa", id + ".json");
+        public static string DefinitionPath(string id)
+        {
+            string tools = Path.Combine(Path.GetDirectoryName(Application.dataPath), "tools");
+            string vdf = Path.Combine(tools, "vdf", id + ".json");
+            return File.Exists(vdf) ? vdf : Path.Combine(tools, "doa", id + ".json");
+        }
 
+        /// <summary>A character from another game (DOA6, Vindictus) whose fighter prefab is built.</summary>
         public static bool IsDoa(string id) => File.Exists(DefinitionPath(id)) && File.Exists(RoeHumanoid.FighterPath(id));
 
         public static Definition Load(string id) => JsonUtility.FromJson<Definition>(File.ReadAllText(DefinitionPath(id)));
 
-        /// <summary>A clip of her pack's converted BVH (RoeMotionPacks: &lt;pack&gt;/bvh/&lt;segment&gt;.anim).</summary>
-        public static AnimationClip PackClip(string pack, string segment) =>
-            AssetDatabase.LoadAssetAtPath<AnimationClip>($"{RoeMotionPacks.Dir}/{pack}/bvh/{segment}.anim");
+        /// <summary>
+        /// A clip of her pack's converted BVH (RoeMotionPacks: &lt;pack&gt;/bvh/&lt;segment&gt;.anim); or, when the name is an asset path,
+        /// that clip ("Assets/.../x.anim", or "Assets/.../x.fbx:clip" for one of a model's clips).
+        /// </summary>
+        public static AnimationClip PackClip(string pack, string segment)
+        {
+            if (!segment.StartsWith("Assets/"))
+                return AssetDatabase.LoadAssetAtPath<AnimationClip>($"{RoeMotionPacks.Dir}/{pack}/bvh/{segment}.anim");
+            int colon = segment.LastIndexOf(':');
+            string path = colon > 0 ? segment.Substring(0, colon) : segment;
+            string clip = colon > 0 ? segment.Substring(colon + 1) : null;
+            return AssetDatabase.LoadAllAssetsAtPath(path).OfType<AnimationClip>()
+                .FirstOrDefault(c => !c.name.StartsWith("__preview__") && (clip == null || c.name == clip));
+        }
 
         /// <summary>
         /// When the blows of a move land: the peaks of her fastest hand or foot (against her hips, so the move's own travel
@@ -390,7 +417,21 @@ namespace RoeFighter.EditorTools
                 mi.SaveAndReimport();
             }
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath);
+            if (!SavePrefabs(id, model, "DOA6", $"{made.Count} materials ({normals} normal maps)"))
+                return null;
+            // her game's physics onto the fresh prefab (soft-body nodes, chains, colliders: DoaPhysicsBuilder)
+            DoaPhysicsBuilder.Build(id);
+            return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+        }
 
+        /// <summary>
+        /// The Generic prefab (Generated/&lt;id&gt;/&lt;id&gt;.prefab) and the humanoid fighter (&lt;id&gt;_fighter.prefab + its avatar) of an
+        /// imported model, the ROE way: bones mapped by name (RoeHumanoid.MapBones), the hierarchy normalized, the avatar built on
+        /// a T-posed copy.  Shared by the characters from other games (DOA6 here, Vindictus: VdfFighter).  False if the avatar
+        /// is not valid.
+        /// </summary>
+        public static bool SavePrefabs(string id, GameObject model, string game, string materialsNote, bool heels = false)
+        {
             // the Generic prefab
             var go = (GameObject)Object.Instantiate(model);
             go.name = id;
@@ -410,6 +451,8 @@ namespace RoeFighter.EditorTools
             var posedMap = RoeHumanoid.MapBones(posed);
             var forward = RoeShowcase.Forward(posed);
             float corrected = RoeHumanoid.EnforceTPose(posed, posedMap);
+            // shoes with heels on a flat-footed bind pose (Vindictus): the avatar's neutral foot stands in them
+            string heelNote = heels ? RoeHumanoid.StandOnHeels(posed, posedMap) : "";
             var avatar = RoeHumanoid.BuildAvatar(posed, posedMap);
             avatar.name = id + "_humanoid";
             bool ok = avatar.isValid && avatar.isHuman;
@@ -421,7 +464,7 @@ namespace RoeFighter.EditorTools
             {
                 Debug.LogError($"[ROE] {id}: humanoid avatar is NOT valid (valid={avatar.isValid}, human={avatar.isHuman}); mapped {string.Join(" ", map.Keys)}");
                 Object.DestroyImmediate(go);
-                return null;
+                return false;
             }
             string avatarPath = RoeHumanoid.AvatarPath(id);
             AssetDatabase.DeleteAsset(avatarPath);
@@ -434,13 +477,11 @@ namespace RoeFighter.EditorTools
             int renderers = go.GetComponentsInChildren<SkinnedMeshRenderer>(true).Length;
             int bones = go.GetComponentsInChildren<Transform>(true).Length;
             Object.DestroyImmediate(go);
-            Debug.Log($"[ROE] {id}: DOA6 fighter {RoeHumanoid.FighterPath(id)} + avatar {avatarPath}: {map.Count} human bones, {moved} re-parented, " +
-                      $"faces {forward}, largest T-pose correction {corrected:F1} deg; {renderers} skinned renderers, {bones} nodes, " +
-                      $"{made.Count} materials ({normals} normal maps), size {bounds.size.x:F2} x {bounds.size.y:F2} x {bounds.size.z:F2} m, " +
+            Debug.Log($"[ROE] {id}: {game} fighter {RoeHumanoid.FighterPath(id)} + avatar {avatarPath}: {map.Count} human bones, {moved} re-parented, " +
+                      $"faces {forward}, largest T-pose correction {corrected:F1} deg{(heelNote.Length > 0 ? ", feet on heels: " + heelNote : "")}; {renderers} skinned renderers, {bones} nodes, " +
+                      $"{materialsNote}, size {bounds.size.x:F2} x {bounds.size.y:F2} x {bounds.size.z:F2} m, " +
                       $"lowest {bounds.min.y:F3} m");
-            // her game's physics onto the fresh prefab (soft-body nodes, chains, colliders: DoaPhysicsBuilder)
-            DoaPhysicsBuilder.Build(id);
-            return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+            return saved != null;
         }
     }
 }

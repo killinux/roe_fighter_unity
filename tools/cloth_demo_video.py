@@ -19,8 +19,12 @@ MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回�
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
          'back_fist': '里拳', 'chop': '手刀',
          'mai_jab': '冲步刺拳', 'mai_elbow': '肘击', 'mai_lunge': '扑身冲拳', 'mai_high_kick': '高踢',
-         'kas_00051': '刺拳', 'kas_00055': '侧踢', 'kas_00185': '上勾拳', 'kas_00054': '高位回旋踢'}
-NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Luf', 'kas': '霞（DOA6）', 'kas011': '霞 海盗裙（DOA6）'}
+         'kas_00051': '刺拳', 'kas_00055': '侧踢', 'kas_00185': '上勾拳', 'kas_00054': '高位回旋踢',
+         'kyle_light_punch': '轻拳', 'kyle_light_kick': '轻脚', 'kyle_heavy_punch': '重拳', 'kyle_heavy_kick': '重脚（高踢）',
+         'ethan_n1': '刺拳', 'ethan_n2': '前腿踢', 'ethan_n3': '转身后踢', 'ethan_f3': '冲步飞踢',
+         'bot_light_punch': '轻拳', 'bot_light_kick': '轻脚', 'bot_heavy_punch': '重拳', 'bot_heavy_kick': '重脚'}
+NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Luf', 'kas': '霞（DOA6）', 'kas011': '霞 海盗裙（DOA6）',
+         'fio005': 'Fiona PCF_005（Vindictus）'}
 TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '我们的骨骼布料（照 Magica 的做法）',
           'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）',
           'pack': '原来的普通攻击（Bandai 动捕）', 'own': '不知火舞的普通攻击（DOA6）',
@@ -32,7 +36,10 @@ TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '�
           ('g04', 'magica'): 'Magica Cloth 2（裙片 MeshCloth）',
           ('kas011', 'magica'): 'Magica Cloth 2（网格布 BoneCloth）',
           ('kas011', 'doa6'): 'DOA6 自己的物理（网格布裙和袖）',
-          ('kas011', 'magica_style'): '我们的骨骼布料（网格布的每一列当一条链）'}
+          ('kas011', 'magica_style'): '我们的骨骼布料（网格布的每一列当一条链）',
+          'kawaii': '她游戏自己的（KawaiiPhysics）',
+          'bandai1': 'Bandai 动捕（原来的默认）', 'accad_male2': 'ACCAD 开源动捕',
+          'ufe_kyle': 'UFE 2：Robot Kyle', 'ufe_ethan': 'UFE 2：Ethan', 'ufe_bot': 'UFE 2：Mecanim Bot'}
 
 
 def read_takes(folder):

@@ -60,6 +60,24 @@ namespace RoeFighter.EditorTools
             ("RightUpperLeg", "bone_4"), ("RightLowerLeg", "bone_6"), ("RightFoot", "bone_8"), ("RightToes", "bone_24"),
         };
 
+        // ... and in Vindictus: Defying Fate's (Unreal Engine 5, the MetaHuman body): pelvis, spine_01..05, neck_01/02, head,
+        // clavicle / upperarm / lowerarm / hand, thigh / calf / foot / ball, fingers <finger>_01..03_<l|r>.  spine_02, spine_04
+        // and neck_02 are left between the mapped ones (a humanoid has three spine bones and one neck), as are the twist and
+        // corrective bones.
+        static readonly (string human, string bone)[] UeBody =
+        {
+            ("Hips", "pelvis"), ("Spine", "spine_01"), ("Chest", "spine_03"), ("UpperChest", "spine_05"), ("Neck", "neck_01"), ("Head", "head"),
+            ("LeftShoulder", "clavicle_l"), ("LeftUpperArm", "upperarm_l"), ("LeftLowerArm", "lowerarm_l"), ("LeftHand", "hand_l"),
+            ("RightShoulder", "clavicle_r"), ("RightUpperArm", "upperarm_r"), ("RightLowerArm", "lowerarm_r"), ("RightHand", "hand_r"),
+            ("LeftUpperLeg", "thigh_l"), ("LeftLowerLeg", "calf_l"), ("LeftFoot", "foot_l"), ("LeftToes", "ball_l"),
+            ("RightUpperLeg", "thigh_r"), ("RightLowerLeg", "calf_r"), ("RightFoot", "foot_r"), ("RightToes", "ball_r"),
+        };
+        static readonly string[] UeFingers = { "thumb", "index", "middle", "ring", "pinky" };
+
+        /// <summary>An Unreal Engine (UE5 / MetaHuman body) skeleton: Vindictus.</summary>
+        public static bool IsUe(Transform root) => root.GetComponentsInChildren<Transform>(true).Any(t => t.name == "pelvis") &&
+                                                   root.GetComponentsInChildren<Transform>(true).Any(t => t.name == "spine_01");
+
         static readonly string[] FingerNames = { "Thumb", "Index", "Middle", "Ring", "Little" };
         static readonly string[] FingerParts = { "Proximal", "Intermediate", "Distal" };
 
@@ -73,11 +91,21 @@ namespace RoeFighter.EditorTools
 
             var map = new Dictionary<string, Transform>();
             bool doa = !byName.ContainsKey("Bip001 Pelvis") && byName.ContainsKey("bone_2");
-            foreach (var (human, bone) in doa ? Doa6Body : Body)
+            bool ue = !byName.ContainsKey("Bip001 Pelvis") && byName.ContainsKey("pelvis") && byName.ContainsKey("spine_01");
+            foreach (var (human, bone) in doa ? Doa6Body : ue ? UeBody : Body)
                 if (byName.TryGetValue(bone, out var t))
                     map[human] = t;
             if (doa)
                 return map;
+            if (ue)
+            {
+                foreach (var side in new[] { ("Left", "l"), ("Right", "r") })
+                    for (int finger = 0; finger < 5; finger++)
+                        for (int part = 0; part < 3; part++)
+                            if (byName.TryGetValue($"{UeFingers[finger]}_0{part + 1}_{side.Item2}", out var f))
+                                map[$"{side.Item1} {FingerNames[finger]} {FingerParts[part]}"] = f;
+                return map;
+            }
             foreach (var side in new[] { ("Left", "L"), ("Right", "R") })
             {
                 for (int finger = 0; finger < 5; finger++)
@@ -137,6 +165,52 @@ namespace RoeFighter.EditorTools
                 Do($"{side}LowerLeg", $"{side}Foot", Vector3.down);
             }
             return worst;
+        }
+
+        /// <summary>
+        /// The feet of a model whose shoes have heels but whose bind pose stands flat (Vindictus: the MetaHuman body rests on
+        /// flat feet, so PCF_005's heel tips stand 5 cm below the ball of her shoes): each foot turned toes-down about the
+        /// ankle until the lowest point of the heel and the lowest point of the ball of the sole are level, the toes turned
+        /// back flat - on the copy the avatar is built from, so that the "neutral" foot of the avatar stands in the shoe and
+        /// flat-footed animation stands her on her heels (the ROE models' bind poses have that foot already).  Heel = the
+        /// sole's lowest point from 40 % of the way to the toe bone backwards, ball = its lowest point between 60 % and the toe
+        /// bone; nothing is done below minDegrees (flat shoes, bare feet).  Returns a note for the log.
+        /// </summary>
+        public static string StandOnHeels(GameObject posed, Dictionary<string, Transform> map, float minDegrees = 4f)
+        {
+            var points = RoeBoneCloth.SkinPoints(posed.transform);
+            var notes = new List<string>();
+            foreach (var side in new[] { "Left", "Right" })
+            {
+                if (!map.TryGetValue($"{side}Foot", out var foot) || !map.TryGetValue($"{side}Toes", out var toes))
+                    continue;
+                var fwd = toes.position - foot.position;
+                fwd.y = 0f;
+                float ballAlong = fwd.magnitude;
+                if (ballAlong < 0.02f)
+                    continue;
+                fwd /= ballAlong;
+                // the sole: skin on the foot, the toes and anything under them (toe bones)
+                var sole = points.Where(p => p.bone == foot || p.bone.IsChildOf(foot))
+                    .Select(p => (along: Vector3.Dot(p.p - foot.position, fwd), y: p.p.y)).ToList();
+                var heel = sole.Where(s => s.along < 0.4f * ballAlong).DefaultIfEmpty((along: 0f, y: float.MaxValue)).OrderBy(s => s.y).First();
+                var ball = sole.Where(s => s.along >= 0.6f * ballAlong && s.along <= ballAlong).DefaultIfEmpty((along: 0f, y: float.MaxValue)).OrderBy(s => s.y).First();
+                if (heel.y == float.MaxValue || ball.y == float.MaxValue || ball.along - heel.along < 0.02f)
+                    continue;
+                float degrees = Mathf.Atan2(ball.y - heel.y, ball.along - heel.along) * Mathf.Rad2Deg;
+                if (degrees < minDegrees)
+                {
+                    notes.Add($"{side} flat ({degrees:F1} deg)");
+                    continue;
+                }
+                var right = Vector3.Cross(Vector3.up, fwd).normalized;
+                var turn = Quaternion.AngleAxis(degrees, right);        // toes down
+                var toesWorld = toes.rotation;
+                foot.rotation = turn * foot.rotation;
+                toes.rotation = toesWorld;                               // the toes as they were: flat on the floor
+                notes.Add($"{side} {degrees:F1} deg (heel {100f * (ball.y - heel.y):F1} cm below the ball over {100f * (ball.along - heel.along):F1} cm)");
+            }
+            return string.Join(", ", notes);
         }
 
         /// <summary>

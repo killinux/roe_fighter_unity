@@ -75,7 +75,7 @@ namespace RoeFighter.EditorTools
         public const float StandingSole = 0.12f;
 
         /// <summary>"Left Index 1 Stretched" (HumanTrait) -> "LeftHand.Index.1 Stretched" (curve attribute).</summary>
-        static string MuscleAttribute(string traitName)
+        public static string MuscleAttribute(string traitName)
         {
             var m = Regex.Match(traitName, @"^(Left|Right) (Thumb|Index|Middle|Ring|Little) (.+)$");
             return m.Success ? $"{m.Groups[1].Value}Hand.{m.Groups[2].Value}.{m.Groups[3].Value}" : traitName;

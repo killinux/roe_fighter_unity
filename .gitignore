@@ -16,6 +16,9 @@
 # ... and from Dead or Alive 6 / Dead or Alive 5 Last Round (Koei Tecmo: the same rule)
 /Assets/DOA/
 /Assets/DOA.meta
+# ... and from Vindictus: Defying Fate (Nexon: the same rule)
+/Assets/VDF/
+/Assets/VDF.meta
 # Prefabs and data generated from those assets
 /Assets/RoeFighter/Generated/
 /Assets/RoeFighter/Generated.meta

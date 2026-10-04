@@ -21,6 +21,9 @@ namespace RoeFighter.EditorTools
     ///     "roles": { "guard": "Fight_Idle", "walk": "Walk_Fwd", "walk_back": "Walk_Bwd", "run": "Run" },
     ///     "strikes": [ { "button": "A", "name": "jab", "clip": "Punch_Jab", "speed": 1.0, "damage": 40, "inPlace": false }, ... ]
     ///   }
+    ///   A role written "-Clip" plays that clip backwards (UFE walks its fighters back on the forward walk at a negative
+    ///   speed); "rig" names the model of clips that are not humanoid (Generic or Legacy: UFE's Mike) - they are converted
+    ///   first (ConvertGeneric).
     ///   Also: "bvh" (motion capture to convert first, RoeMocap.Source), "strikesOnly" (a character's own strikes - no
     ///   stance or walks, not in the F3 list; FighterRig.strikePack), "measureOn" (the fighter the strikes are measured
     ///   on, default a08), and per strike "inPlace" (its step forward is taken out of the clip and the fight moves the
@@ -145,6 +148,7 @@ namespace RoeFighter.EditorTools
             public string measureOn;            // the fighter the strikes are measured on (reach, when they hit); default a08
             public float walkSpeed, backSpeed;  // m/s; 0: the fight's own (MotionPack)
             public RoeMocap.Source bvh;         // motion capture to convert first (its segments become the clips)
+            public string rig;                  // the model the folder's Generic / Legacy clips animate: converted to humanoid first
             public RoleMap roles = new RoleMap();
             public List<StrikeSpec> strikes = new List<StrikeSpec>();
         }
@@ -183,9 +187,12 @@ namespace RoeFighter.EditorTools
                 specPath = EditorUtility.OpenFilePanel("Motion pack description", Application.dataPath, "json");
             if (string.IsNullOrEmpty(specPath))
                 return;
-            if (!Path.IsPathRooted(specPath))
-                specPath = Path.Combine(Path.GetDirectoryName(Application.dataPath), specPath);
-            ImportSpec(JsonUtility.FromJson<Spec>(File.ReadAllText(specPath)));
+            // several packs: -roeSpec a.json,b.json
+            foreach (var one in specPath.Split(',').Select(s => s.Trim()).Where(s => s.Length > 0))
+            {
+                string path = Path.IsPathRooted(one) ? one : Path.Combine(Path.GetDirectoryName(Application.dataPath), one);
+                ImportSpec(JsonUtility.FromJson<Spec>(File.ReadAllText(path)));
+            }
         }
 
         public static MotionPack ImportSpec(Spec spec)
@@ -199,11 +206,26 @@ namespace RoeFighter.EditorTools
             }
             if (spec.humanoid)
                 MakeHumanoid(spec.folder);
+            if (!string.IsNullOrEmpty(spec.rig))
+            {
+                // Generic / Legacy clips: humanoid copies on the rig's own avatar, then on as for any humanoid clips
+                string converted = $"{Dir}/{spec.name}/humanoid";
+                ConvertGeneric(spec.rig, spec.folder, converted);
+                spec.folder = converted;
+            }
             var found = FindClips(spec.folder);
             AnimationClip Find(string key)
             {
                 if (string.IsNullOrEmpty(key))
                     return null;
+                // a clip anywhere, by its asset path ("Assets/.../x.anim", "Assets/.../x.fbx:clip")
+                if (key.StartsWith("Assets/"))
+                {
+                    var byPath = DoaFighter.PackClip(null, key);
+                    if (byPath == null)
+                        Debug.LogWarning($"[ROE] motion pack {spec.name}: no clip at {key}");
+                    return byPath;
+                }
                 string file = null, clip = key;
                 if (key.Contains(":"))
                 {
@@ -228,10 +250,11 @@ namespace RoeFighter.EditorTools
             pack.strikesOnly = spec.strikesOnly;
             foreach (var (role, key) in new[] { ("guard", spec.roles.guard), ("walk", spec.roles.walk), ("walk_back", spec.roles.walk_back), ("run", spec.roles.run) })
             {
-                var src = Find(key);
+                bool backwards = key != null && key.StartsWith("-");
+                var src = Find(backwards ? key.Substring(1) : key);
                 if (src == null)
                     continue;
-                Add(pack, role, Copy(src, $"{outDir}/{role}.anim", loop: true, inPlace: role != "guard"), true);
+                Add(pack, role, Copy(src, $"{outDir}/{role}.anim", loop: true, inPlace: role != "guard", reverse: backwards), true);
             }
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(string.IsNullOrEmpty(spec.measureOn) ? "a08" : spec.measureOn));
             foreach (var s in spec.strikes)
@@ -289,6 +312,9 @@ namespace RoeFighter.EditorTools
                     continue;
                 var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
                 go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+                // several renders in one editor update: skin again for each (else every frame shows the first pose)
+                foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;
                 var animator = go.GetComponent<Animator>();
                 var bones = go.GetComponentsInChildren<SkinnedMeshRenderer>(true).SelectMany(r => r.bones).Where(b => b != null).Distinct().ToArray();
                 RoeCapture.Pose(go, clip, 0f);
@@ -315,6 +341,95 @@ namespace RoeFighter.EditorTools
             }
             File.WriteAllText(Path.Combine(outDir, "strikes.tsv"), table.ToString());
             Debug.Log($"[ROE] strike sheet of {name} on {id}: {pack.strikes.Count} strikes to {outDir}");
+        }
+
+        /// <summary>
+        /// Clips without muscles (Generic or Legacy: UFE's Mike was made for the legacy Animation component) as humanoid clips:
+        /// the rig's model is imported as Humanoid (an avatar from that model), every clip of the folder that is not a humanoid
+        /// clip is played on an instance of it (AnimationClip.SampleAnimation writes the transforms, legacy or not) and the
+        /// pose read back as muscles and body position (HumanPoseHandler), 60 keys a second, into outDir/&lt;clip&gt;.anim.
+        /// Humanoid clips of the folder are copied as they are, so the pack finds every clip in outDir.
+        /// </summary>
+        public static void ConvertGeneric(string rigPath, string folder, string outDir)
+        {
+            if (AssetImporter.GetAtPath(rigPath) is ModelImporter mi &&
+                (mi.animationType != ModelImporterAnimationType.Human || mi.avatarSetup != ModelImporterAvatarSetup.CreateFromThisModel))
+            {
+                mi.animationType = ModelImporterAnimationType.Human;
+                mi.avatarSetup = ModelImporterAvatarSetup.CreateFromThisModel;
+                mi.SaveAndReimport();
+            }
+            var avatar = AssetDatabase.LoadAllAssetsAtPath(rigPath).OfType<Avatar>().FirstOrDefault();
+            if (avatar == null || !avatar.isHuman || !avatar.isValid)
+                throw new Exception($"{rigPath}: no valid humanoid avatar (the importer could not map its bones)");
+            var model = AssetDatabase.LoadAssetAtPath<GameObject>(rigPath);
+            var go = (GameObject)UnityEngine.Object.Instantiate(model);
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var animator = go.GetComponent<Animator>();
+            if (animator != null)
+                animator.enabled = false;
+            var handler = new HumanPoseHandler(avatar, go.transform);
+            var pose = new HumanPose();
+            int muscles = HumanTrait.MuscleCount;
+            string[] rootNames = { "RootT.x", "RootT.y", "RootT.z", "RootQ.x", "RootQ.y", "RootQ.z", "RootQ.w" };
+            Directory.CreateDirectory(outDir);
+            int converted = 0, copied = 0;
+            foreach (var (src, _) in FindClips(folder))
+            {
+                string path = $"{outDir}/{src.name}.anim";
+                if (src.humanMotion)
+                {
+                    Copy(src, path, loop: false, inPlace: false);
+                    copied++;
+                    continue;
+                }
+                int frames = Mathf.Max(1, Mathf.RoundToInt(src.length * 60f));
+                var keys = new List<Keyframe>[muscles + 7];
+                for (int i = 0; i < keys.Length; i++)
+                    keys[i] = new List<Keyframe>(frames + 1);
+                var last = Quaternion.identity;
+                for (int f = 0; f <= frames; f++)
+                {
+                    float t = Mathf.Min(src.length, f / 60f);
+                    src.SampleAnimation(go, t);
+                    handler.GetHumanPose(ref pose);
+                    for (int i = 0; i < muscles; i++)
+                        keys[i].Add(new Keyframe(t, pose.muscles[i]));
+                    var q = pose.bodyRotation;
+                    if (f > 0 && Quaternion.Dot(q, last) < 0f)
+                        q = new Quaternion(-q.x, -q.y, -q.z, -q.w);
+                    last = q;
+                    float[] r = { pose.bodyPosition.x, pose.bodyPosition.y, pose.bodyPosition.z, q.x, q.y, q.z, q.w };
+                    for (int i = 0; i < 7; i++)
+                        keys[muscles + i].Add(new Keyframe(t, r[i]));
+                }
+                var clip = new AnimationClip { name = src.name, frameRate = 60f };
+                var bindings = new List<EditorCurveBinding>();
+                var curves = new List<AnimationCurve>();
+                for (int i = 0; i < muscles + 7; i++)
+                {
+                    string attribute = i < muscles ? RoeHumanoidClips.MuscleAttribute(HumanTrait.MuscleName[i]) : rootNames[i - muscles];
+                    bindings.Add(EditorCurveBinding.FloatCurve("", typeof(Animator), attribute));
+                    var curve = new AnimationCurve(keys[i].ToArray());
+                    for (int k = 0; k < curve.length; k++)
+                        curve.SmoothTangents(k, 0f);
+                    curves.Add(curve);
+                }
+                AnimationUtility.SetEditorCurves(clip, bindings.ToArray(), curves.ToArray());
+                clip.EnsureQuaternionContinuity();
+                var settings = AnimationUtility.GetAnimationClipSettings(clip);
+                settings.keepOriginalOrientation = true;
+                settings.keepOriginalPositionY = true;
+                settings.keepOriginalPositionXZ = true;
+                AnimationUtility.SetAnimationClipSettings(clip, settings);
+                AssetDatabase.DeleteAsset(path);
+                AssetDatabase.CreateAsset(clip, path);
+                converted++;
+            }
+            handler.Dispose();
+            UnityEngine.Object.DestroyImmediate(go);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[ROE] {folder}: {converted} clips converted to humanoid on {rigPath} ({copied} were humanoid already) -> {outDir}");
         }
 
         /// <summary>The FBX files of a folder imported as Humanoid (an avatar made from each model).</summary>
@@ -348,13 +463,29 @@ namespace RoeFighter.EditorTools
         /// <summary>
         /// A writable copy of a humanoid clip; loops get loop time on, and with inPlace their travel on
         /// the floor (RootT x/z from first to last key) is taken out - the fight moves the body itself.
+        /// reverse plays it backwards (the same length).
         /// </summary>
-        public static AnimationClip Copy(AnimationClip src, string path, bool loop, bool inPlace)
+        public static AnimationClip Copy(AnimationClip src, string path, bool loop, bool inPlace, bool reverse = false)
         {
             var clip = new AnimationClip { frameRate = src.frameRate };
             foreach (var b in AnimationUtility.GetCurveBindings(src))
             {
                 var curve = AnimationUtility.GetEditorCurve(src, b);
+                if (reverse && curve.length > 0)
+                {
+                    var keys = curve.keys;
+                    var back = new Keyframe[keys.Length];
+                    for (int k = 0; k < keys.Length; k++)
+                    {
+                        var key = keys[keys.Length - 1 - k];
+                        back[k] = new Keyframe(src.length - key.time, key.value, -key.outTangent, -key.inTangent, key.outWeight, key.inWeight)
+                        {
+                            weightedMode = key.weightedMode == WeightedMode.In ? WeightedMode.Out
+                                         : key.weightedMode == WeightedMode.Out ? WeightedMode.In : key.weightedMode,
+                        };
+                    }
+                    curve.keys = back;
+                }
                 if (inPlace && b.type == typeof(Animator) && (b.propertyName == "RootT.x" || b.propertyName == "RootT.z") && curve.length > 1)
                 {
                     var keys = curve.keys;

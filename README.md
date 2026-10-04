@@ -2,10 +2,10 @@
 
 用 Rise of Eros（ROE）的角色做的 3D 格斗游戏。引擎是 Unity 6000.4.12f1 + URP。原计划用 UFE 2（Universal Fighting Engine 2）做对战框架，暂时买不了，所以先自己写了一套能玩的格斗逻辑（见"格斗"一节）；角色、动作、技能、特效这些数据以后换 UFE 也照样能用。
 角色：a08（Inase）、g04（Luf）首发，10-03 晚加了 b10（Kart）和 g05（Luf 的女神套装），10-04 加了《死或生 6》（DOA6）的霞（Kasumi），
-晚上又加了霞的海盗裙（kas011，裙子袖子是 DOA6 的网格布）；开局先进选人界面。
+晚上又加了霞的海盗裙（kas011，裙子袖子是 DOA6 的网格布），再加了《Vindictus: Defying Fate》的 Fiona（白羽礼服 PCF_005，`fio005`）；开局先进选人界面。
 
-从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/DOA`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`_work`、`out`。
-这些素材来自商业游戏（ROE、DOA6、DOA5LR），只在本机自己用。
+从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/DOA`、`Assets/VDF`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`Assets/MagicaCloth2`、`_work`、`out`。
+这些素材来自商业游戏（ROE、DOA6、DOA5LR、Vindictus）和付费插件（UFE 2、Magica Cloth 2），只在本机自己用。
 
 ## 现状（2026-10-04）
 
@@ -27,7 +27,7 @@
 | 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 两个包：`bandai1`（默认）和开源动捕做的 `accad_male2`（拳击架势、步法、前后腿回旋踢，10-02 晚）；对比视频 `out\motion_packs_demo.mp4`，用新包的整场对打 `out\fight_cpu_match_accad.mp4` |
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | g04 的普通攻击换成不知火舞（DOA6）的四招；扇子缩到 0.7 倍 | 完成（10-03），见"不知火舞的普通攻击"一节；对比视频 `out\g04_mai_strikes.mp4`，扇子 `out\weapon_size\g04_fan_sizes.png` |
-| UFE 对战 | 暂时买不了；先用自己的格斗逻辑 |
+| UFE 2（用户 10-04 下载的 Source v2.7.0a） | 框架没换，格斗逻辑还是自己的；它演示角色的动作做成三个动作包 `ufe_kyle`、`ufe_ethan`、`ufe_bot`（F3），Fiona 的受击、倒地、起身、开场、胜利、三个技能也用它的。见"动作包 > 第三组：UFE 2 的演示角色"；对比视频 `out\ufe_packs_demo.mp4` |
 | b10（Kart）、g05（Luf 女神）加入战斗：模型、动作、技能和特效、音效，都能爆衣到全身 | 完成（10-03 晚），见"新角色：b10 和 g05"一节；爆衣演示 `out\clothes_burst_demo_b10_g05.mp4`，电脑对电脑整场 `out\fight_cpu_match_b10_g05.mp4`，检查图 `out\clothes_burst\unity\b10_sheet.png`、`g05_sheet.png`。之后（10-03 晚第二轮）：g05 受击、倒地时落到地上，放技能时慢慢升空，飘带在游戏动作里也交给布料，对比 `out\g05_hover_fix.mp4`；a08、g04 的动作按新的肢体重算重转了。10-04 第三轮：g05 的脚和游戏对齐（后脚不再朝后站），对比图 `out\g05_feet_1004.jpg` |
 | 选人界面：四个角色的头像卡片，选中的两人站在场上；两边选同一个角色时复制一份 | 完成（10-03 晚），见"选人界面"一节；演示 `out\select_screen_demo.mp4` |
 | Luffee（g04、g05）的站架也换成不知火舞的（DOA6 00000） | 完成（10-03 晚），对比视频 `out\luffee_mai_stance.mp4`（左：动作包的拳击架势；右：不知火舞的架势和四招） |
@@ -36,6 +36,7 @@
 | 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
 | DOA5LR 式弹簧网（F4 的 `doa5lr_style`）：同样的骨链，约束换成 DOA5LR 网格布的横向、斜拉、隔一个、远程弹簧；霞的网格布在骨骼方案里也连成一片 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 11 节；对比视频 `out\doa5lr_style_compare.mp4`（g04、a08、霞的海盗裙；左：骨骼布料，中：DOA5LR 式，右：关）。比骨骼布料更贴动画、晃得少 |
 | Magica Cloth 2 插件（用户 10-04 下载）：F4 的 `magica`；a08 的长裙片、g04 的裙片用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth，霞的网格布模拟控制点 | 完成（10-04 晚），见 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节；插件不进仓库，只在播放模式里跑（另写了播放模式录像）。对比视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（a08：左 Magica、中骨骼布料、右关；霞的海盗裙：左 Magica、中 DOA6 的、右关）。a08 的裙片有了褶皱、踢腿时搭在腿上；不是默认方案 |
+| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上 |
 
 ## 目录
 
@@ -333,7 +334,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
-| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
+| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
@@ -758,6 +759,40 @@ JSON 里的 `bvh` 一块说明怎么把动捕切成片段（节选，`//` 后面
    摆正后骨盆仰面躺倒了 90°，放到角色身上就是前翻 90°。现在第一节脊柱和"髋 → 脖子"的方向差超过 30° 时改用后者（Bandai 两者只差 1.4°，结果不变）。
 2. 后退第一次切到了演员停下来站着的那几帧：站着不动也"首尾很像"。现在 `travel` / `back` 的循环要求每秒至少移动 0.15 米。
 
+#### 第三组：UFE 2 的演示角色（10-04 晚）
+
+用户 10-04 下载了 UFE 2（`Universal Fighting Engine 2 Source v2.7.0a`，Asset Store 的付费包，只在本机用）。
+- 它是一套格斗游戏框架（输入、招式、判定、电脑、联机），这里的格斗逻辑已经是自己的，框架没有换。
+- 有用的是它四个演示角色的动作：每人一整套格斗动作，还带每招的帧数、出招输入、命中段位。
+
+包不导入工程，只读：
+
+```powershell
+python tools\ufe_package.py list "E:\Downloads\Universal Fighting Engine 2 Source v2.7.0a.unitypackage" --grep Characters   # 里面有什么
+python tools\ufe_package.py moves "E:\Downloads\Universal Fighting Engine 2 Source v2.7.0a.unitypackage" --out _work\ufe2\ufe_moves.tsv   # 每个演示角色的招式表
+# 只把四个角色的动作和模型拷进 Assets/UFE（不入库，GUID 照包里的，以后真导入 UFE 也对得上）
+python tools\ufe_package.py extract "E:\Downloads\Universal Fighting Engine 2 Source v2.7.0a.unitypackage" . "^Assets/UFE/Demos/Shared_Assets/Characters/(Robot_Kyle|Ethan|Mecanim_Bot|Mike)/(Animations|Model)/"
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/ufe_kyle.json,tools/motionpacks/ufe_ethan.json,tools/motionpacks/ufe_bot.json,tools/motionpacks/ufe_mike.json'
+```
+
+| 演示角色 | 动作 | 用法 |
+|---|---|---|
+| Robot Kyle（3D 格斗演示的主角） | 59 段人形 .anim，30 fps：站、走、跑、冲刺、站/蹲/跳的轻重拳脚、防御、各种受击、倒地、弹墙、起身、投技、波动、升龙式的发射技 | 动作包 `ufe_kyle`（A 轻拳 ×1.8、B 轻脚 ×1.4、C 重拳、D 重脚，速度照 UFE 的招式表） |
+| Ethan（3D 格斗演示） | 36 段人形 .anim，60 fps：两种站架、走、跳、受击、倒地；N1–N3、F2、F3、三段连续技、蹲和跳的攻击、超必杀启动 | 动作包 `ufe_ethan`（A N1 刺拳、B N2 前腿踢、C N3 转身后踢、D F3 冲步飞踢） |
+| Mecanim Bot（2D 格斗演示） | FBX（人形，用 femalerobot 的骨架）+ .anim：轻中重拳脚、百裂踢（houyoku_sen）、受击、倒地、起身 | 动作包 `ufe_bot`；Fiona 的倒地、躺地、超必杀 |
+| Mike（2D 格斗演示） | 43 段**旧版（Legacy）**动画，挂在 3ds Max Biped 上：波动拳、升龙拳、开场、胜利、各种拳脚 | 先转成人形（下面），和 Kyle 是同一套动作数据（量出来时间完全一样），所以不放进 F3，只给 Fiona 用它的开场、胜利、波动拳、升龙拳 |
+
+- 四个键照拳皇：A 轻拳、B 轻脚、C 重拳、D 重脚（UFE 的 Button1 / Button4 / Button2 / Button5）。
+- 招式表（`_work\ufe2\ufe_moves.tsv`）是从包里的 MoveSet / MoveInfo 资源直接读的：每招用哪段动作、总帧数 / 发生 / 持续 / 收招、出招输入（↓↘→+拳之类）、
+  每一下的命中帧、段位（中 / 下 / 上 / 浮空 / 击倒……）、强弱、伤害、硬直。现在只用了它的播放速度，伤害和硬直还按这里的键位默认值。
+- 导入器（`RoeMotionPacks`）加的三样：
+  - 角色写成 `-片段名` 表示倒着放：UFE 的后退就是把前进倒着放（Kyle、Mike 都这样）；
+  - `rig` 指定一个模型时，文件夹里不是人形的片段（Generic、Legacy）先在这个模型上采样、按它自动建的人形骨架读出肌肉值，转成人形片段（`ConvertGeneric`）——Mike 就是这样转的；
+  - 片段可以直接写资源路径（`Assets/.../x.anim`、`Assets/.../x.fbx:片段`），`-roeSpec` 可以一次给几个 JSON。
+- 坑：`RoeMotionPacks.Sheet` 一次编辑器更新里连拍好几张时，蒙皮只算第一次，每张都是第一帧的姿势；现在拍之前打开 `forceMatrixRecalculationPerRender`。
+
+对比视频 `out\ufe_packs_demo.mp4`：Fiona 和 a08 用同一套按键，左起 Bandai（原来的默认）、Robot Kyle、Ethan、Mecanim Bot。
+
 ### 爆衣：衣服按件掉，掉完是全身（10-03）
 
 调研和整个方案在 [`docs/clothes-burst.md`](docs/clothes-burst.md)。规则是用户 10-03 定的（"按建议"），下午又加了一条：
@@ -1129,6 +1164,32 @@ python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --ch
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaPhysicsProbe.Soft -Extra '-roeSteps','30,120,620'              # 软体格点偏离多少、被谁推
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaFighter.Stills -Graphics -Extra '-roeDoa','kas011'           # 静帧 + 布面静止重建对不对
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaPhysicsProbe.Moved -Extra '-roeChar','kas011'                # 两个物理方案把她的节点放得哪里不同
+```
+
+### Fiona（Vindictus）（10-04 晚）
+
+用户 10-04："再加入一个角色吧，vindictus里的fiona，用 PCF_005 这个版本，加入进去，注意衣服和头发效果"。全部细节见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)。
+
+- **模型**：ripper_tpose 拼好的 `PCF_005.blend`（游戏的 UE5 骨架，1506 根骨骼）→ FBX + 材质说明 → Unity（`Assets/VDF/fio005`，不入库）。
+  材质全部 URP Lit：颜色调整烘进底色图，ARM 图换成 URP 的金属 / 遮蔽 / 光滑度图，眼球的程序化虹膜用 Cycles 烘成图。
+- **高跟鞋**：她的绑定姿势是平脚，鞋跟比前掌低 5.3 厘米。建人形骨架时脚尖往下压 32°（按鞋底量的），平脚的动作套上来也踩在鞋跟上。
+- **物理**：游戏里裙子、羽毛、头发、胸都是 KawaiiPhysics。参数从游戏包里读出来，算法照插件源码逐行搬（`RoeKawaiiPhysics`）。
+  - F4 的 `kawaii`，`auto` 下她默认用它；
+  - 别的方案（骨骼布料、DOA5LR 式、关）也都能用在她身上。
+- **动作**：
+  - 普通攻击、站架、走路跟着动作包（F3）；
+  - 受击、倒地、躺地、起身、开场、胜利、三个技能用 UFE 2 的（波动拳、升龙拳、百裂踢做超必杀）；
+  - 起身是新加的：角色有自己的 `getup` 片段时，倒地后播它站起来（以前是从躺姿直接淡回站架）。
+  - 她在 Vindictus 里自己的动作（长剑盾牌连招、受击、死亡等 191 段）还没转。
+- 定义在 `tools/vdf/fio005.json`（和霞的 `tools/doa/*.json` 同一个格式，由 `DoaFighter.Load` 读），名单默认加上 `fio005`。
+
+```powershell
+"D:\Program Files\blender-3.6.15-windows-x64\blender.exe" -b --factory-startup E:\game_export\Vindictus\Fiona\blend\PCF_005\PCF_005.blend --python tools\vdf_fbx.py -- E:\code\othercode\roe_fighter_unity\Assets\VDF\fio005 fio005
+python tools\vdf_textures.py Assets\VDF\fio005
+python tools\vdf_kawaii.py _work\vdf\research\kawaii_params.json Assets\VDF\fio005\kawaii.json   # 游戏的物理参数（读法见 docs 第 3 节）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfFighter.Build -Extra '-roeVdf','fio005'      # 材质、预制体、人形骨架、物理数据，日志里检查碰撞体落点
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','fio005','-roeCloths','kawaii,magica_style,off','-roeView','backright'
+python tools\cloth_demo_video.py _work\cloth_demo out\fio005_physics_back.mp4 --chars fio005 --variants kawaii,magica_style,off
 ```
 
 ### 选人界面（10-03 晚）
