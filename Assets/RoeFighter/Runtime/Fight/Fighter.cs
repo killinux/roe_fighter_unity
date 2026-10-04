@@ -281,7 +281,10 @@ namespace RoeFighter.Fight
             return true;
         }
 
-        /// <summary>World position of the striking bone while the strike can hit, else null.</summary>
+        /// <summary>
+        /// World position of the striking bone while the strike can hit, else null; a strike of the hand holding a blade
+        /// (RoeBlade) hits with the point along the blade nearest the opponent's body.
+        /// </summary>
         public Vector3? ActiveHit()
         {
             if (state != FightState.Attack || move == null || hitDone)
@@ -289,6 +292,9 @@ namespace RoeFighter.Fight
             float clipTime = t * move.speed;
             if (clipTime < move.hitStart || clipTime > move.hitEnd)
                 return null;
+            var blade = rig.Blade;
+            if (blade != null && blade.hand == move.bone && foe != null)
+                return blade.Nearest(foe.DistanceToBody);
             var bone = rig.Bone(move.bone);
             return bone != null ? bone.position : (Vector3?)null;
         }

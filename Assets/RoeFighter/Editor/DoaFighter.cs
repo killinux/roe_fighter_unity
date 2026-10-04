@@ -86,22 +86,30 @@ namespace RoeFighter.EditorTools
 
         /// <summary>
         /// When the blows of a move land: the peaks of her fastest hand or foot (against her hips, so the move's own travel
-        /// does not count), at least 4.5 m/s and 0.15 s apart, played on her fighter prefab at 60 Hz.
+        /// does not count), at least 4.5 m/s and 0.15 s apart, played on her fighter prefab at 60 Hz.  With a blade in her
+        /// hand (RoeBlade, Fiona's sword) the peaks of its tip instead, at least BladeHitSpeed: her hands move fast in the
+        /// wind-ups too (her lunge's blows were found at 0.05 and 0.23 s; the thrust lands at 0.53).
         /// </summary>
+        /// <summary>Metres per second of a blade's tip (against her hips) that make a blow (DetectHits).</summary>
+        public static float BladeHitSpeed = 20f;
+
         public static List<float> DetectHits(AnimationClip clip, string id, float minSpeed = 4.5f, float gap = 0.15f)
         {
-            var go = (GameObject)Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
             go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             var an = go.GetComponent<Animator>();
             var limbs = new[] { HumanBodyBones.LeftHand, HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot }
                 .Select(an.GetBoneTransform).Where(t => t != null).ToArray();
+            var blade = go.GetComponentInChildren<RoeBlade>(true);
+            if (blade != null)
+                minSpeed = BladeHitSpeed;
             var hips = an.GetBoneTransform(HumanBodyBones.Hips);
             var speed = new List<float>();
             Vector3[] last = null;
             for (float t = 0f; t <= clip.length; t += 1f / 60f)
             {
                 RoeCapture.Pose(go, clip, t);
-                var now = limbs.Select(l => l.position - hips.position).ToArray();
+                var now = blade != null ? new[] { blade.Tip - hips.position } : limbs.Select(l => l.position - hips.position).ToArray();
                 speed.Add(last == null ? 0f : now.Select((p, k) => (p - last[k]).magnitude * 60f).Max());
                 last = now;
             }
@@ -110,7 +118,9 @@ namespace RoeFighter.EditorTools
             var hits = new List<float>();
             for (int i = 1; i + 1 < speed.Count; i++)
             {
-                if (speed[i] < minSpeed || speed[i] < speed[i - 1] || speed[i] < speed[i + 1])
+                // nothing lands in the first 0.1 s (the first step can jump from the pose before the clip: a blow at 0.02 s
+                // left her lunge no time to close in, MakeSkillSheet)
+                if (i < 6 || speed[i] < minSpeed || speed[i] < speed[i - 1] || speed[i] < speed[i + 1])
                     continue;
                 float time = i / 60f;
                 if (hits.Count > 0 && time - hits[hits.Count - 1] < gap)
@@ -438,6 +448,9 @@ namespace RoeFighter.EditorTools
             go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             if (go.GetComponent<Animator>() == null)
                 go.AddComponent<Animator>();
+            // clips that carry the body metres from the prefab root (Fiona's own: 2-3 m) must not cull it (as RoeFighterBuilder)
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                smr.updateWhenOffscreen = true;
             string prefabPath = RoeFighterBuilder.PrefabPath(id);
             Directory.CreateDirectory(Path.GetDirectoryName(prefabPath));
             PrefabUtility.SaveAsPrefabAsset(go, prefabPath);

@@ -163,6 +163,10 @@ namespace RoeFighter.EditorTools
         public class StrikeSpec
         {
             public string button, name, clip, level;
+            public string bone;                 // the humanoid bone that hits (LeftHand, RightFoot, ...); empty: measured. The hand
+                                                // holding a blade (RoeBlade, Fiona's sword) is measured by the blade's tip
+            public float from, to;              // seconds of the clip to keep (to 0: to its end) - a game's attack with its long
+                                                // way back to idle (Vindictus: the swing is the first second of 2.6)
             public float speed = 1f, hitstun, blockstun, push, radius, meter;
             public bool inPlace;                // the clip's travel is taken out and the fight moves the fighter along instead
                                                 // (strikes that step in: DOA's lunge 0.6-0.7 m, which would jump back at the end)
@@ -263,8 +267,10 @@ namespace RoeFighter.EditorTools
                 if (src == null)
                     continue;
                 string name = string.IsNullOrEmpty(s.name) ? s.clip : s.name;
-                // measured as it is (reach and timing with its own step), then copied - in place if asked
-                var info = Measure(src, model, name);
+                // the part asked for; measured as it is (reach and timing with its own step), then copied - in place if asked
+                if (s.from > 0f || s.to > 0f)
+                    src = Trim(src, s.from, s.to);
+                var info = Measure(src, model, name, s.bone);
                 var clip = Copy(src, $"{outDir}/{name}.anim", loop: false, inPlace: s.inPlace);
                 Add(pack, name, clip, false);
                 var d = ButtonDefaults.TryGetValue(s.button, out var v) ? v : ButtonDefaults["B"];
@@ -465,6 +471,34 @@ namespace RoeFighter.EditorTools
         /// the floor (RootT x/z from first to last key) is taken out - the fight moves the body itself.
         /// reverse plays it backwards (the same length).
         /// </summary>
+        /// <summary>The part of a clip between two times as a new clip (not saved), 60 keys a second, starting at 0.</summary>
+        public static AnimationClip Trim(AnimationClip src, float from, float to)
+        {
+            float end = to > from ? Mathf.Min(to, src.length) : src.length;
+            from = Mathf.Clamp(from, 0f, end);
+            var clip = new AnimationClip { name = src.name, frameRate = src.frameRate };
+            int n = Mathf.Max(1, Mathf.RoundToInt((end - from) * 60f));
+            foreach (var b in AnimationUtility.GetCurveBindings(src))
+            {
+                var c = AnimationUtility.GetEditorCurve(src, b);
+                var keys = new Keyframe[n + 1];
+                for (int i = 0; i <= n; i++)
+                {
+                    float t = from + (end - from) * i / n;
+                    keys[i] = new Keyframe(t - from, c.Evaluate(t));
+                }
+                var curve = new AnimationCurve(keys);
+                for (int i = 0; i < curve.length; i++)
+                    curve.SmoothTangents(i, 0f);
+                AnimationUtility.SetEditorCurve(clip, b, curve);
+            }
+            var settings = AnimationUtility.GetAnimationClipSettings(src);
+            settings.startTime = 0f;
+            settings.stopTime = end - from;
+            AnimationUtility.SetAnimationClipSettings(clip, settings);
+            return clip;
+        }
+
         public static AnimationClip Copy(AnimationClip src, string path, bool loop, bool inPlace, bool reverse = false)
         {
             var clip = new AnimationClip { frameRate = src.frameRate };
@@ -516,15 +550,24 @@ namespace RoeFighter.EditorTools
         /// foot that gets farthest in front of where the hips started, how far, how high, and the frames
         /// it is within 85% of that.
         /// </summary>
-        public static RoeMocap.StrikeInfo Measure(AnimationClip clip, GameObject model, string name)
+        /// <summary>Metres per second at which a blade's tip cuts (Measure: a sword strike's active frames).</summary>
+        public static float BladeSpeed = 5f;
+
+        public static RoeMocap.StrikeInfo Measure(AnimationClip clip, GameObject model, string name, string bone = null)
         {
             var go = (GameObject)PrefabUtility.InstantiatePrefab(model);
             go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             var animator = go.GetComponent<Animator>();
-            var bones = new[] { HumanBodyBones.LeftHand, HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot };
+            var bones = string.IsNullOrEmpty(bone)
+                ? new[] { HumanBodyBones.LeftHand, HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot }
+                : new[] { (HumanBodyBones)Enum.Parse(typeof(HumanBodyBones), bone, true) };
+            // a blade in the striking hand reaches with its tip
+            var blade = go.GetComponentInChildren<RoeBlade>(true);
+            var bladeHand = blade != null ? blade.hand : (HumanBodyBones?)null;     // (the instance is gone when the window is found)
             int frames = Mathf.Max(2, Mathf.CeilToInt(clip.length * 60f) + 1);
             var reach = new float[bones.Length, frames];
             var height = new float[bones.Length, frames];
+            var tips = new Vector3[frames];         // a blade's tip, frame by frame
             Vector3 hips0 = Vector3.zero, hipsEnd = Vector3.zero;
             for (int f = 0; f < frames; f++)
             {
@@ -533,9 +576,11 @@ namespace RoeFighter.EditorTools
                     hips0 = animator.GetBoneTransform(HumanBodyBones.Hips).position;
                 if (f == frames - 1)
                     hipsEnd = animator.GetBoneTransform(HumanBodyBones.Hips).position;
+                if (blade != null)
+                    tips[f] = blade.Tip;
                 for (int k = 0; k < bones.Length; k++)
                 {
-                    var p = animator.GetBoneTransform(bones[k]).position;
+                    var p = blade != null && blade.hand == bones[k] ? blade.Tip : animator.GetBoneTransform(bones[k]).position;
                     reach[k, f] = p.z - hips0.z;
                     height[k, f] = p.y;
                 }
@@ -556,6 +601,28 @@ namespace RoeFighter.EditorTools
                 a--;
             while (b < frames - 1 && reach[best, b + 1] >= 0.85f * max)
                 b++;
+            // a blade cuts while it swings: from the first to the last frame its tip moves at BladeSpeed or more (the fight
+            // tests where the blade is, Fighter.ActiveHit) - a spinning cut is far out only for a moment
+            if (bladeHand == bones[best])
+            {
+                int first = -1, last = -1;
+                for (int f = 1; f < frames; f++)
+                    if ((tips[f] - tips[f - 1]).magnitude * 60f >= BladeSpeed)
+                    {
+                        if (first < 0)
+                            first = f;
+                        last = f;
+                    }
+                float fastest = 0f;
+                for (int f = 1; f < frames; f++)
+                    fastest = Mathf.Max(fastest, (tips[f] - tips[f - 1]).magnitude * 60f);
+                Debug.Log($"[ROE] {name}: blade tip at most {fastest:F1} m/s, cutting {first / 60f:F2}-{last / 60f:F2} s (farthest reach {a / 60f:F2}-{b / 60f:F2} s)");
+                if (first >= 0)
+                {
+                    a = Mathf.Min(a, first);
+                    b = Mathf.Max(b, last);
+                }
+            }
             return new RoeMocap.StrikeInfo
             {
                 name = name, bone = bones[best].ToString(), length = clip.length, reach = max, height = height[best, peak],

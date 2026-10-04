@@ -12,8 +12,11 @@ PCF_005 是白色短裙礼服，裙摆一圈荷叶边；头冠、领口、两边
   - 每条链的参数是从游戏文件里读出来的。
   - 算法照插件 v1.14 的源码逐行搬到 Unity（`RoeKawaiiPhysics`），F4 的方案叫 `kawaii`。
   - 默认 `auto` 下她就用这一套。
-- **动作**：普通攻击、站架、走路跟着动作包走（F3）。受击、倒地、躺地、起身、开场、胜利、三个技能用 UFE 2 演示角色的动作（见 README "动作包 > UFE 2"）。
-  - 她在游戏里自己的动作（191 段）还没有转，见最后一节。
+- **动作用她游戏里自己的**（10-04 夜，第 4 节）：长剑加盾。
+  - 从游戏包导出 191 段，转了 87 段。
+  - 站架、走跑、四个攻击、三个技能、受击、击倒、躺地、起身、开场、胜利全换成她的。
+  - 剑和盾也从游戏里拿来挂在手上，攻击按剑身判定命中。
+  - MetaHuman 骨架比 Unity 人形骨架多出的脊柱节和扭转骨，在运行时补回去（`RoeUeRig`）。
 - **高跟鞋**：MetaHuman 身体的绑定姿势是平脚站，鞋跟比前掌低 5.3 厘米。
   - 建人形骨架时把脚尖往下压 32°，鞋跟和前掌一样高，脚趾再抬回平的。
   - 这样平脚的动捕套上来她也踩在鞋跟上（ROE 角色的绑定姿势本来就是高跟，见 README "手臂和腿"）。
@@ -120,47 +123,163 @@ python tools\vdf_kawaii.py _work\vdf\research\kawaii_params.json Assets\VDF\fio0
   - 头冠的在头里（离皮肤 6.3 厘米）。
 - 以上和这些胶囊在游戏里的意思对得上，说明换算是对的。
 
-## 4. 动作
+## 4. 动作：她游戏里自己的（10-04 夜）
 
-- **普通攻击、站架、走路**：跟着动作包走（F3），和 ROE 角色一样。
-  - 站姿 `stance` 取 `bandai1` 的拳击架势，只用来量鞋底高度和不动的骨骼的默认值。
-  - 她没有自己的招式包（`pack` 空着），所以 F3 换到 UFE 的包时，她也打 UFE 的招。
-- **"游戏动作"用 UFE 2 演示角色的**（`tools/vdf/fio005.json`，候选全部在 Fiona 身上拍过检查图再挑的）：
+用户："继续"。上一轮最后提的下一步就是这个：她在游戏里的长剑加盾动作。
 
-  | 用途 | 片段 | 来源 |
-  |---|---|---|
-  | 受击 | 大幅后仰、甩手（0.73 秒） | Robot Kyle `HitStandingHeavy` |
-  | 倒地 | 被打得往后倒、摔平（1.53 秒） | Mecanim Bot `get_hit_high_knockdown` |
-  | 躺地（循环） | 仰面躺着 | Mecanim Bot `ko_back` |
-  | 起身 | 坐起、撑地、站起（1.13 秒） | Robot Kyle `StandUp_Default` |
-  | 开场 | 摆姿势（1.87 秒） | Mike `intro`（转成人形的） |
-  | 胜利（循环） | 站架晃动（1.47 秒） | Mike `outro` |
-  | 技能 1 | 波动拳的推掌（0.93 秒），0.33 秒打中 | Mike `hadouken` |
-  | 技能 2 | 升龙拳（0.60 秒），0.10、0.25 秒两下 | Mike `shoryuken` |
-  | 超必杀 | 百裂踢（3.29 秒），按手脚速度找出 6 下：1.03、1.20、1.37、1.57、2.07、2.73 秒 | Mecanim Bot `houyoku_sen` |
+```powershell
+# 1. UE Viewer 把她的 191 段动画导出成 .psa（_work\vdf\anim_umodel，1.5 GB；表情动画不导）
+python tools\vdf_anims.py export
+python tools\vdf_anims.py list                      # 每段的帧数、长度、根骨位移
+# 2. 套到她自己的骨架上，转成人形动作 → Assets\VDF\fio005\anims（默认跳过梯子、攀爬、坡道、跳跃、长舞蹈）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.Import [-Extra '-roeOnly','Attack0']
+# 3. 剑和盾：导出、贴图、清单，再挂到她身上（VdfFighter.Build 也会做）
+python tools\vdf_weapons.py --export
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfFighter.Weapons
+# 4. 她的招式包；全部候选动作的检查图
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools\motionpacks\vdf_fiona.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','vdf_candidates','-roeChars','fio005'
+python tools\strike_sheet.py out\motion_sheets\vdf_candidates out\fio005_own_moves_sheet.jpg --tile 170
+# 5. 前臂扭转骨的对比特写
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.TwistStills -Graphics
+```
 
-- **起身**是这次新加的：角色有 `getup` 片段时，倒地后播它站起来再回站架。原来是从躺姿 0.45 秒直接淡回站架，ROE 角色、霞不受影响。
-- 电脑对电脑 120 秒（她对 a08，动作包 Robot Kyle）：第一局被 a08 打倒，后两局赢，2:1。录像 `out/fight_cpu_match_fio005.mp4`。
-- 技能和霞的一样，按原地播放，技能表里加一段"冲到对手面前"。
-  - 没有特效、音效、语音。
-  - 波动拳在 UFE 里是发出一个气功弹，这里是近身推掌。
+### 读 .psa
+
+- UE Viewer（spiritovod 的 UE5 版，模型也是它导的）能直接导出 UE 5.3 的 AnimSequence。
+  - 60 帧/秒。
+  - 骨架 `SK_PCF_BaseBody01_Skeleton` 的 1359 根骨骼都写进去，她的网格有其中 622 根。
+  - 不支持通配符，`vdf_anims.py` 一段一段导。
+- **数据约定是测出来的，不是猜的。**
+  - 关键帧是 UE 局部变换的"Y 镜像再取共轭"（ActorX 的右手约定）。
+  - BONENAMES 块里的参考姿势却是 UE 原样的。
+  - 导入器拿一段动作里没动的骨骼（Attack01 里 550 根）去比她的绑定姿势，四种读法的中位误差：原样 3.86°、共轭 22.19°、镜像 19.94°、镜像加共轭 **0.00°**，自动选最后一种。
+  - 根骨也正好落在原位（0.00°、0.0 mm）。
+  - UE Viewer 导出的 PSK（网格、武器）用的是同一个约定。
+- **换到 Unity**：
+  - 局部旋转 (x, y, z, w) → (−x, y, z, w)；
+  - 平移 (x, y, z) → (−x, y, z)·0.01；
+  - 也就是 UE 原样的 (−x, −y, z)，和第 3 节 KawaiiPhysics 碰撞体验证过的骨骼空间换算一致；
+  - 根骨走 UE 组件空间 (−x, z, y)。
+- **每一帧怎么套**：
+  - 她有的骨骼都按游戏转；
+  - 骨盆和根骨按游戏平移，别的骨骼保持她网格的长度；
+  - 再用"不压鞋跟"的那份人形骨架读出肌肉值。她的格斗骨架脚是压过 32° 的（第 2 节），这样游戏里平放的脚套回她身上，也踩在鞋跟上，和别的动作一样。
+
+### 还原度
+
+导入器自检：人形动作放回她身上，和游戏原样比，报告 `_work\vdf\fio005_anims_import.txt`。
+
+| | 平均 | 最差 |
+|---|---|---|
+| 站架（Battle_Idle）的手 / 头 | 0.2 / 0.4 cm | 0.3 / 0.5 cm |
+| 87 段的胸口（spine_05） | 1.3 cm（`RoeUeRig` 前 3.2） | 7 cm（前 12） |
+| 87 段的头 | 1.3 cm | 7 cm |
+| 87 段的手 | 2.3–2.5 cm | 10 cm |
+| 脚踝 | 0.02 cm | 0.4 cm |
+
+- **手的偏差出在肩关节。**
+  - 上臂方向平均差 3°，锁骨完全对得上。
+  - Unity 人形的肘只有一个铰链轴，游戏的姿势不能完全表示，这是 Mecanim 重定向本身的损耗。
+  - 肌肉值超出默认范围的没有被截掉：锁骨、上胸都有超过 2 的，回放出来照样对。
+- **扭转分配**（Avatar 的 upperArmTwist / lowerArmTwist / upperLegTwist / lowerLegTwist）：
+  - MetaHuman 用 **(1, 0, 1, 0)**：上臂、大腿保留自己的滚转，前臂、小腿的滚转给手、脚。
+  - 用 `-roeTwist` 对比实测：
+
+    | 设置 | 前臂旋转误差 | 上臂旋转误差 |
+    |---|---|---|
+    | (1, 0, 1, 0) | 5.8° | 5.6° |
+    | 原来的 (1, 1, 1, 1) | 32°，最差 179° | 5.6° |
+    | 上臂设 0 | — | 28° |
+
+  - `RoeHumanoid.BuildAvatar` 遇到 UE 骨架默认用它，ROE 角色不变。
+- 大腿、小腿各有 8° 的固定滚转差（方向完全对，膝盖位置对），原因没查。
+
+### RoeUeRig：人形骨架补不回来的部分
+
+- **脊柱、脖子**：人形骨架只有 3 节脊柱、1 节脖子，MetaHuman 是 5 节、2 节。
+  - 原来 spine_02、spine_04、neck_02 的弯曲全并到上面那节里，胸口平均差 3.2 cm。
+  - 现在每对按比例分回去：spine_02 0.8、spine_04 0.3、neck_02 0。
+  - 比例是在她 90 段动作上按胸口和头的位置拟合的（`tools/vdf_research/spine_share_sim.py`）：模拟 3.22 → 1.33 cm，Unity 里实测 1.26 cm。
+  - 按角度拟合的比例（0.2 / 0.75 / 0.3）位置反而差，没用。
+- **扭转骨（16 根）**：按骨骼在肢体上的位置分。
+  - 前臂、小腿：离肘（膝）1/3 处的转手（脚）滚转的 1/3，2/3 处的转 2/3。
+  - 上臂、大腿：反过来，抵消肢体自己的滚转，1/3 处的转 −2/3。
+  - 她剑手的第一刀里手腕翻了 160°，原来前臂皮肤拧成麻花。
+  - 上臂那几根和游戏一致（游戏 −0.71，规则 −0.67）。
+  - 前臂那几根和游戏动作里烘的值差得多（平均 30°）。游戏运行时还有 `ABP_PCF_Corrective`、`Rig_proc_ControlRig` 重新摆这些骨骼，烘进动作的值不一定是游戏里看到的样子。对比特写见 `VdfAnims.TwistStills`。
+- **运行顺序**：
+  - FighterRig 每帧评估动画前把中间节复位，评估后分回弯曲；
+  - 脚的 IK 之后驱动扭转骨；
+  - 编辑器里的截图、量招（`RoeCapture.Pose`）也按这个顺序做。
+
+### 剑和盾
+
+- **模型**：游戏包 `Character/Player/Fiona/Weapon/` 下有：
+  - `SK_Longsword01`：长 1.2 m，原点在护手；
+  - `SK_Shield01`：48 × 47 cm；
+  - 两件都是一根骨骼的刚体网格，带底色、法线、ARM 三张图。底色是 BC6H，UE Viewer 写成 .hdr，`vdf_weapons.py` 自己读。
+  - 同目录的 `longsword`、`shield` 是老版 Vindictus（Source 引擎）的模型，骨骼叫 `ValveBiped_Anim_Attachment_RH`，没用。
+- **挂点**：她的连衣裙网格里本来就有这两根骨骼，和游戏一样直接挂上去，不加偏移。
+  - `weapon_r`：右手下，离手腕 6.7 cm，在手心。
+  - `shield_l`：左前臂下，在前臂 60% 处的外侧。
+  - 盾在 35 段动作里相对前臂还会再转 10–48°，现在没跟（人形动作不带这根骨骼）。
+- **材质**：`tools/vdf_weapons.py` 按游戏的材质参数（父材质 M_Mob_Base）做：
+  - 底色乘饱和度、亮度、对比度；
+  - 粗糙度按 Roughness Min / Max 映射；
+  - ARM 换成 URP 的金属度图；
+  - 法线翻绿。
+- **网格**：`VdfFighter.AttachWeapons` 直接读 .psk 建网格。
+  - 点换成 (−x, y, z)·0.01；
+  - 三角形的绕序按法线方向定：剑 3320/3320、盾 9954/9954 个三角形都和法线一致。
+- **命中用剑身**：剑上挂 `RoeBlade`（护手到剑尖）。
+  - 她用剑手出的招，判定点是剑身上离对手最近的那一点（`Fighter.ActiveHit`）。
+  - 量招时用剑尖量出手距离（`RoeMotionPacks.Measure`）。
+  - 剑尖速度 ≥ 5 m/s 的那段算有效时间。原来的"最远处 85%"对转身斩只有 0.02 秒。
+  - 技能的命中时机按剑尖相对身体的速度找（≥ 20 m/s，`DoaFighter.DetectHits`）。原来按手脚速度，蓄力也被当成出招：冲刺突刺被认成 0.05 秒打中，其实 0.53 秒才刺中。
+
+### 招式
+
+定义在 `tools/vdf/fio005.json` 和 `tools/motionpacks/vdf_fiona.json`。候选全部在她身上拍过检查图（`out\fio005_own_moves_sheet.jpg`，候选包 `vdf_candidates`）再挑。
+
+| 用途 | 片段 | 说明 |
+|---|---|---|
+| 站架 / 走 / 退 / 跑 | Battle_Idle / Battle_Walk_Loop / 同一段倒放 / Battle_Run_Loop | 她自己的招式包带这四个，换掉 F3 包里的 |
+| A | Attack_Strong03 的前 1.0 秒，×1.2 | 盾后突刺 |
+| B | Guard_Counter，×1.1 | 举盾后的反击斩 |
+| C | Attack01 的前 1.7 秒 | 转身大横斩 |
+| D | Attack_Strong04 的前 2.0 秒，能击倒 | 踢一脚再斩 |
+| 受击 | Damage_Light_Front | 被打得退一步 |
+| 击倒 → 躺地 → 起身 | Damage_Strong_Front_Begin / During / End | 游戏里本来就连着的三段：被打飞、仰面躺着、爬起来 |
+| 开场 | Rest2battle_Idle | 从休息姿势拔剑摆出战斗架势 |
+| 胜利（循环） | Test_Emo_Cheering_Evy | 举剑欢呼 |
+| 技能 1 / 技能 2 / 超必杀 | ActiveSkill01 / ActiveSkill03 / Attack_Finish_Action | 冲刺突刺 / 冲刺连斩 / 多段终结技（中间带一脚） |
+
+- **攻击截短**：游戏的攻击一段 2–3 秒，后面 1–2 秒是慢慢收回待机，攻击只截到挥完（招式包新加的 `from` / `to`）。
+- **位移**：游戏的根骨带着她走，攻击前冲 1–2 米，重受击飞 6 米。
+  - 普通攻击：位移留在片段里，招式包按匀速扣掉，由格斗逻辑带着她走，世界里的轨迹和游戏一样。
+  - 受击、倒地、技能这些"游戏动作"：用导入器做的原地版（`anims/inplace/`，根骨定在起点）。定义里引用了哪些，导入器就做哪些。
+- **连招中段**：Attack02–04 和各个 Strong 攻击是连招的中间段，起手不是站架，靠 0.06 秒的混合过渡。
+- **UFE 2 的版本**：上一轮用 UFE 2 演示角色做的那套游戏动作，要用可以从 git 历史（8670be9）里的 `tools/vdf/fio005.json` 拿回来。
+- **电脑对电脑 120 秒**（她对 a08，`out/fight_cpu_match_fio005_own.mp4`）：
+  - 第一局她用超必杀 KO a08；第二局 a08 赢，1:1。
+  - 前一遍录像里她被击倒、躺地、起身完整走了一次（起身这条路径第一次在画面里出现）。
+  - 后半段两人常被打到场边，镜头跑到栅栏外面被挡住（见第 5 节）。
+- 前臂扭转骨的对比特写 `out/fio005_twist.jpg`：左边不驱动、右边按位置分滚转，第一刀的 0.18、0.30、0.45 秒。
 
 ## 5. 已知问题和下一步
 
-- **她在 Vindictus 里自己的动作还没转。**
-  - 游戏里有 191 段动作、124 个蒙太奇，清单在 `_work\vdf\research\fiona_animations.txt`（`tools/vdf_research/anim_inventory.py`）：
-    - 长剑加盾的 4 段连击；
-    - 蓄力重击和三种收尾；
-    - 冲刺攻击；
-    - 5 个主动技能；
-    - 防御、反击；
-    - 轻受击 5 个方向，中、重、浮空受击各分开始 / 持续 / 结束；
-    - 正面 / 背面死亡；
-    - 舞蹈等表情动作。
-  - 要转得先能导出 UE5 的压缩动画，像霞那样做成她自己的招式和技能。
-- **肘、膝的修正骨没有驱动。**
-  - 游戏用 ControlRig 和 PoseDriver 在运行时摆 `*_twistCor_*`、`*_correctiveRoot` 这些骨骼，这里跟着父骨骼走。
+- **肘、膝的修正骨还没驱动。**
+  - 扭转骨现在由 `RoeUeRig` 驱动了。
+  - `*_correctiveRoot`、`lowerarm_in/out/fwd/bck` 这类修正骨，游戏在运行时用 ControlRig 和 PoseDriver 摆，这里还是跟着父骨骼走。
   - 肘、膝大弯时皮肤是普通蒙皮的效果。
+- **盾相对前臂的那点转动没跟**：35 段动作里有 10–48°。
+- **没用的部分**：58 段表情动画、音效、特效都没用。
+- **手臂的残差**：人形重定向的损耗，平均 2–3 cm，最差 10 cm。
+- **镜头被场边的栅栏挡住**：她的招式每下前冲 1–2.5 米，对局容易漂到场边，镜头跑到栅栏外面。
+  - 上一轮用 UFE 招式时对局一直在场地中间，所以这是新问题。
+  - 下一步：镜头留在场内，或者挡住视线的东西淡出；也可以慢慢把两人拉回中间。
+- **exe 这一轮没有重新打包。**
 - **风没做**：游戏的裙子、头发、羽毛开着风（×0.5），格斗场景里没有风源。
 - **胸用的是礼服自己蓝图里的那两个节点**（阻尼 0.1）。基础身体的修正蓝图里还有一组（阻尼 0.5、限制 10.8°），PCF_005 没有基础身体网格，没用。
 - **游戏的参数下，裙子 14 条链互不相连、没有角度限制。** 高踢、转身时荷叶边会整片掀起来，0.2 秒左右落回。

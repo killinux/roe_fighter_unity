@@ -36,7 +36,7 @@
 | 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
 | DOA5LR 式弹簧网（F4 的 `doa5lr_style`）：同样的骨链，约束换成 DOA5LR 网格布的横向、斜拉、隔一个、远程弹簧；霞的网格布在骨骼方案里也连成一片 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 11 节；对比视频 `out\doa5lr_style_compare.mp4`（g04、a08、霞的海盗裙；左：骨骼布料，中：DOA5LR 式，右：关）。比骨骼布料更贴动画、晃得少 |
 | Magica Cloth 2 插件（用户 10-04 下载）：F4 的 `magica`；a08 的长裙片、g04 的裙片用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth，霞的网格布模拟控制点 | 完成（10-04 晚），见 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节；插件不进仓库，只在播放模式里跑（另写了播放模式录像）。对比视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（a08：左 Magica、中骨骼布料、右关；霞的海盗裙：左 Magica、中 DOA6 的、右关）。a08 的裙片有了褶皱、踢腿时搭在腿上；不是默认方案 |
-| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上 |
+| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg` |
 
 ## 目录
 
@@ -332,7 +332,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 |---|---|---|
 | 左右移动（朝对手走 / 后退，按住后退 = 防御） | A / D（或手柄摇杆） | ← / → |
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
-| A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
+| A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢；Fiona 用自己的：突刺、反击斩、转身斩、踢加斩） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
 | 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
@@ -1176,11 +1176,11 @@ python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --ch
 - **物理**：游戏里裙子、羽毛、头发、胸都是 KawaiiPhysics。参数从游戏包里读出来，算法照插件源码逐行搬（`RoeKawaiiPhysics`）。
   - F4 的 `kawaii`，`auto` 下她默认用它；
   - 别的方案（骨骼布料、DOA5LR 式、关）也都能用在她身上。
-- **动作**：
-  - 普通攻击、站架、走路跟着动作包（F3）；
-  - 受击、倒地、躺地、起身、开场、胜利、三个技能用 UFE 2 的（波动拳、升龙拳、百裂踢做超必杀）；
-  - 起身是新加的：角色有自己的 `getup` 片段时，倒地后播它站起来（以前是从躺姿直接淡回站架）。
-  - 她在 Vindictus 里自己的动作（长剑盾牌连招、受击、死亡等 191 段）还没转。
+- **动作（10-04 夜起是她游戏里自己的）**：
+  - 站架、走、退、跑和四个攻击是她自己的招式包 `vdf_fiona`：A 盾后突刺，B 举盾反击斩，C 转身大横斩，D 踢一脚再斩（能击倒）。
+  - 受击、击倒 → 躺地 → 起身、拔剑入场、举剑欢呼、三个技能（冲刺突刺、冲刺连斩、多段终结技做超必杀）也是她的。
+  - 起身：角色有自己的 `getup` 片段时，倒地后播它站起来（以前是从躺姿直接淡回站架）。
+  - 上一轮用的 UFE 2 那套在 git 历史里（8670be9 的 `tools/vdf/fio005.json`）。
 - 定义在 `tools/vdf/fio005.json`（和霞的 `tools/doa/*.json` 同一个格式，由 `DoaFighter.Load` 读），名单默认加上 `fio005`。
 
 ```powershell
@@ -1190,6 +1190,35 @@ python tools\vdf_kawaii.py _work\vdf\research\kawaii_params.json Assets\VDF\fio0
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfFighter.Build -Extra '-roeVdf','fio005'      # 材质、预制体、人形骨架、物理数据，日志里检查碰撞体落点
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','fio005','-roeCloths','kawaii,magica_style,off','-roeView','backright'
 python tools\cloth_demo_video.py _work\cloth_demo out\fio005_physics_back.mp4 --chars fio005 --variants kawaii,magica_style,off
+```
+
+#### 她自己的动作、剑和盾（10-04 夜）
+
+用户："继续"（上一轮最后提的下一步）。细节见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md) 第 4 节。
+
+- **导出**：UE Viewer 能直接导出 UE 5.3 的动画，她有 191 段（`tools/vdf_anims.py export`，`_work\vdf\anim_umodel`，不入库）。
+- **转换**（`VdfAnims.Import`）：每帧把游戏的骨骼旋转套到她自己的骨架上，再读成人形动作。
+  - 数据的轴向约定（Y 镜像加共轭）是拿没动的骨骼和她的绑定姿势比出来的：550 根骨骼差 0.00°。
+  - 放回她身上和游戏原样比：站架的手差 0.2 cm，87 段平均胸口 1.3 cm、手 2.4 cm（肩关节是人形重定向本身的损耗）。
+- **`RoeUeRig`**（运行时，每帧）：MetaHuman 的脊柱 5 节、脖子 2 节，人形骨架只有 3 节、1 节。
+  - 中间节的弯曲按拟合的比例分回去，胸口误差从 3.2 cm 降到 1.3 cm。
+  - 16 根扭转骨按它们在肢体上的位置分滚转，挥剑时手腕翻 160°，前臂不再拧成麻花。
+  - UE 骨架的扭转分配改成 (1, 0, 1, 0)：前臂旋转误差从 32° 降到 5.8°。
+- **剑和盾**（`tools/vdf_weapons.py`、`VdfFighter.AttachWeapons`）：游戏的 `SK_Longsword01`、`SK_Shield01`，直接读 .psk 建网格。
+  - 挂在她骨架里本来就有的 `weapon_r`、`shield_l` 上。
+  - 剑上的 `RoeBlade`：用剑手出的招，判定点是剑身上离对手最近的点。
+  - 量招用剑尖，剑尖速度 ≥ 5 m/s 算有效时间。
+  - 技能的出招时机按剑尖相对身体的速度（≥ 20 m/s）找，开头 0.1 秒不算。
+- **招式包新功能**（所有包都能用）：攻击可以只截一段（`from` / `to`），也可以指定击打骨骼（`bone`）。
+- **问题**：她的招式前冲大（1–2.5 米），打着打着容易到场边，镜头跑到栅栏外面被挡住。下次处理：镜头留在场内，或挡住的东西淡出。
+
+```powershell
+python tools\vdf_anims.py export                                                        # 191 段 .psa
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.Import                  # → Assets\VDF\fio005\anims（+ 定义里要的原地版）
+python tools\vdf_weapons.py --export                                                     # 剑和盾的贴图、清单
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfFighter.Build                 # 预制体（含 RoeUeRig、剑和盾）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools\motionpacks\vdf_fiona.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.TwistStills -Graphics   # 前臂扭转骨：不驱动 / 驱动
 ```
 
 ### 选人界面（10-03 晚）

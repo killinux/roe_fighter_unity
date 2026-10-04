@@ -336,8 +336,20 @@ namespace RoeFighter.EditorTools
             return $"{posed} extra bones at their idle values; held: {(notes.Count > 0 ? string.Join(", ", notes) : "nothing")}";
         }
 
-        internal static Avatar BuildAvatar(GameObject posed, Dictionary<string, Transform> map)
+        /// <summary>
+        /// The twist distribution of an Unreal / MetaHuman body (Vindictus): the upper arm and thigh keep their roll, the
+        /// forearm's and shin's go into the hand and foot - the MetaHuman forearm and shin do not roll (twist bones share the
+        /// hand's and foot's roll, RoeUeRig).  Measured on Fiona's 90 game clips played back through her avatar: the forearm's
+        /// rotation came back 5.8 degrees from the game's on average with 0 (32, at worst 179, with 1), the upper arm's 5.6
+        /// with 1 (28 with 0); the same for thigh and shin (VdfAnims -roeTwist).
+        /// </summary>
+        static readonly float[] UeTwist = { 1f, 0f, 1f, 0f };
+
+        /// <param name="twist">upper arm, forearm, thigh, shin twist distribution (null: UeTwist on an Unreal body, else 1, 1, 1, 1 - see below)</param>
+        internal static Avatar BuildAvatar(GameObject posed, Dictionary<string, Transform> map, float[] twist = null)
         {
+            if (twist == null && IsUe(posed.transform))
+                twist = UeTwist;
             var human = new List<HumanBone>();
             foreach (var pair in map)
             {
@@ -366,10 +378,10 @@ namespace RoeFighter.EditorTools
                 // 1 = into the next joint (wrist, ankle).  The game's rigs keep the roll out of the
                 // limb bones and have separate twist helpers below them, so 1 reproduces the original
                 // animation; with Unity's default 0.5 the helpers ended up 7-13 cm off, with 0 12-22 cm.
-                upperArmTwist = 1f,
-                lowerArmTwist = 1f,
-                upperLegTwist = 1f,
-                lowerLegTwist = 1f,
+                upperArmTwist = twist != null ? twist[0] : 1f,
+                lowerArmTwist = twist != null ? twist[1] : 1f,
+                upperLegTwist = twist != null ? twist[2] : 1f,
+                lowerLegTwist = twist != null ? twist[3] : 1f,
                 armStretch = 0.05f,
                 legStretch = 0.05f,
                 feetSpacing = 0f,

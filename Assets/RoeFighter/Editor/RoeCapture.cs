@@ -48,14 +48,28 @@ namespace RoeFighter.EditorTools
             }
         }
 
-        /// <summary>Put a character into the pose of a clip at a time (edit mode).</summary>
+        /// <summary>
+        /// Put a character into the pose of a clip at a time (edit mode); an Unreal body (RoeUeRig) as the fight poses it: its
+        /// unmapped spine joints at rest before the clip, their share of the bend and the twist bones after.
+        /// </summary>
         public static void Pose(GameObject character, AnimationClip clip, float time)
         {
             if (!AnimationMode.InAnimationMode())
                 AnimationMode.StartAnimationMode();
+            var ue = character.GetComponent<RoeUeRig>();
+            if (ue != null)
+            {
+                ue.Build();         // no Awake in edit mode: bind rotations on first use
+                ue.Rest();
+            }
             AnimationMode.BeginSampling();
             AnimationMode.SampleAnimationClip(character, clip, time);
             AnimationMode.EndSampling();
+            if (ue != null)
+            {
+                ue.Distribute();
+                ue.DriveTwists();
+            }
         }
 
         public static void EndPosing()

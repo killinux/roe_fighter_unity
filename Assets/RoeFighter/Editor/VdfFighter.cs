@@ -166,7 +166,220 @@ namespace RoeFighter.EditorTools
             if (!DoaFighter.SavePrefabs(id, model, "Vindictus", $"{made.Count} materials, {changed} texture importers set", heels: true))
                 return null;
             AttachKawaii(id);
+            AttachUeRig(id);
+            AttachWeapons(id);
             return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+        }
+
+        [System.Serializable]
+        class WeaponList
+        {
+            public List<Weapon> weapons = new List<Weapon>();
+        }
+
+        [System.Serializable]
+        class Weapon
+        {
+            public string name, socket, psk, albedo, normal, mask;
+        }
+
+        /// <summary>
+        /// Her sword and shield (tools/vdf_weapons.py: maps + Assets/VDF/&lt;id&gt;/weapons/weapons.json) on the fighter prefab:
+        /// each mesh read from the game's .psk (UE Viewer writes it mirrored in Y like its animation keys: a point becomes
+        /// (-x, y, z) cm in the socket bone's frame, RoeKawaiiPhysics.FromUe after the mirror; the triangles are wound the way
+        /// their normals face), saved as a mesh asset, given a URP Lit material, and hung on its socket bone - weapon_r on the
+        /// right hand, shield_l on the left forearm, both in her mesh's skeleton as in the game - with no offset: in the game
+        /// the weapon's component sits on the socket.
+        ///   -executeMethod RoeFighter.EditorTools.VdfFighter.Weapons [-roeVdf fio005]
+        /// </summary>
+        public static void Weapons()
+        {
+            foreach (var id in RoeCapture.Arg("-roeVdf", "fio005").Split(','))
+                AttachWeapons(id.Trim());
+            AssetDatabase.SaveAssets();
+        }
+
+        public static void AttachWeapons(string id)
+        {
+            string dir = $"{Dir(id)}/weapons";
+            string listPath = $"{dir}/weapons.json";
+            if (!File.Exists(listPath))
+            {
+                Debug.Log($"[ROE] {id}: no {listPath} - no weapons (tools/vdf_weapons.py)");
+                return;
+            }
+            AssetDatabase.Refresh();
+            var list = JsonUtility.FromJson<WeaponList>(File.ReadAllText(listPath));
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
+            string path = RoeHumanoid.FighterPath(id);
+            var root = PrefabUtility.LoadPrefabContents(path);
+            var notes = new List<string>();
+            foreach (var w in list.weapons)
+            {
+                // maps
+                foreach (var (file, role) in new[] { (w.albedo, "albedo"), (w.normal, "normal"), (w.mask, "mask") })
+                {
+                    var ti = (TextureImporter)AssetImporter.GetAtPath($"{dir}/{file}");
+                    if (ti == null)
+                        continue;
+                    var type = role == "normal" ? TextureImporterType.NormalMap : TextureImporterType.Default;
+                    if (ti.textureType != type || ti.sRGBTexture != (role == "albedo") || ti.maxTextureSize != 2048)
+                    {
+                        ti.textureType = type;
+                        ti.sRGBTexture = role == "albedo";
+                        ti.maxTextureSize = 2048;
+                        ti.SaveAndReimport();
+                    }
+                }
+                // material
+                string matPath = $"{dir}/{w.name}.mat";
+                var mat = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+                if (mat == null)
+                {
+                    mat = new Material(shader);
+                    AssetDatabase.CreateAsset(mat, matPath);
+                }
+                mat.shader = shader;
+                var maskTex = AssetDatabase.LoadAssetAtPath<Texture2D>($"{dir}/{w.mask}");
+                mat.SetTexture("_BaseMap", AssetDatabase.LoadAssetAtPath<Texture2D>($"{dir}/{w.albedo}"));
+                mat.SetColor("_BaseColor", Color.white);
+                mat.SetTexture("_BumpMap", AssetDatabase.LoadAssetAtPath<Texture2D>($"{dir}/{w.normal}"));
+                mat.SetFloat("_BumpScale", 1f);
+                mat.SetTexture("_MetallicGlossMap", maskTex);
+                mat.SetTexture("_OcclusionMap", maskTex);
+                mat.SetFloat("_OcclusionStrength", 1f);
+                mat.SetFloat("_SmoothnessTextureChannel", 0f);
+                mat.SetFloat("_Smoothness", 1f);
+                mat.SetFloat("_Metallic", 1f);
+                mat.SetFloat("_Surface", 0f);
+                mat.SetFloat("_AlphaClip", 0f);
+                mat.SetFloat("_Cull", 2f);
+                BaseShaderGUI.SetMaterialKeywords(mat);
+                EditorUtility.SetDirty(mat);
+                // mesh
+                var mesh = ReadPsk(w.psk, w.name, out string meshNote);
+                string meshPath = $"{dir}/{w.name}_mesh.asset";
+                AssetDatabase.DeleteAsset(meshPath);
+                AssetDatabase.CreateAsset(mesh, meshPath);
+                // on its socket
+                var socket = root.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == w.socket);
+                if (socket == null)
+                {
+                    notes.Add($"{w.name}: NO socket bone {w.socket} in her rig - left out");
+                    continue;
+                }
+                var old = socket.Find(w.name);
+                if (old != null)
+                    Object.DestroyImmediate(old.gameObject);
+                var go = new GameObject(w.name);
+                go.transform.SetParent(socket, false);
+                go.AddComponent<MeshFilter>().sharedMesh = mesh;
+                go.AddComponent<MeshRenderer>().sharedMaterial = mat;
+                // where it lands on her bind pose: the far end of the mesh from the socket
+                var far = mesh.vertices.OrderByDescending(v => v.sqrMagnitude).First();
+                // a sword: its blade (the mesh's origin is the guard) hits in her strikes of that hand
+                if (w.name.Contains("sword"))
+                {
+                    var blade = go.AddComponent<RoeBlade>();
+                    blade.hand = w.socket.EndsWith("_l") ? HumanBodyBones.LeftHand : HumanBodyBones.RightHand;
+                    blade.hilt = Vector3.zero;
+                    blade.tip = far;
+                }
+                notes.Add($"{w.name} on {socket.parent.name}/{w.socket}: {meshNote}; farthest point {100f * far.magnitude:F0} cm from the socket, " +
+                          $"at {go.transform.TransformPoint(far)} (socket at {socket.position})");
+            }
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+            PrefabUtility.UnloadPrefabContents(root);
+            Debug.Log($"[ROE] {id}: weapons - {string.Join("; ", notes)}");
+        }
+
+        /// <summary>
+        /// A rigid mesh from a UE Viewer .psk (PNTS, VTXW, FACE, VTXNORMS): a vertex per wedge, positions and normals in the
+        /// socket bone's frame in metres, UVs flipped to Unity's origin, tangents recalculated.
+        /// </summary>
+        static Mesh ReadPsk(string path, string name, out string note)
+        {
+            var data = File.ReadAllBytes(path);
+            var chunks = new Dictionary<string, (int at, int size, int count)>();
+            for (int off = 0; off + 32 <= data.Length;)
+            {
+                string cid = System.Text.Encoding.ASCII.GetString(data, off, 20).Split('\0')[0];
+                int size = System.BitConverter.ToInt32(data, off + 24), count = System.BitConverter.ToInt32(data, off + 28);
+                chunks[cid] = (off + 32, size, count);
+                off += 32 + size * count;
+            }
+            float F(int at) => System.BitConverter.ToSingle(data, at);
+            Vector3 Unity(Vector3 v) => new Vector3(-v.x, v.y, v.z);       // mirrored in Y (ActorX) -> Unreal -> her bone frame
+            var (pa, _, pc) = chunks["PNTS0000"];
+            var points = new Vector3[pc];
+            for (int i = 0; i < pc; i++)
+                points[i] = Unity(new Vector3(F(pa + 12 * i), F(pa + 12 * i + 4), F(pa + 12 * i + 8))) * 0.01f;
+            Vector3[] pointNormals = null;
+            if (chunks.TryGetValue("VTXNORMS", out var nc))
+            {
+                pointNormals = new Vector3[nc.count];
+                for (int i = 0; i < nc.count; i++)
+                    pointNormals[i] = Unity(new Vector3(F(nc.at + 12 * i), F(nc.at + 12 * i + 4), F(nc.at + 12 * i + 8))).normalized;
+            }
+            bool wideWedges = !chunks.ContainsKey("VTXW0000");
+            var (wa, ws, wc) = wideWedges ? chunks["VTXW3200"] : chunks["VTXW0000"];
+            var vertices = new Vector3[wc];
+            var normals = new Vector3[wc];
+            var uvs = new Vector2[wc];
+            for (int i = 0; i < wc; i++)
+            {
+                int at = wa + ws * i;
+                int p = wideWedges ? System.BitConverter.ToInt32(data, at) : System.BitConverter.ToUInt16(data, at);
+                vertices[i] = points[p];
+                normals[i] = pointNormals != null ? pointNormals[p] : Vector3.up;
+                uvs[i] = new Vector2(F(at + 4), 1f - F(at + 8));
+            }
+            bool wideFaces = !chunks.ContainsKey("FACE0000");
+            var (fa, fs, fc) = wideFaces ? chunks["FACE3200"] : chunks["FACE0000"];
+            var tris = new int[fc * 3];
+            int agree = 0;
+            for (int i = 0; i < fc; i++)
+            {
+                int at = fa + fs * i;
+                for (int k = 0; k < 3; k++)
+                    tris[3 * i + k] = wideFaces ? System.BitConverter.ToInt32(data, at + 4 * k) : System.BitConverter.ToUInt16(data, at + 2 * k);
+                var a = vertices[tris[3 * i]];
+                var face = Vector3.Cross(vertices[tris[3 * i + 1]] - a, vertices[tris[3 * i + 2]] - a);
+                if (Vector3.Dot(face, normals[tris[3 * i]] + normals[tris[3 * i + 1]] + normals[tris[3 * i + 2]]) > 0f)
+                    agree++;
+            }
+            // Unity's front faces: their normal is Cross(b - a, c - a); wound the other way round when most disagree
+            bool flip = agree < fc - agree;
+            if (flip)
+                for (int i = 0; i < fc; i++)
+                    (tris[3 * i + 1], tris[3 * i + 2]) = (tris[3 * i + 2], tris[3 * i + 1]);
+            var mesh = new Mesh { name = name };
+            if (wc > 65535)
+                mesh.indexFormat = UnityEngine.Rendering.IndexFormat.UInt32;
+            mesh.vertices = vertices;
+            mesh.normals = normals;
+            mesh.uv = uvs;
+            mesh.triangles = tris;
+            mesh.RecalculateBounds();
+            mesh.RecalculateTangents();
+            note = $"{pc} points, {wc} vertices, {fc} triangles ({(flip ? "wound round" : "as written")}: {Mathf.Max(agree, fc - agree)} of {fc} face the normals' way), " +
+                   $"size {100f * mesh.bounds.size.x:F0} x {100f * mesh.bounds.size.y:F0} x {100f * mesh.bounds.size.z:F0} cm";
+            return mesh;
+        }
+
+        /// <summary>RoeUeRig on the fighter prefab: her unmapped spine joints and twist bones follow every clip.</summary>
+        static void AttachUeRig(string id)
+        {
+            string path = RoeHumanoid.FighterPath(id);
+            var root = PrefabUtility.LoadPrefabContents(path);
+            var rig = root.GetComponent<RoeUeRig>();
+            if (rig == null)
+                rig = root.AddComponent<RoeUeRig>();
+            rig.Build();
+            int twists = rig.TwistBones;
+            PrefabUtility.SaveAsPrefabAsset(root, path);
+            PrefabUtility.UnloadPrefabContents(root);
+            Debug.Log($"[ROE] {id}: RoeUeRig - spine_02 / spine_04 / neck_02 take {rig.spine02} / {rig.spine04} / {rig.neck02} of their bends back, {twists} twist bones");
         }
 
         /// <summary>

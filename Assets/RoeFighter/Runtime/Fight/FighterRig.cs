@@ -184,6 +184,7 @@ namespace RoeFighter.Fight
         [Range(0.2f, 2f)] public float weaponScale = 1f;
         [NonSerialized] Transform[] weaponRoots;
         [NonSerialized] RoeDoaRig doaRig;
+        [NonSerialized] RoeUeRig ueRig;
         [NonSerialized] Vector3[] weaponRootScale;
         public string Current => current >= 0 ? clips[current].name : "";
         public float CurrentTime => current >= 0 ? (float)playables[current].GetTime() : 0f;
@@ -242,6 +243,7 @@ namespace RoeFighter.Fight
             }
             helpers = animator.GetComponent<RoeHelperRig>();
             doaRig = animator.GetComponent<RoeDoaRig>();
+            ueRig = animator.GetComponent<RoeUeRig>();
             // a DOA6 character's breast meshes are skinned to their soft-body nodes, up to 12 bones a vertex, whatever moves them
             if (doaRig != null && doaRig.softs.Count > 0)
                 QualitySettings.skinWeights = SkinWeights.Unlimited;
@@ -558,7 +560,9 @@ namespace RoeFighter.Fight
             // no clip animates must not compound), scaled after
             for (int k = 0; k < weaponRoots.Length; k++)
                 weaponRoots[k].localScale = weaponRootScale[k];
+            ueRig?.Rest();                    // an Unreal body's unmapped spine joints where the humanoid expects them
             graph.Evaluate(0f);
+            ueRig?.Distribute();              // ... and their share of the bend given back (RoeUeRig)
             if (weaponScale != 1f)
                 foreach (var w in weaponRoots)
                     w.localScale *= weaponScale;
@@ -660,6 +664,8 @@ namespace RoeFighter.Fight
                 doaRig.DriveHelpers();
                 doaRig.DriveGrids();
             }
+            // an Unreal body's twist bones (Vindictus: the humanoid does not move them), on the legs' final pose
+            ueRig?.DriveTwists();
             // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
             // game's animators key it, then hung on the body (the skin, posed with the helpers above); the
             // cloth swings from there.  On the legs' final pose.
@@ -1120,6 +1126,10 @@ namespace RoeFighter.Fight
         }
 
         public Transform Bone(HumanBodyBones bone) => animator.GetBoneTransform(bone);
+
+        /// <summary>A blade in one of her hands (RoeBlade: Fiona's longsword), or null.</summary>
+        public RoeBlade Blade => blade != null ? blade : blade = animator != null ? animator.GetComponentInChildren<RoeBlade>(true) : null;
+        [NonSerialized] RoeBlade blade;
 
         public void Sound(string name, float volume = 1f)
         {
