@@ -34,6 +34,7 @@
 | 爆衣（比赛中把衣服打掉） | 完成到第二步（10-03）：超必杀的最后一下打中、被 KO，各掉一段（每人四段），决胜的 KO 把剩下的全打掉，整场比赛不回来，F6 开关；衣服下面换成家族的裸体底模，所以能掉到全身（g04 留着鞋），见"爆衣"一节；演示 `out\clothes_burst_demo.mp4`，检查图 `out\clothes_burst\unity\a08_sheet.png`、`g04_sheet.png`，电脑对电脑整场 `out\fight_cpu_match_burst.mp4`。调研和后面几步（补身体、打哪破哪）见 [`docs/clothes-burst.md`](docs/clothes-burst.md) |
 | DOA6 的霞加入战斗；调研 DOA6、DOA5LR 的胸、头发、衣服物理；物理做成可插拔（F4 换方案，以后可接 Magica Cloth 2） | 完成（10-04），见"霞（DOA6）和可插拔物理"一节和 [`docs/doa-physics.md`](docs/doa-physics.md)；对比视频 `out\kas_physics_body.mp4`、`out\kas_physics_chest.mp4`（左：骨骼布料，中：DOA6 的物理，右：关），电脑对电脑 `out\kas_fight_test.mp4` |
 | 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
+| DOA5LR 式弹簧网（F4 的 `doa5lr_style`）：同样的骨链，约束换成 DOA5LR 网格布的横向、斜拉、隔一个、远程弹簧；霞的网格布在骨骼方案里也连成一片 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 11 节；对比视频 `out\doa5lr_style_compare.mp4`（g04、a08、霞的海盗裙；左：骨骼布料，中：DOA5LR 式，右：关）。比骨骼布料更贴动画、晃得少 |
 
 ## 目录
 
@@ -331,7 +332,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
-| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / 10-02 旧版 / 关；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
+| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / 10-02 旧版 / 关；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
@@ -1094,9 +1095,10 @@ python tools\cloth_demo_video.py _work\hover_demo out\g05_hover_fix.mp4 --chars 
   - 胸不模拟，按每套衣服选的预设表驱动 7 根骨；
   - 衣服头发是"一个质点就是一根骨头"的全套弹簧网（竖、横环、斜拉、隔一根）；
   - 刘海是姿势混合。
-  - 只调研，没做成解算器。
+  - 10-04 晚把网格布的弹簧网做成了 F4 的一个方案 `doa5lr_style`：同样的骨链，约束换成 DOA5LR 的横向、斜拉、隔一个、远程弹簧，
+    每根弹簧短了和长了各一个刚度（`docs/doa-physics.md` 第 11 节，对比视频 `out\doa5lr_style_compare.mp4`）；胸的预设表没做。
 - **可插拔**：
-  - F4 换"物理方案"，每个方案给胸、身体、头发、裙子、飘带、链子各指定一个解算器（骨骼布料 / 10-02 旧版 / DOA6 / Magica Cloth 2）。
+  - F4 换"物理方案"，每个方案给胸、身体、头发、裙子、飘带、链子各指定一个解算器（骨骼布料 / 10-02 旧版 / DOA6 / DOA5LR 式弹簧网 / Magica Cloth 2）。
   - 解算器在某个角色身上做不了的类别交给骨骼布料。
   - 默认 `auto`：霞用 DOA6 的，ROE 角色用骨骼布料。
 - **比我们好吗**：

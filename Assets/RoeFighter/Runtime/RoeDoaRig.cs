@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using UnityEngine;
 
 namespace RoeFighter
@@ -403,6 +404,40 @@ namespace RoeFighter
             Add(w.boneIndex2, w.weight2);
             Add(w.boneIndex3, w.weight3);
             return r;
+        }
+
+        /// <summary>
+        /// Her grid cloths as sheets for a bone solver (RoeClothScope.anchorOf / neighbours): every column below the skinned
+        /// rows hangs on the grid's parent as one piece, and each column's first point has the first points of the columns
+        /// left and right of it (a skirt's ring closes) - the skin cannot tell, her cloth is rebuilt, not skinned to them.
+        /// </summary>
+        public (Dictionary<Transform, Transform> anchorOf, Dictionary<Transform, Transform[]> neighbours) Sheets()
+        {
+            var anchorOf = new Dictionary<Transform, Transform>();
+            var neighbours = new Dictionary<Transform, Transform[]>();
+            foreach (var g in grids)
+            {
+                if (g.cps == null || g.parent == null || g.skinnedRows >= g.rows)
+                    continue;
+                for (int i = g.skinnedRows * g.cols; i < g.cps.Length; i++)
+                    if (g.cps[i] != null)
+                        anchorOf[g.cps[i]] = g.parent;
+                int top = g.skinnedRows * g.cols;
+                for (int c = 0; c < g.cols; c++)
+                {
+                    int i = top + c;
+                    var near = new List<Transform>();
+                    foreach (int k in new[] { 0, 1 })   // left, right
+                    {
+                        int j = g.links != null && g.links.Length > 4 * i + k ? g.links[4 * i + k] : -1;
+                        if (j >= 0 && j < g.cps.Length && g.cps[j] != null && j != i)
+                            near.Add(g.cps[j]);
+                    }
+                    if (g.cps[i] != null)
+                        neighbours[g.cps[i]] = near.Distinct().ToArray();
+                }
+            }
+            return (anchorOf, neighbours);
         }
 
         /// <summary>Her loose bones by kind (for the bone cloth, which tells kinds by bone names otherwise).</summary>

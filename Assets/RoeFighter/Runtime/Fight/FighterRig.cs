@@ -269,12 +269,15 @@ namespace RoeFighter.Fight
             // skirts, hair, chains and breasts: found and measured in the stance pose, by the chosen backend
             // (a scene stores an unset clothBackend as "", not null: F4 changed only the notice until 10-04)
             backend = RoeClothBackends.Find(RoeClothBackends.Resolve(useCloth ? (string.IsNullOrEmpty(clothBackend) ? ClothBackend : clothBackend) : "off", animator));
+            var sheets = doaRig != null ? doaRig.Sheets() : default;
             cloth = backend.Make(new RoeClothScope
             {
                 animator = animator, world = transform,
                 exclude = helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null,
-                // a DOA6 character: her loose bones by kind from her physics data (their names are only numbers)
+                // a DOA6 character: her loose bones by kind from her physics data (their names are only numbers), her grid
+                // cloth's columns as one sheet each
                 kindOf = RoeDoaPhysics.KindsOf(animator),
+                anchorOf = sheets.anchorOf, neighbours = sheets.neighbours,
             });
             if (cloth != null)
                 Debug.Log($"[ROE] {id} cloth {backend.name}: {cloth.Report}");
@@ -697,7 +700,7 @@ namespace RoeFighter.Fight
         public static bool NoHipCloth;      // for checks (RoeFightProbe.SkirtSwing -roeVariant nohip)
 
         /// <summary>The bone cloth, for checks (null when off or another backend).</summary>
-        public RoeBoneCloth Cloth => cloth as RoeBoneCloth ?? (cloth as RoeClothRouter)?.Part<RoeBoneCloth>();
+        public RoeBoneCloth Cloth => cloth as RoeBoneCloth ?? (cloth as RoeClothRouter)?.PartFor<RoeBoneCloth>("skirt");
         /// <summary>The solver of a type among the fighter's cloth (for checks).</summary>
         public T ClothPart<T>() where T : class => cloth as T ?? (cloth as RoeClothRouter)?.Part<T>();
 

@@ -752,12 +752,20 @@ namespace RoeFighter.EditorTools
             RoeBoneCloth.SkirtTuning = RoeCapture.Arg("-roeSkirt", "");
             if (RoeBoneCloth.SkirtTuning.Length > 0)
                 variant += " " + RoeBoneCloth.SkirtTuning;
+            // the DOA5LR-style net: "nolong" without its long-range springs, -roeDoa5K the stiffness scale
+            RoeBoneCloth.Doa5LongRange = !variant.Contains("nolong");
+            RoeBoneCloth.Doa5AngleLimit = !variant.Contains("nolimit");
+            RoeBoneCloth.Doa5K = float.Parse(RoeCapture.Arg("-roeDoa5K", "2"), System.Globalization.CultureInfo.InvariantCulture);
+            if (RoeBoneCloth.Doa5K != 2f)
+                variant += $" K {RoeBoneCloth.Doa5K}";
             EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
             var game = Object.FindFirstObjectByType<FightGame>();
             game.cpu = new[] { false, false };
             string pack = RoeCapture.Arg("-roeMotions", null);
             if (pack != null)
                 game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
+            if (game.roster.Length > 0 && game.roster[game.pick[0]].id != id && game.roster[game.pick[1]].id != id)
+                game.PickIds(null, id);
             game.Setup();
             int who = game.f[0].rig.id == id ? 0 : 1;
             var me = game.f[who];

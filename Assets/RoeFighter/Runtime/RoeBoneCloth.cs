@@ -32,9 +32,10 @@ namespace RoeFighter
     /// Chains of one set are linked when the skin has triangles across them.  The ROE skirts are keyed
     /// by hand in the game's own clips; the fight blends this in under the motion-capture moves only,
     /// over the skirt pose RoeSkirtRig makes follow the legs.  legacy = the 10-02 version (independent
-    /// chains, one inertia on the anchor bone), kept as a backend to compare.
+    /// chains, one inertia on the anchor bone), kept as a backend to compare.  doa5 = the same chains and inertia under
+    /// Dead or Alive 5 Last Round's spring net instead of the angle constraints (RoeBoneCloth.Doa5.cs).
     /// </summary>
-    public class RoeBoneCloth : IRoeCloth
+    public partial class RoeBoneCloth : IRoeCloth
     {
         [Serializable]
         public class Settings
@@ -60,6 +61,10 @@ namespace RoeFighter
             public bool floor = true;
             public float stabilize = 0.1f;                              // after a reset no speed is carried over for this long (s)
             public int iterations = 4;
+            // doa5 (RoeBoneCloth.Doa5.cs): DOA5LR's spring classes, stiffness words (x: shorter than rest, y: longer); 0 = none
+            public Vector2 kAcross, kShear, kBend, kBendAcross, kLongRange;
+            public float gravityWord = 1f, dampingWord, pullWord;     // the object's words p3 (x 9.8 m/s2), p4, p5 (readings guessed)
+            public float pinRoot;                                       // the share of a chain from its root pinned to the animated pose
         }
 
         // Presets; Magica Cloth 2's numbers are per 1/90 s step.  The skirt is stiffer than the add-on's
@@ -185,12 +190,15 @@ namespace RoeFighter
             public Quaternion[] rb, rot, d;
             public Vector3 anchorPos, anchorPosPrev;
             public Quaternion anchorRot, anchorRotPrev;
+            // doa5: the spring net and each particle's pin to its animated place
+            public List<Spring5> springs5;
+            public float[] pin;
         }
 
         readonly List<ChainSet> chains = new List<ChainSet>();
         public readonly List<Capsule> capsules = new List<Capsule>();
         readonly Transform world;
-        readonly bool legacy;
+        readonly bool legacy, doa5;
         Vector3 worldPos, worldPosPrev;
         Quaternion worldRot = Quaternion.identity, worldRotPrev = Quaternion.identity;
         public float weight = 1f;
@@ -225,15 +233,17 @@ namespace RoeFighter
 
         /// <summary>
         /// The same for a physics setup (RoeClothBackends): only the kinds in scope.kinds (another solver takes the rest),
-        /// and the loose bones by scope.kindOf when the rig's bone names do not tell (DOA6's bone_&lt;id&gt;).
+        /// and the loose bones by scope.kindOf when the rig's bone names do not tell (DOA6's bone_&lt;id&gt;), its sheets by
+        /// scope.anchorOf / neighbours.  doa5: Dead or Alive 5 Last Round's spring net (RoeBoneCloth.Doa5.cs).
         /// </summary>
-        public RoeBoneCloth(RoeClothScope scope, bool legacy)
+        public RoeBoneCloth(RoeClothScope scope, bool legacy, bool doa5 = false)
         {
             var animator = scope.animator;
             var world = scope.world;
             var exclude = scope.exclude;
             this.world = world != null ? world : animator.transform;
-            this.legacy = legacy;
+            this.legacy = legacy && !doa5;
+            this.doa5 = doa5;
             var human = new Dictionary<Transform, HumanBodyBones>();
             foreach (HumanBodyBones hb in Enum.GetValues(typeof(HumanBodyBones)))
                 if (hb != HumanBodyBones.LastBone && animator.GetBoneTransform(hb) != null)
@@ -275,16 +285,18 @@ namespace RoeFighter
             if (torso != null)
                 capsules.Add(torso);
 
-            // chain sets: one per kind and anchor
+            // chain sets: one per kind and anchor (a rig's own sheet: the anchor it gives, every column of a DOA6 skirt on the hips)
             var meshes = animator.GetComponentsInChildren<SkinnedMeshRenderer>(true);
-            foreach (var group in kindOf.Keys.GroupBy(t => (kindOf[t], Anchor(t, kindOf))))
+            foreach (var group in kindOf.Keys.GroupBy(t => (kindOf[t], scope.anchorOf != null && scope.anchorOf.TryGetValue(t, out var given) ? given : Anchor(t, kindOf))))
             {
                 var (kind, anchor) = group.Key;
                 if (anchor == null)
                     continue;
                 var bones = group.OrderBy(Depth).ToArray();
-                var s = kind == "skirt" ? Skirt(legacy) : kind == "hair" ? Hair(legacy) : kind == "ribbon" ? Ribbon(legacy)
-                      : kind == "chain" ? Chain(legacy) : Breast(legacy);
+                var s = kind == "skirt" ? Skirt(this.legacy) : kind == "hair" ? Hair(this.legacy) : kind == "ribbon" ? Ribbon(this.legacy)
+                      : kind == "chain" ? Chain(this.legacy) : Breast(this.legacy);
+                if (doa5)
+                    s = Doa5(kind, s);
                 Transform owner = anchor;
                 while (owner != null && !human.ContainsKey(owner))
                     owner = owner.parent;
@@ -297,11 +309,13 @@ namespace RoeFighter
                 // inertia and the backstop's body axis come from the body part the chain belongs to
                 // (the pelvis for a skirt, even when its panels hang on a skirt bone)
                 var c = Build($"{kind} on {anchor.name}", kind, s, owner != null ? owner : anchor, bones, cs, skin);
-                if (s.links && !legacy)
+                if (s.links && !this.legacy && !(scope.neighbours != null && LinkNeighbours(c, scope.neighbours)))
                     Link(c, meshes);
+                if (doa5)
+                    BuildDoa5(c);
                 chains.Add(c);
             }
-            Report = $"{(legacy ? "legacy" : "Magica-style")}: {chains.Count} chain sets, {chains.Sum(c => c.bones.Length)} bones: " +
+            Report = $"{(doa5 ? "DOA5LR-style" : this.legacy ? "legacy" : "Magica-style")}: {chains.Count} chain sets, {chains.Sum(c => c.bones.Length)} bones: " +
                      string.Join(", ", chains.Select(c => $"{c.name} ({c.bones.Length}{c.linkReport})")) +
                      "; colliders " + string.Join(", ", capsules.Select(c => $"{c.name} r {c.ra:F3}/{c.rb:F3}"));
         }
@@ -613,6 +627,44 @@ namespace RoeFighter
                 c.linkReport = "; linked " + string.Join(" ", parts);
         }
 
+        /// <summary>
+        /// A rig's own sheet (RoeClothScope.neighbours, a DOA6 grid cloth's columns): chains whose first bones are neighbours
+        /// are linked level by level, as the skin's triangles would link them.  False when the rig names none of this set's.
+        /// </summary>
+        bool LinkNeighbours(ChainSet c, IDictionary<Transform, Transform[]> neighbours)
+        {
+            var rootOf = new Dictionary<Transform, int>();
+            for (int i = 0; i < c.bones.Length; i++)
+                if (c.parent[i] < 0)
+                    rootOf[c.bones[i]] = i;
+            var pairs = new HashSet<(int, int)>();
+            foreach (var kv in rootOf)
+                if (neighbours.TryGetValue(kv.Key, out var near))
+                    foreach (var t in near)
+                        if (t != null && rootOf.TryGetValue(t, out int j) && j != kv.Value)
+                            pairs.Add(kv.Value < j ? (kv.Value, j) : (j, kv.Value));
+            if (pairs.Count == 0)
+                return false;
+            int joined = 0;
+            foreach (var (ra, rb) in pairs)
+            {
+                var A = ChainOf(c, ra);
+                var Bc = ChainOf(c, rb);
+                for (int l = 0; l < Mathf.Min(A.Count, Bc.Count); l++)
+                {
+                    int i = A[l], j = Bc[l];
+                    var ti = c.bones[i].TransformPoint(c.tailLocal[i]);
+                    var tj = c.bones[j].TransformPoint(c.tailLocal[j]);
+                    c.links[c.levelOf[i]].Add((i, j));
+                    c.linkRestPenetration[(i, j)] = LegDepth(ti, tj, c.s.radius, c.capsules);
+                    c.restLink[(i, j)] = c.capsules.Select(cap => Mathf.Max(0f, EdgeDepth(ti, tj, c.s.radius, cap, out _, out _))).ToArray();
+                    joined++;
+                }
+            }
+            c.linkReport = $"; the rig's sheet: {pairs.Count} neighbouring chains, {joined} links";
+            return true;
+        }
+
         /// <summary>The particles of the chain that starts at particle root, root to tip (the first child each time).</summary>
         static List<int> ChainOf(ChainSet c, int root)
         {
@@ -818,7 +870,12 @@ namespace RoeFighter
                 {
                     int sub = Mathf.Max(1, Mathf.RoundToInt(dt * 120f));
                     for (int k = 0; k < sub; k++)
-                        Simulate(c, dt / sub, (float)k / sub, (k + 1f) / sub, floor);
+                    {
+                        if (doa5)
+                            SimulateDoa5(c, dt / sub, (float)k / sub, (k + 1f) / sub, floor);
+                        else
+                            Simulate(c, dt / sub, (float)k / sub, (k + 1f) / sub, floor);
+                    }
                     Array.Copy(c.hb, c.hbPrev, c.x.Length);
                     Array.Copy(c.tb, c.tbPrev, c.x.Length);
                     c.anchorPosPrev = c.anchorPos;
@@ -972,34 +1029,7 @@ namespace RoeFighter
                     {
                         var h = c.head[i];
                         float L = c.length[i];
-                        if (c.capsules.Length > 0 && !NoColliders)
-                        {
-                            // as deep as the stance has it is allowed (legacy: as deep as the animated pose goes; a
-                            // skirt hung on the skin: as deep as either)
-                            var allow = legacy ? c.allow : s.edge ? c.restEdge[i] : c.restPoint[i];
-                            bool onSkin = !legacy && skirtOnSkin && c.kind == "skirt";
-                            if (legacy || onSkin)
-                            {
-                                var stance = allow;
-                                allow = c.allow;
-                                for (int k = 0; k < c.capsules.Length; k++)
-                                    allow[k] = Mathf.Max(onSkin ? stance[k] : 0f, s.edge ? EdgeDepth(hb[i], tb[i], s.radius, c.capsules[k], out _, out _)
-                                                                                         : PointDepth(tb[i], s.radius, c.capsules[k], out _));
-                            }
-                            bool hit;
-                            Vector3 nx = s.edge ? PushEdge(h, c.x[i], s.radius, c.capsules, allow, out hit)
-                                                : PushPoint(c.x[i], s.radius, c.capsules, allow, out hit);
-                            nx = h + (nx - h).normalized * L;
-                            if (hit)
-                            {
-                                // the leg carries the cloth along, it does not bat it away: most of the push
-                                // does not become speed (all of it did: g04's front panels popped 24-39
-                                // degrees in a step when a thigh came through), then friction
-                                c.xOld[i] += (nx - c.x[i]) * s.pushAttenuation;
-                                c.xOld[i] += (nx - c.xOld[i]) * s.friction;
-                            }
-                            c.x[i] = nx;
-                        }
+                        PushColliders(c, i, hb, tb);
                         // backstop: a big sphere behind the animated tail, on the side of the body's axis
                         if (s.backstop && !NoBackstop)
                         {
@@ -1027,34 +1057,8 @@ namespace RoeFighter
                             if (out0.magnitude < near && out0.magnitude > 1e-6f)
                                 c.x[i] = OnSphere(c, i, r0 + out0.normalized * near);
                         }
-                        // the floor: the bone turns up just enough; into the floor the speed is stopped
                         if (s.floor)
-                        {
-                            float lo = floor + s.radius;
-                            var d = (c.x[i] - h).normalized;
-                            float zmin = Mathf.Clamp((lo - h.y) / Mathf.Max(L, 1e-6f), -1f, 1f);
-                            if (d.y < zmin)
-                            {
-                                var hor = new Vector3(d.x, 0f, d.z);
-                                if (hor.sqrMagnitude < 1e-8f)
-                                {
-                                    var rel = c.x[i] - cPos;
-                                    hor = rel - Vector3.Dot(rel, axis) * axis;
-                                    hor.y = 0f;
-                                    if (hor.sqrMagnitude < 1e-8f)
-                                        hor = Vector3.forward;
-                                }
-                                hor.Normalize();
-                                var nd = hor * Mathf.Sqrt(Mathf.Max(0f, 1f - zmin * zmin)) + Vector3.up * zmin;
-                                var nx = h + nd * L;
-                                var vel = c.x[i] - c.xOld[i];
-                                vel.y = Mathf.Max(vel.y, 0f);
-                                vel.x *= 1f - s.friction;
-                                vel.z *= 1f - s.friction;
-                                c.x[i] = nx;
-                                c.xOld[i] = nx - vel;
-                            }
-                        }
+                            Floor(c, i, floor, cPos, axis);
                     }
                     // the cross links collide too: a leg cannot pass between two linked chains (not for a skirt
                     // hung on the skin: its pose already clears the legs, and link pushes against the capsules,
@@ -1070,6 +1074,73 @@ namespace RoeFighter
             // just after a reset nothing that was pushed into place becomes speed
             if (c.stabilizeLeft > 0f)
                 Array.Copy(c.x, c.xOld, n);
+        }
+
+        /// <summary>
+        /// The particle out of the colliders, its bone kept at its length (hb, tb: the animated heads and tails of this
+        /// substep).  As deep as the stance has it is allowed (legacy: as deep as the animated pose goes; a skirt hung on
+        /// the skin: as deep as either).
+        /// </summary>
+        void PushColliders(ChainSet c, int i, Vector3[] hb, Vector3[] tb)
+        {
+            if (c.capsules.Length == 0 || NoColliders)
+                return;
+            var s = c.s;
+            var h = c.head[i];
+            float L = c.length[i];
+            var allow = legacy ? c.allow : s.edge ? c.restEdge[i] : c.restPoint[i];
+            bool onSkin = !legacy && skirtOnSkin && c.kind == "skirt";
+            if (legacy || onSkin)
+            {
+                var stance = allow;
+                allow = c.allow;
+                for (int k = 0; k < c.capsules.Length; k++)
+                    allow[k] = Mathf.Max(onSkin ? stance[k] : 0f, s.edge ? EdgeDepth(hb[i], tb[i], s.radius, c.capsules[k], out _, out _)
+                                                                         : PointDepth(tb[i], s.radius, c.capsules[k], out _));
+            }
+            bool hit;
+            Vector3 nx = s.edge ? PushEdge(h, c.x[i], s.radius, c.capsules, allow, out hit)
+                                : PushPoint(c.x[i], s.radius, c.capsules, allow, out hit);
+            nx = h + (nx - h).normalized * L;
+            if (hit)
+            {
+                // the leg carries the cloth along, it does not bat it away: most of the push does not become speed
+                // (all of it did: g04's front panels popped 24-39 degrees in a step when a thigh came through), then friction
+                c.xOld[i] += (nx - c.x[i]) * s.pushAttenuation;
+                c.xOld[i] += (nx - c.xOld[i]) * s.friction;
+            }
+            c.x[i] = nx;
+        }
+
+        /// <summary>The floor: the bone turns up just enough; into the floor the speed is stopped.</summary>
+        static void Floor(ChainSet c, int i, float floor, Vector3 cPos, Vector3 axis)
+        {
+            var s = c.s;
+            var h = c.head[i];
+            float L = c.length[i];
+            float lo = floor + s.radius;
+            var d = (c.x[i] - h).normalized;
+            float zmin = Mathf.Clamp((lo - h.y) / Mathf.Max(L, 1e-6f), -1f, 1f);
+            if (d.y >= zmin)
+                return;
+            var hor = new Vector3(d.x, 0f, d.z);
+            if (hor.sqrMagnitude < 1e-8f)
+            {
+                var rel = c.x[i] - cPos;
+                hor = rel - Vector3.Dot(rel, axis) * axis;
+                hor.y = 0f;
+                if (hor.sqrMagnitude < 1e-8f)
+                    hor = Vector3.forward;
+            }
+            hor.Normalize();
+            var nd = hor * Mathf.Sqrt(Mathf.Max(0f, 1f - zmin * zmin)) + Vector3.up * zmin;
+            var nx = h + nd * L;
+            var vel = c.x[i] - c.xOld[i];
+            vel.y = Mathf.Max(vel.y, 0f);
+            vel.x *= 1f - s.friction;
+            vel.z *= 1f - s.friction;
+            c.x[i] = nx;
+            c.xOld[i] = nx - vel;
         }
 
         /// <summary>A point put back on the particle's bone sphere (its head, its length).</summary>

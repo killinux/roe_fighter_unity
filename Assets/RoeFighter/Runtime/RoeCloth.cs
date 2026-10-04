@@ -36,12 +36,19 @@ namespace RoeFighter
         public ICollection<string> kinds;
         /// <summary>The loose bones by kind, when their names do not tell (DOA6's bone_&lt;id&gt;: from the game's physics data, RoeDoaRig); null: by name.</summary>
         public IDictionary<Transform, string> kindOf;
+        /// <summary>
+        /// A rig's own sheets of cloth (a DOA6 grid cloth, RoeDoaRig.Sheets): the bone a loose bone's chain hangs on as one
+        /// piece (every column of a skirt on the hips), and per chain's first bone its neighbours in the sheet; null: from the
+        /// bone tree, and from the skin's triangles across chains.
+        /// </summary>
+        public IDictionary<Transform, Transform> anchorOf;
+        public IDictionary<Transform, Transform[]> neighbours;
 
         public bool Takes(string kind) => kinds == null || kinds.Contains(kind);
 
         public RoeClothScope With(ICollection<string> only) => new RoeClothScope
         {
-            animator = animator, world = world, exclude = exclude, kinds = only, kindOf = kindOf,
+            animator = animator, world = world, exclude = exclude, kinds = only, kindOf = kindOf, anchorOf = anchorOf, neighbours = neighbours,
         };
     }
 
@@ -54,6 +61,9 @@ namespace RoeFighter
     ///   doa6          Dead or Alive 6's own systems from the character's data (RoeDoaRig): soft bodies (breasts), bone
     ///                 chains, swing bones, colliders grouped per piece (docs/doa-physics.md) - only for a character that
     ///                 has DOA6 data; the kinds it cannot take go to the bone cloth
+    ///   doa5lr        Dead or Alive 5 Last Round's spring net (across, shear, skip-one, long range; stiffness for shorter /
+    ///                 longer than rest; pinned roots) on the bone cloth's chains instead of its angle constraints
+    ///                 (RoeBoneCloth.Doa5.cs) - any fighter
     ///   magica        Magica Cloth 2 itself, once it is installed (RoeMagicaCloth, behind the MAGICACLOTH2 define the
     ///                 package adds + ROE_MAGICA)
     /// A new solver (another engine, another game's system) is one more entry here: a class implementing IRoeCloth
@@ -79,6 +89,7 @@ namespace RoeFighter
                 name = "doa6", title = "DOA6 physics", make = s => new RoeDoaPhysics(s),
                 covers = (s, kind) => RoeDoaPhysics.Covers(s, kind),
             },
+            new Solver { name = "doa5lr", title = "DOA5LR-style spring net", skinnedSkirt = true, make = s => new RoeBoneCloth(s, legacy: false, doa5: true) },
 #if MAGICACLOTH2 && ROE_MAGICA
             new Solver { name = "magica", title = "Magica Cloth 2", skinnedSkirt = true, make = s => new RoeMagicaCloth(s) },
 #endif
@@ -95,6 +106,7 @@ namespace RoeFighter
     ///   magica_style  everything on the Magica-style bone cloth
     ///   doa6          a DOA6 character on her game's own systems: soft-body breasts, cloth grids, swing hair
     ///   doa6_breasts  DOA6 soft-body breasts, everything else on the bone cloth (to compare one kind at a time)
+    ///   doa5lr_style  skirts, hair, ribbons, chains on DOA5LR's spring net; breasts on the bone cloth (DOA5LR has presets for them)
     ///   legacy        the 10-02 bone cloth
     ///   off           no simulation: skirts and hair keep the battle stance's keys
     ///   magica        Magica Cloth 2 for everything (when installed)
@@ -146,6 +158,7 @@ namespace RoeFighter
             All_("magica_style", "Magica-style bone cloth", "bone"),
             All_("doa6", "DOA6 physics (soft bodies, cloth grids)", "doa6"),
             new Backend { name = "doa6_breasts", title = "DOA6 soft breasts + bone cloth", fallback = "bone", byKind = { { "breast", "doa6" }, { "body", "doa6" } } },
+            new Backend { name = "doa5lr_style", title = "DOA5LR-style spring net (breasts: bone cloth)", fallback = "doa5lr", byKind = { { "breast", "bone" }, { "body", "bone" } } },
             All_("legacy", "Bone cloth (10-02)", "bone_legacy"),
             All_("off", "No cloth", null),
 #if MAGICACLOTH2 && ROE_MAGICA
@@ -210,5 +223,9 @@ namespace RoeFighter
 
         /// <summary>The first part of a type (the bone cloth, for checks).</summary>
         public T Part<T>() where T : class => parts.Select(p => p.cloth as T).FirstOrDefault(c => c != null);
+
+        /// <summary>The part of a type that simulates a kind, else the first of that type.</summary>
+        public T PartFor<T>(string kind) where T : class =>
+            parts.Where(p => p.kinds.Contains(kind)).Select(p => p.cloth as T).FirstOrDefault(c => c != null) ?? Part<T>();
     }
 }
