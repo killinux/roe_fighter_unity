@@ -1455,7 +1455,9 @@ namespace RoeFighter.EditorTools
         /// under the toe half (both 0 when standing flat on the floor in heels; below 0 = in the floor).
         /// First the game's own pose (the intro), then guard, walking on and back, side steps and the four
         /// strikes of each motion pack.  Frames to _work/feet/&lt;pack&gt;_&lt;n&gt;.jpg, numbers to the log and feet.txt.
-        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Feet [-roeChar a08] [-roePacks bandai1,accad_male2]
+        /// Per heel also the lowest heel skinned to its strongest bone alone (heel-rigid: without the share of the
+        /// helpers), the shin-to-foot angle and the bones of the lowest heel vertex.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.Feet [-roeChar a08] [-roePacks bandai1,accad_male2] [-roeSides both]
         /// </summary>
         public static void Feet()
         {
@@ -1518,6 +1520,14 @@ namespace RoeFighter.EditorTools
                     }
                     return lists;
                 }).ToArray();
+                // the same vertices skinned to their strongest bone alone (how the heel would sit without the helpers' share)
+                var rigid = renderers.Select(r => (verts: r.sharedMesh.vertices, bind: r.sharedMesh.bindposes, bw: r.sharedMesh.boneWeights)).ToArray();
+                var knees = new[] { a.GetBoneTransform(HumanBodyBones.LeftLowerLeg), a.GetBoneTransform(HumanBodyBones.RightLowerLeg) };
+                bool bothSides = RoeCapture.Arg("-roeSides", "left") == "both";
+                // the foot against the shin, in the shin's frame: at the intro (the game's own pose) and now
+                var introToe = new Vector3[2];
+                var introUp = new Vector3[2];
+                var introRel = new Quaternion[2];       // the calf against the thigh at the intro
                 int shot = 0;
                 void Shoot(string what)
                 {
@@ -1525,6 +1535,9 @@ namespace RoeFighter.EditorTools
                     var fwd = me.Forward;
                     var line = new System.Text.StringBuilder($"{packName}\t{shot}\t{what}\t{me.state}\t{me.rig.Current}");
                     var low = new[] { new Vector2(float.MaxValue, float.MaxValue), new Vector2(float.MaxValue, float.MaxValue) };   // (heel half, toe half)
+                    var heelAt = new[] { (-1, -1), (-1, -1) };      // the lowest heel vertex: renderer, vertex
+                    var rigidHeel = new[] { float.MaxValue, float.MaxValue };
+                    var rigidAt = new[] { "", "" };
                     for (int ri = 0; ri < renderers.Length; ri++)
                     {
                         if (sides[ri][0].Count == 0 && sides[ri][1].Count == 0)
@@ -1543,7 +1556,16 @@ namespace RoeFighter.EditorTools
                                 var p = m.MultiplyPoint3x4(v[i]);
                                 float along = Vector3.Dot(p - feet[k].position, footFwd);
                                 if (along < 0f)
+                                {
+                                    if (p.y - floor < low[k].x)
+                                        heelAt[k] = (ri, i);
                                     low[k].x = Mathf.Min(low[k].x, p.y - floor);
+                                    int b = rigid[ri].bw[i].boneIndex0;
+                                    var q = r.bones[b].localToWorldMatrix.MultiplyPoint3x4(rigid[ri].bind[b].MultiplyPoint3x4(rigid[ri].verts[i]));
+                                    if (q.y - floor < rigidHeel[k])
+                                        rigidAt[k] = $"{r.name}#{i}:{r.bones[b].name}";
+                                    rigidHeel[k] = Mathf.Min(rigidHeel[k], q.y - floor);
+                                }
                                 else
                                     low[k].y = Mathf.Min(low[k].y, p.y - floor);
                             }
@@ -1555,9 +1577,93 @@ namespace RoeFighter.EditorTools
                         float pitch = Mathf.Atan2(d.y, new Vector2(d.x, d.z).magnitude) * Mathf.Rad2Deg;
                         line.Append($"\t{(k == 0 ? "L" : "R")} pitch {pitch:F0} ankle {feet[k].position.y - floor:F3} toe {toes[k].position.y - floor:F3} " +
                                     $"heel-half low {low[k].x:F3} toe-half low {low[k].y:F3}");
+                        // the heel skinned to its strongest bone alone, and the angle between shin and foot (knee-ankle-toe)
+                        line.Append($" heel-rigid {rigidHeel[k]:F3} ({rigidAt[k]}) ankle-angle {Vector3.Angle(knees[k].position - feet[k].position, toes[k].position - feet[k].position):F0}");
+                        // one heel vertex followed through the shots (-roeTrack nude_body#6537,nude_body#9396 for L,R)
+                        var track = RoeCapture.Arg("-roeTrack", "").Split(',');
+                        if (track.Length == 2 && track[k].Contains("#"))
+                        {
+                            var parts = track[k].Split('#');
+                            int ri = System.Array.FindIndex(renderers, x => x.name.Replace(' ', '_') == parts[0]);     // spaces as _ on the command line
+                            int vi = int.Parse(parts[1]);
+                            if (ri >= 0)
+                            {
+                                var r = renderers[ri];
+                                r.BakeMesh(baked, true);
+                                var pb = Matrix4x4.TRS(r.transform.position, r.transform.rotation, Vector3.one).MultiplyPoint3x4(baked.vertices[vi]);
+                                int b = rigid[ri].bw[vi].boneIndex0;
+                                var pr = r.bones[b].localToWorldMatrix.MultiplyPoint3x4(rigid[ri].bind[b].MultiplyPoint3x4(rigid[ri].verts[vi]));
+                                var fl = feet[k].InverseTransformPoint(pr);
+                                line.Append($" track#{vi} baked y {pb.y - floor:F3} along {Vector3.Dot(pb - feet[k].position, Vector3.ProjectOnPlane(toes[k].position - feet[k].position, Vector3.up).normalized):F3}" +
+                                            $" rigid y {pr.y - floor:F3} foot-local ({fl.x:F3},{fl.y:F3},{fl.z:F3}) baked-rigid {(pb - pr).magnitude:F3}");
+                            }
+                        }
+                        // the foot turned against the shin since the intro (the game's own pose): about the shin (twist), towards it
+                        // (flex), and the sole tipped sideways about the foot's length (roll)
+                        {
+                            var shin = knees[k];
+                            var axis = shin.InverseTransformDirection(feet[k].position - shin.position).normalized;
+                            var toeDir = shin.InverseTransformDirection(toes[k].position - feet[k].position).normalized;
+                            if (shot == 0)
+                            {
+                                introToe[k] = toeDir;
+                                introUp[k] = feet[k].InverseTransformDirection(Vector3.up);     // the sole's up, in the foot's frame
+                            }
+                            float twist = Vector3.SignedAngle(Vector3.ProjectOnPlane(introToe[k], axis), Vector3.ProjectOnPlane(toeDir, axis), axis);
+                            float flex = Vector3.Angle(toeDir, axis) - Vector3.Angle(introToe[k], axis);
+                            // roll: the sole's up against the plane of shin and foot, now and at the intro
+                            var up = shin.InverseTransformDirection(feet[k].TransformDirection(introUp[k]));
+                            var across = Vector3.Cross(axis, toeDir).normalized;
+                            float roll = Mathf.Asin(Mathf.Clamp(Vector3.Dot(up.normalized, across), -1f, 1f)) * Mathf.Rad2Deg;
+                            line.Append($" vs-intro twist {twist:F0} flex {flex:F0} roll {roll:F0}");
+                            // the shin's own roll: the calf against the thigh, about the calf's length, since the intro
+                            var thigh = shin.parent;
+                            if (thigh != null)
+                            {
+                                var rel = Quaternion.Inverse(thigh.rotation) * shin.rotation;
+                                if (shot == 0)
+                                    introRel[k] = rel;
+                                var boneAxis = shin.InverseTransformDirection(feet[k].position - shin.position).normalized;
+                                line.Append($" calf-roll {RoeHelperRig.TwistAngle(Quaternion.Inverse(introRel[k]) * rel, boneAxis):F0}");
+                                // from the positions alone: the way the knee sticks out (off the hip-ankle line) against the toes, along the floor
+                                var hip = thigh.position;
+                                var line3 = feet[k].position - hip;
+                                var off = shin.position - (hip + line3 * Mathf.Clamp01(Vector3.Dot(shin.position - hip, line3) / line3.sqrMagnitude));
+                                var kneeFlat = Vector3.ProjectOnPlane(off, Vector3.up);
+                                var toeFlat = Vector3.ProjectOnPlane(toes[k].position - feet[k].position, Vector3.up);
+                                if (off.magnitude > 0.01f && kneeFlat.sqrMagnitude > 1e-6f && toeFlat.sqrMagnitude > 1e-6f)
+                                    line.Append($" toes-vs-knee {Vector3.SignedAngle(kneeFlat, toeFlat, Vector3.up):F0} (knee bent {off.magnitude * 100f:F1} cm)");
+                                // hip, knee, ankle, toe in her own frame (x right, y up, z ahead; cm from the point under her hips)
+                                var frame = Quaternion.LookRotation(Vector3.ProjectOnPlane(fwd, Vector3.up).normalized, Vector3.up);
+                                var origin = Vector3.ProjectOnPlane(me.rig.animator.GetBoneTransform(HumanBodyBones.Hips).position, Vector3.up) + Vector3.up * floor;
+                                string P(Vector3 p) { var q = Quaternion.Inverse(frame) * (p - origin) * 100f; return $"({q.x:F0},{q.y:F0},{q.z:F0})"; }
+                                line.Append($" legs hip{P(hip)} knee{P(shin.position)} ankle{P(feet[k].position)} toe{P(toes[k].position)}");
+                                // the toes before the foot was turned to stand, and the heading it stood in (against the knee)
+                                var before = me.rig.FootToes[k];
+                                var used = me.rig.FootAhead[k];
+                                if (kneeFlat.sqrMagnitude > 1e-6f && before.sqrMagnitude > 1e-8f && used.sqrMagnitude > 1e-8f)
+                                    line.Append($" toes-before-vs-knee {Vector3.SignedAngle(kneeFlat, Vector3.ProjectOnPlane(before, Vector3.up), Vector3.up):F0} heading-vs-knee {Vector3.SignedAngle(kneeFlat, used, Vector3.up):F0}" +
+                                                $" before: pitch {Mathf.Atan2(-before.y, new Vector2(before.x, before.z).magnitude) * Mathf.Rad2Deg:F0} along-heading {Vector3.Dot(before, used.normalized) * 100f:F1} cm, stand weight {me.rig.FootWeight[k]:F2}");
+                            }
+                        }
+                        // flat feet: how far the foot is from the stand it should take (against the direction it points along the floor)
+                        if (me.rig.flatFeet)
+                        {
+                            var ahead = me.rig.Heading(k);
+                            if (ahead.sqrMagnitude > 1e-6f)
+                                line.Append($" off-stand {Quaternion.Angle(Quaternion.Inverse(Quaternion.LookRotation(ahead.normalized, Vector3.up)) * feet[k].rotation, me.rig.flatRest[k]):F0}");
+                        }
+                        // which bones carry the lowest heel vertex (a helper that the motion capture moves differently?)
+                        if (heelAt[k].Item1 >= 0)
+                        {
+                            var r = renderers[heelAt[k].Item1];
+                            var w = rigid[heelAt[k].Item1].bw[heelAt[k].Item2];
+                            string B(int b) => b < r.bones.Length && r.bones[b] != null ? r.bones[b].name : "?";
+                            line.Append($" heel@{B(w.boneIndex0)}:{w.weight0:F2}/{B(w.boneIndex1)}:{w.weight1:F2}/{B(w.boneIndex2)}:{w.weight2:F2}");
+                        }
                     }
                     table.AppendLine(line.ToString());
-                    // side view at floor level, from her left, a little in front
+                    // side view at floor level, from her left, a little in front (and from her right: -roeSides both)
                     var mid = (feet[0].position + feet[1].position) * 0.5f;
                     mid.y = floor + 0.14f;
                     var side = Vector3.Cross(Vector3.up, fwd).normalized;     // her right
@@ -1572,6 +1678,17 @@ namespace RoeFighter.EditorTools
                         warmed = true;
                     }
                     RoeCapture.Render(cam, 640, 400, System.IO.Path.Combine(outDir, $"{packName}_{shot:D3}.jpg"), 90);
+                    if (bothSides)
+                    {
+                        cam.transform.position = mid + side * 1.5f + fwd * 0.35f + Vector3.up * 0.05f;
+                        cam.transform.LookAt(mid, Vector3.up);
+                        RoeCapture.Render(cam, 640, 400, System.IO.Path.Combine(outDir, $"{packName}_{shot:D3}_r.jpg"), 90);
+                        // and from the front at knee height: which way the knees and the feet face
+                        var legs = mid + Vector3.up * 0.2f;
+                        cam.transform.position = legs + fwd * 2.2f + Vector3.up * 0.15f;
+                        cam.transform.LookAt(legs, Vector3.up);
+                        RoeCapture.Render(cam, 640, 400, System.IO.Path.Combine(outDir, $"{packName}_{shot:D3}_f.jpg"), 90);
+                    }
                     shot++;
                 }
                 // the game's own pose while the round is introduced
@@ -1618,6 +1735,131 @@ namespace RoeFighter.EditorTools
             Object.DestroyImmediate(baked);
             System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, "feet.txt"), table.ToString());
             Debug.Log("[ROE] feet:\n" + table);
+        }
+
+        /// <summary>
+        /// How well the limb helpers' fit (RoeHelperRig) keeps the skin of the heels where the game's own keys have it.
+        /// Every frame of the game's clips on the fighter prefab: the heel skin (vertices of the foot behind and below
+        /// the ankle in the bind pose) as the game keys the helpers, then with the helpers driven by the fit; the
+        /// difference in the foot's frame, by the angle knee-ankle-toe (g05's front foot in the motion capture's guard:
+        /// 152 degrees, her stands 112-114, the bind pose 162).  Also how far the skinned heel lies from where the foot
+        /// bone alone would put it (the share of the helpers), keyed and fitted.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.HelperHeel [-roeChar g05]
+        /// </summary>
+        public static void HelperHeel()
+        {
+            string id = RoeCapture.Arg("-roeChar", "g05");
+            var go = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var an = go.GetComponent<Animator>();
+            var rig = go.GetComponent<RoeHelperRig>();
+            var feet = new[] { an.GetBoneTransform(HumanBodyBones.LeftFoot), an.GetBoneTransform(HumanBodyBones.RightFoot) };
+            var toes = new[] { an.GetBoneTransform(HumanBodyBones.LeftToes), an.GetBoneTransform(HumanBodyBones.RightToes) };
+            var knees = new[] { an.GetBoneTransform(HumanBodyBones.LeftLowerLeg), an.GetBoneTransform(HumanBodyBones.RightLowerLeg) };
+            // the heel skin: vertices whose strongest bone is the foot, behind the ankle (along the floor) and 2 cm or more
+            // below it while she stands (the bind pose points her bare feet down)
+            var smrs = go.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null && r.enabled && r.gameObject.activeInHierarchy).ToArray();
+            var standClip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(id, "react_02"))
+                            ?? AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(id, "idle_01"));
+            RoeCapture.Pose(go, standClip, 0f);
+            var heel = smrs.Select(r =>
+            {
+                var bw = r.sharedMesh.boneWeights;
+                var bind = r.sharedMesh.bindposes;
+                var verts = r.sharedMesh.vertices;
+                var lists = new[] { new List<int>(), new List<int>() };
+                for (int k = 0; k < 2; k++)
+                {
+                    var ahead = Vector3.ProjectOnPlane(toes[k].position - feet[k].position, Vector3.up).normalized;
+                    for (int i = 0; i < bw.Length; i++)
+                    {
+                        int b = bw[i].boneIndex0;
+                        if (b >= r.bones.Length || r.bones[b] != feet[k])
+                            continue;
+                        var p = feet[k].TransformPoint(bind[b].MultiplyPoint3x4(verts[i]));
+                        if (Vector3.Dot(p - feet[k].position, ahead) < 0f && p.y < feet[k].position.y - 0.02f)
+                            lists[k].Add(i);
+                    }
+                }
+                return lists;
+            }).ToArray();
+            var rigidAt = smrs.Select(r => (bind: r.sharedMesh.bindposes, verts: r.sharedMesh.vertices, bw: r.sharedMesh.boneWeights)).ToArray();
+            var mesh = new Mesh();
+            Vector3[] Skin(int k)
+            {
+                var all = new List<Vector3>();
+                for (int ri = 0; ri < smrs.Length; ri++)
+                {
+                    if (heel[ri][k].Count == 0)
+                        continue;
+                    smrs[ri].BakeMesh(mesh, true);
+                    var v = mesh.vertices;
+                    var m = Matrix4x4.TRS(smrs[ri].transform.position, smrs[ri].transform.rotation, Vector3.one);
+                    foreach (int i in heel[ri][k])
+                        all.Add(feet[k].InverseTransformPoint(m.MultiplyPoint3x4(v[i])));
+                }
+                return all.ToArray();
+            }
+            Vector3[] Rigid(int k)
+            {
+                var all = new List<Vector3>();
+                for (int ri = 0; ri < smrs.Length; ri++)
+                    foreach (int i in heel[ri][k])
+                    {
+                        int b = rigidAt[ri].bw[i].boneIndex0;
+                        all.Add(rigidAt[ri].bind[b].MultiplyPoint3x4(rigidAt[ri].verts[i]));
+                    }
+                return all.ToArray();
+            }
+            var rigid = new[] { Rigid(0), Rigid(1) };
+            var bins = new[] { 100f, 120f, 140f, 160f, 999f };
+            var stats = new Dictionary<int, List<(float fitErr, float keyedOff, float fitOff)>>();
+            var sb = new System.Text.StringBuilder($"[ROE] helper heels of {id}: {heel.Sum(h => h[0].Count)}/{heel.Sum(h => h[1].Count)} heel vertices (L/R), " +
+                                                   $"helpers {(rig != null ? rig.drives.Count : 0)}");
+            var worst = new List<(float err, string where)>();
+            foreach (var name in new[] { "idle_01", "idle_02", "react_01", "react_02", "hurt", "die", "rip", "skill_01", "skill_02", "skill_03" })
+            {
+                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(id, name));
+                if (clip == null)
+                    continue;
+                for (float t = 0f; t <= clip.length + 1e-4f; t += 1f / 15f)
+                {
+                    RoeCapture.Pose(go, clip, t);
+                    var keyed = new[] { Skin(0), Skin(1) };
+                    var angle = Enumerable.Range(0, 2).Select(k => Vector3.Angle(knees[k].position - feet[k].position, toes[k].position - feet[k].position)).ToArray();
+                    rig?.Apply(1f);
+                    var fitted = new[] { Skin(0), Skin(1) };
+                    for (int k = 0; k < 2; k++)
+                    {
+                        float err = 0f, keyedOff = 0f, fitOff = 0f;
+                        for (int j = 0; j < keyed[k].Length; j++)
+                        {
+                            err += (keyed[k][j] - fitted[k][j]).magnitude;
+                            keyedOff += (keyed[k][j] - rigid[k][j]).magnitude;
+                            fitOff += (fitted[k][j] - rigid[k][j]).magnitude;
+                        }
+                        int n = Mathf.Max(1, keyed[k].Length);
+                        int bin = System.Array.FindIndex(bins, b => angle[k] < b);
+                        if (!stats.TryGetValue(bin, out var list))
+                            stats[bin] = list = new List<(float, float, float)>();
+                        list.Add((err / n, keyedOff / n, fitOff / n));
+                        worst.Add((err / n, $"{name} {t:F2}s {(k == 0 ? "L" : "R")} angle {angle[k]:F0}"));
+                    }
+                }
+            }
+            RoeCapture.EndPosing();
+            foreach (var kv in stats.OrderBy(x => x.Key))
+            {
+                string range = kv.Key == 0 ? $"< {bins[0]:F0}" : kv.Key < bins.Length - 1 ? $"{bins[kv.Key - 1]:F0}-{bins[kv.Key]:F0}" : $">= {bins[kv.Key - 1]:F0}";
+                var l = kv.Value;
+                sb.Append($"\n[ROE]   knee-ankle-toe {range,-8} deg: {l.Count,4} feet, heel skin fit vs keys {l.Average(x => x.fitErr) * 100f:F1} cm (max {l.Max(x => x.fitErr) * 100f:F1}), " +
+                          $"off the foot bone keyed {l.Average(x => x.keyedOff) * 100f:F1} cm, fitted {l.Average(x => x.fitOff) * 100f:F1} cm");
+            }
+            foreach (var w in worst.OrderByDescending(x => x.err).Take(6))
+                sb.Append($"\n[ROE]   worst: {w.err * 100f:F1} cm in {w.where}");
+            Object.DestroyImmediate(mesh);
+            Object.DestroyImmediate(go);
+            Debug.Log(sb.ToString());
         }
 
         /// <summary>

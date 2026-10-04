@@ -11,7 +11,9 @@ namespace RoeFighter.EditorTools
     /// 得区分一下").  Every frame of the clips she stands in (idle_01 if it stands, idle_02, react_01, react_02) is posed on
     /// the fighter prefab; of the frames where a foot is planted (toe bone within 2.5 cm of the floor), the one a quarter of
     /// the way up from the lowest ankle is how she stands on it (the very lowest was a stray frame: g04's heel sank into the
-    /// floor for a moment in react_01, her ankle at 9 cm).
+    /// floor for a moment in react_01, her ankle at 9 cm).  Only frames with the whole sole down count when there are
+    /// any: the skin under the heel half and under the toe half both within 2.5 cm of the floor (g05's right foot was
+    /// taken from a frame of idle_02 with the heel 5 cm up, on the ball of the foot).
     ///   heels   the shoe holds the ankle up even then (a08, g04: 13-15 cm): the fight keeps posing planted feet in the
     ///           battle stance's high-heeled angle, as before;
     ///   flat    the ankle comes down (g05 barefoot: 8 cm): the motion capture's feet - in the bind pose's angle, which
@@ -26,15 +28,16 @@ namespace RoeFighter.EditorTools
         public const float HeelAnkle = 0.105f;
         /// <summary>A foot is planted when its toe bone is this close to the floor (m).</summary>
         public const float Planted = 0.025f;
+        /// <summary>The whole sole is down when the skin under the heel half and under the toe half are both this close to the floor (m).</summary>
+        public const float SoleDown = 0.025f;
 
         public class Result
         {
             public bool heels;
             public string note;
             // the flattest stand, per foot (left, right): the foot against the direction it points along the floor, the
-            // foot's local axis that points ahead along the floor, the toe bone's local rotation, the bone heights
+            // toe bone's local rotation, the bone heights
             public Quaternion[] rest = new Quaternion[2], toe = new Quaternion[2];
-            public Vector3[] ahead = new Vector3[2];
             public float toeSole, ankleSole;
             // how far the bind pose's foot is pointed beyond the flattest stand (degrees), and the foot's local axis to turn it up about
             public float[] pitchFix = new float[2];
@@ -68,9 +71,45 @@ namespace RoeFighter.EditorTools
             var bindPitch = new[] { Pitch(feet[0], toes[0]), Pitch(feet[1], toes[1]) };
             var bindLocal = feet.Select(f => f.localRotation).ToArray();
             var bindWorld = feet.Select(f => f.rotation).ToArray();
+            // the skin of each foot: vertices whose strongest bone is the foot or under it, in that bone's space
+            var skin = new[] { new List<(Transform bone, Vector3 local)>(), new List<(Transform bone, Vector3 local)>() };
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+            {
+                if (smr.sharedMesh == null || !smr.enabled || !smr.gameObject.activeInHierarchy)
+                    continue;
+                var mesh = smr.sharedMesh;
+                var bones = smr.bones;
+                var bind = mesh.bindposes;
+                var bw = mesh.boneWeights;
+                var verts = mesh.vertices;
+                for (int i = 0; i < bw.Length; i++)
+                {
+                    int b = bw[i].boneIndex0;
+                    if (b >= bones.Length || b >= bind.Length || bones[b] == null)
+                        continue;
+                    for (int k = 0; k < 2; k++)
+                        if (bones[b].IsChildOf(feet[k]))
+                            skin[k].Add((bones[b], bind[b].MultiplyPoint3x4(verts[i])));
+                }
+            }
+            // the lowest skin under the heel half and under the toe half of a foot (behind / ahead of the ankle along the floor)
+            (float heel, float ball) Sole(int k)
+            {
+                var ahead = Flat(toes[k].position - feet[k].position).normalized;
+                float heel = float.MaxValue, ball = float.MaxValue;
+                foreach (var (bone, local) in skin[k])
+                {
+                    var p = bone.TransformPoint(local);
+                    if (Vector3.Dot(p - feet[k].position, ahead) < 0f)
+                        heel = Mathf.Min(heel, p.y);
+                    else
+                        ball = Mathf.Min(ball, p.y);
+                }
+                return (heel, ball);
+            }
 
-            var samples = new[] { new List<(float ankle, float toe, float pitch, string where, Quaternion rest, Vector3 ahead, Quaternion toeLocal)>(),
-                                  new List<(float ankle, float toe, float pitch, string where, Quaternion rest, Vector3 ahead, Quaternion toeLocal)>() };
+            var samples = new[] { new List<(float ankle, float toe, float pitch, string where, Quaternion rest, Quaternion toeLocal, float heel, float ball)>(),
+                                  new List<(float ankle, float toe, float pitch, string where, Quaternion rest, Quaternion toeLocal, float heel, float ball)>() };
             foreach (var name in new[] { "idle_01", "idle_02", "react_01", "react_02" })
             {
                 var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(id, name));
@@ -88,9 +127,10 @@ namespace RoeFighter.EditorTools
                         if (ahead.sqrMagnitude < 1e-6f)
                             continue;
                         ahead.Normalize();
+                        var (heel, ball) = skin[k].Count > 0 ? Sole(k) : (0f, 0f);
                         samples[k].Add((ankle, toe, Pitch(feet[k], toes[k]), $"{name} {t:F2}s",
                                         Quaternion.Inverse(Quaternion.LookRotation(ahead, Vector3.up)) * feet[k].rotation,
-                                        Quaternion.Inverse(feet[k].rotation) * ahead, toes[k].localRotation));
+                                        toes[k].localRotation, heel, ball));
                     }
                 }
             }
@@ -102,31 +142,43 @@ namespace RoeFighter.EditorTools
                 r.note = "no planted foot in the standing clips: as the stance has them";
                 return r;
             }
-            var best = samples.Select(x => x.OrderBy(v => v.ankle).ElementAt(x.Count / 4)).ToArray();
+            // the frames with the whole sole down, if there are any
+            var down = samples.Select(x => x.Where(v => v.heel < SoleDown && v.ball < SoleDown).ToList()).ToArray();
+            var pool = samples.Select((x, k) => down[k].Count > 0 ? down[k] : x).ToArray();
+            var best = pool.Select(x => x.OrderBy(v => v.ankle).ElementAt(x.Count / 4)).ToArray();
             float flattest = Mathf.Min(best[0].ankle, best[1].ankle);
             r.heels = flattest >= HeelAnkle;
             for (int k = 0; k < 2; k++)
             {
                 r.rest[k] = best[k].rest;
-                r.ahead[k] = best[k].ahead;
                 r.toe[k] = best[k].toeLocal;
                 // the bind pose's foot turned up about its own lateral axis (the ankle's hinge) by the difference in pitch
                 feet[k].localRotation = bindLocal[k];
                 var lateral = Vector3.Cross(Vector3.up, Flat(toes[k].position - feet[k].position).normalized);
                 r.pitchAxis[k] = (Quaternion.Inverse(bindWorld[k]) * lateral).normalized;
                 r.pitchFix[k] = Mathf.Max(0f, bindPitch[k] - best[k].pitch);
-                // which way round lifts the toes
-                var before = toes[k].position.y;
+                // which way round lifts the toes: the one that ends nearer her standing pitch.  (Comparing toe heights
+                // could not tell: turned the wrong way, 72 + 40 degrees, the toes pass straight down and come up again -
+                // g05's right foot was pointed 40 degrees further, toes backwards, wherever the stand did not cover it.)
+                var bindAhead = Flat(toes[k].position - feet[k].position).normalized;
+                float Through()          // the pitch, on past 90 when the toes point backwards
+                {
+                    var d = toes[k].position - feet[k].position;
+                    return Mathf.Atan2(-d.y, Vector3.Dot(d, bindAhead)) * Mathf.Rad2Deg;
+                }
                 feet[k].localRotation = bindLocal[k] * Quaternion.AngleAxis(r.pitchFix[k], r.pitchAxis[k]);
-                if (toes[k].position.y < before)
+                float plus = Through();
+                feet[k].localRotation = bindLocal[k] * Quaternion.AngleAxis(-r.pitchFix[k], r.pitchAxis[k]);
+                float minus = Through();
+                if (Mathf.Abs(minus - best[k].pitch) < Mathf.Abs(plus - best[k].pitch))
                     r.pitchAxis[k] = -r.pitchAxis[k];
                 feet[k].localRotation = bindLocal[k];
             }
             r.toeSole = (best[0].toe + best[1].toe) * 0.5f;
             r.ankleSole = (best[0].ankle + best[1].ankle) * 0.5f;
-            r.note = $"{(r.heels ? "heels" : "flat")}: planted ankle {flattest * 100f:F1} cm (a quarter up the planted frames; " +
-                     $"L {best[0].ankle * 100f:F1} cm pitch {best[0].pitch:F0} in {best[0].where} of {samples[0].Count}, lowest {samples[0].Min(v => v.ankle) * 100f:F1}, " +
-                     $"R {best[1].ankle * 100f:F1} cm pitch {best[1].pitch:F0} in {best[1].where} of {samples[1].Count}, lowest {samples[1].Min(v => v.ankle) * 100f:F1}; " +
+            string Side(int k) => $"{(k == 0 ? "L" : "R")} {best[k].ankle * 100f:F1} cm pitch {best[k].pitch:F0} heel {best[k].heel * 100f:F1} ball {best[k].ball * 100f:F1} " +
+                                  $"in {best[k].where} of {down[k].Count} sole-down/{samples[k].Count} planted, lowest {pool[k].Min(v => v.ankle) * 100f:F1}";
+            r.note = $"{(r.heels ? "heels" : "flat")}: planted ankle {flattest * 100f:F1} cm (a quarter up the planted frames; {Side(0)}, {Side(1)}; " +
                      $"bind pose pitch {bindPitch[0]:F0}/{bindPitch[1]:F0}" + (r.heels ? "" : $", the motion capture's feet turned up {r.pitchFix[0]:F0}/{r.pitchFix[1]:F0} deg") + ")";
             Object.DestroyImmediate(go);
             return r;

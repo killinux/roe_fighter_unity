@@ -389,7 +389,6 @@ namespace RoeFighter.EditorTools
             if (rig.flatFeet)
             {
                 rig.flatRest = feetKind.rest;
-                rig.flatAhead = feetKind.ahead;
                 rig.flatToe = feetKind.toe;
                 rig.flatAxis = feetKind.pitchAxis;
                 rig.flatPitch = feetKind.pitchFix;

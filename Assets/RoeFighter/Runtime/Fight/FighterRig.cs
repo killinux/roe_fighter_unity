@@ -87,12 +87,13 @@ namespace RoeFighter.Fight
         bool grounded;
         float toeSole, ankleSole, groundOffset;
         readonly Quaternion[] footRest = new Quaternion[2], toeRest = new Quaternion[2];   // the stance: foot against its heading, toe bone
-        readonly Vector3[] footAhead = new Vector3[2];                                     // the foot's axis that points ahead along the floor
+        readonly Vector3[] footSide = new Vector3[2];                                      // the foot's axis that points to its right along the floor (it pitches about it)
         Transform[] thighs, hipCloth;                                                      // hipCloth: skirt panels hung on the hips
         Quaternion[] hipClothRest;                                                         // their stance rotation against the hips' heading
         Quaternion pelvisRef = Quaternion.identity;                                        // the guard's pelvis against the hips' heading
         readonly Vector3[] lastAnkle = new Vector3[2];
         readonly float[] plantWeight = new float[2];                                       // a still foot near the floor is put down on it
+        readonly float[] standWeight = new float[2];                                       // how far each foot was posed as standing, this frame
         bool plantValid;
 
         public bool Ready => graph.IsValid();
@@ -144,14 +145,14 @@ namespace RoeFighter.Fight
         /// the game's standing clips keep the ankle 8 cm up, heels keep it 15-16).  The motion capture's feet stay in the
         /// bind pose's angle, and ROE models bare feet pointed 72 degrees like a high heel: she stood and walked on the tips
         /// of her toes.  So under the motion capture her feet are turned up about the ankle by flatPitch (the bind pose's
-        /// pitch less her standing one), a planted foot takes her stand from the game's clips (flatRest / flatAhead /
-        /// flatToe: foot against the direction it points along the floor, the foot's axis that points ahead, the toe
-        /// bone) instead of the battle stance's, and the soles are that stand's toe and ankle heights (flatSoles).
-        /// Heels keep the stance's high-heeled angle (the stance has them on their heels).
+        /// pitch less her standing one), a planted foot takes her stand from the game's clips (flatRest / flatToe: foot
+        /// against the direction it points along the floor, the toe bone) instead of the battle stance's, and the soles are
+        /// that stand's toe and ankle heights (flatSoles).  Heels keep the stance's high-heeled angle (the stance has them
+        /// on their heels).
         /// </summary>
         public bool flatFeet;
         public Quaternion[] flatRest = new Quaternion[2], flatToe = new Quaternion[2];
-        public Vector3[] flatAhead = new Vector3[2], flatAxis = new Vector3[2];
+        public Vector3[] flatAxis = new Vector3[2];
         public float[] flatPitch = new float[2];
         public Vector2 flatSoles;
 
@@ -220,21 +221,23 @@ namespace RoeFighter.Fight
                     var ahead = Flat(toes[i].position - feet[i].position);
                     ahead = ahead.sqrMagnitude > 1e-6f ? ahead.normalized : Flat(animator.transform.forward).normalized;
                     footRest[i] = Quaternion.Inverse(Quaternion.LookRotation(ahead, Vector3.up)) * feet[i].rotation;
-                    footAhead[i] = Quaternion.Inverse(feet[i].rotation) * ahead;
                     toeRest[i] = toes[i].localRotation;
                 }
                 // flat feet stand the way her flattest stand in the game's clips has them (RoeFeet), not as the stance
-                if (flatFeet && flatSoles.y > 0f && flatRest.Length == 2 && flatAhead.Length == 2 && flatToe.Length == 2)
+                if (flatFeet && flatSoles.y > 0f && flatRest.Length == 2 && flatToe.Length == 2)
                 {
                     toeSole = flatSoles.x;
                     ankleSole = flatSoles.y;
                     for (int i = 0; i < 2; i++)
                     {
                         footRest[i] = flatRest[i];
-                        footAhead[i] = flatAhead[i];
                         toeRest[i] = flatToe[i];
                     }
                 }
+                // the foot's own axis across it, to its right while it stands: the heading it points along the floor is
+                // square to it, however far the foot is pitched (see Stand)
+                for (int i = 0; i < 2; i++)
+                    footSide[i] = Quaternion.Inverse(footRest[i]) * Vector3.right;
             }
             helpers = animator.GetComponent<RoeHelperRig>();
             // the skirt panels hung on the hips (bones with a chain under them; single bones such as g04's
@@ -565,10 +568,8 @@ namespace RoeFighter.Fight
                 for (int i = 0; i < 2 && mocap > 0f; i++)
                 {
                     float above = feet[i].position.y - lowest - ankleSole;
-                    float w = (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.03f, 0.12f, above))) * mocap;
-                    var ahead = Flat(feet[i].rotation * footAhead[i]);
-                    if (w > 0f && ahead.sqrMagnitude > 1e-6f)
-                        feet[i].rotation = Quaternion.Slerp(feet[i].rotation, Quaternion.LookRotation(ahead.normalized, Vector3.up) * footRest[i], w);
+                    standWeight[i] = (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.03f, 0.12f, above))) * mocap;
+                    Stand(i, standWeight[i]);
                     toes[i].localRotation = Quaternion.Slerp(toes[i].localRotation, toeRest[i], mocap);
                 }
                 lowest = LowestSole();
@@ -600,6 +601,12 @@ namespace RoeFighter.Fight
                     lastAnkle[i] = ankle;
                     if (plantWeight[i] > 0f && above > 0f)
                         TwoBoneIK(legs[i].upper, legs[i].lower, legs[i].foot, ankle - Vector3.up * (above * plantWeight[i] * mocap), transform.forward);
+                    // and stands as a planted foot does: posed by its height before it came down, g05's front foot in the
+                    // guard (5 cm higher in the motion capture, heel up) kept a quarter of the clip's angle - 43 degrees
+                    // instead of her 36, the toes 1.5 cm in the floor
+                    float stand = plantWeight[i] * mocap;
+                    if (stand > standWeight[i] && standWeight[i] < 1f)
+                        Stand(i, (stand - standWeight[i]) / (1f - standWeight[i]));
                 }
                 plantValid = dt > 0f;
             }
@@ -882,6 +889,39 @@ namespace RoeFighter.Fight
                 forward = Flat(transform.forward);
             return Quaternion.LookRotation(forward.normalized, Vector3.up);
         }
+
+        /// <summary>
+        /// Turn foot i towards the way it stands (footRest, about the direction it points along the floor) by w.  The
+        /// direction comes from the foot's axis across it (the ankle's hinge), not from where the toes point: ROE models
+        /// its feet pointed 67-74 degrees (bare or in heels), and a heel the motion capture raises on top takes the toes
+        /// past straight down - the heading from the toes then turns round, and the foot stands on the floor the wrong
+        /// way round (g05's back foot, toes 146-180 degrees off the knee in 40 of 91 planted frames, while RoeFeet also
+        /// turned her right foot down instead of up).  A foot lying on its side (the axis near upright) falls back to
+        /// the toes.
+        /// </summary>
+        void Stand(int i, float w)
+        {
+            var ahead = Heading(i);
+            if (w > 0f)
+            {
+                FootToes[i] = toes[i].position - feet[i].position;
+                FootAhead[i] = ahead;
+                FootWeight[i] = w;
+            }
+            if (w > 0f && ahead.sqrMagnitude > 1e-6f)
+                feet[i].rotation = Quaternion.Slerp(feet[i].rotation, Quaternion.LookRotation(ahead.normalized, Vector3.up) * footRest[i], w);
+        }
+
+        /// <summary>The direction foot i points along the floor (not normalized), from its axis across it (see Stand).</summary>
+        public Vector3 Heading(int i)
+        {
+            var side = feet[i].rotation * footSide[i];
+            return Mathf.Abs(side.y) < 0.94f ? Vector3.Cross(side, Vector3.up) : Flat(toes[i].position - feet[i].position);
+        }
+
+        /// <summary>For checks: where each foot's toes pointed along the floor before it was turned to stand, and the heading it stood in.</summary>
+        public readonly Vector3[] FootToes = new Vector3[2], FootAhead = new Vector3[2];
+        public readonly float[] FootWeight = new float[2];
 
         /// <summary>Where the floor would be under the lowest sole (toe or ankle bone at its standing height).</summary>
         float LowestSole()
