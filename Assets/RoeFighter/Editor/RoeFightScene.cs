@@ -19,7 +19,7 @@ namespace RoeFighter.EditorTools
     /// Builds the playable fight scene: one of the game's battle stages, every fighter of the roster (the
     /// select screen picks two; the others wait put away), the fight logic, camera and HUD.  Saved as
     /// Assets/RoeFighter/Scenes/Fight_&lt;stage&gt;.unity (press Play).
-    ///   Build   -executeMethod RoeFighter.EditorTools.RoeFightScene.Build [-roeStage e23_steel_s02] [-roeRoster a08,g04,b10,g05]
+    ///   Build   -executeMethod RoeFighter.EditorTools.RoeFightScene.Build [-roeStage e23_steel_s02] [-roeRoster a08,g04,b10,g05,kas]
     ///           [-roeP1 a08] [-roeP2 g04]   (the two picked when the scene starts)
     ///   Record  -executeMethod RoeFighter.EditorTools.RoeFightScene.Record [-roeStage ...] [-roeOut dir] [-roeSeconds 90]
     ///           [-roeSize 1280x720] [-roeSeed 1] [-roeP1 b10] [-roeP2 g05]   CPU against CPU, frames + timeline.json for tools/make_video.py
@@ -43,8 +43,9 @@ namespace RoeFighter.EditorTools
             { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" },
         };
 
-        /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗").</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05";
+        /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
+        /// kas comes in when her DOA6 files are there, DoaFighter.IsDoa).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,kas";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -64,7 +65,61 @@ namespace RoeFighter.EditorTools
             foreach (var id in new[] { p1, p2 })
                 if (!ids.Contains(id))
                     ids.Add(id);
-            return ids.Where(id => File.Exists(RoeHumanoid.FighterPath(id)) && File.Exists(RoeSkillSheet.PathOf(id))).ToList();
+            return ids.Where(id => File.Exists(RoeHumanoid.FighterPath(id)) && (DoaFighter.IsDoa(id) || File.Exists(RoeSkillSheet.PathOf(id)))).ToList();
+        }
+
+        /// <summary>
+        /// A Dead or Alive 6 character (user 10-04: "doa6中的 Kasumi也加入一个角色"; DoaFighter, tools/doa/&lt;id&gt;.json): her model
+        /// and her own moves from that game - stance and four strikes as her strike pack, hurt / knockdown / lying / intro /
+        /// win / three specials as her "game clips" (the specials played in place, an "attack" slide in her skill sheet
+        /// instead) - and her game's own physics data for the cloth setups (FighterRig.physicsData).  No game unit: no
+        /// timelines, effects or voices.
+        /// </summary>
+        static FighterRig MakeDoaFighter(string id)
+        {
+            var def = DoaFighter.Load(id);
+            var root = new GameObject($"Fighter {id}");
+            var rig = root.AddComponent<FighterRig>();
+            rig.id = id;
+            rig.displayName = string.IsNullOrEmpty(def.name) ? id.ToUpperInvariant() : def.name;
+            rig.outfit = def.outfit ?? "";
+            rig.portrait = AssetDatabase.LoadAssetAtPath<Texture2D>(PortraitPath(id));
+            var model = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            model.transform.SetParent(root.transform, false);
+            rig.animator = model.GetComponent<Animator>();
+            rig.animator.runtimeAnimatorController = null;
+            foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                smr.forceMatrixRecalculationPerRender = false;
+
+            // her stance and strikes (her strike pack), and from the same converted BVH her game clips
+            rig.strikePack = OwnStrikes(def.pack);
+            rig.stance = rig.strikePack != null ? rig.strikePack.Get("guard") : null;
+            var clips = new Dictionary<string, AnimationClip>();
+            Directory.CreateDirectory($"{DoaFighter.Dir(id)}/clips");
+            foreach (var g in def.game)
+            {
+                var src = DoaFighter.PackClip(def.pack, g.clip);
+                if (src == null)
+                {
+                    Debug.LogWarning($"[ROE] {id}: no clip {g.clip} for {g.name} in {def.pack}");
+                    continue;
+                }
+                bool skill = g.name.StartsWith("skill_");
+                bool loop = Loops.Contains(g.name);
+                var clip = RoeMotionPacks.Copy(src, $"{DoaFighter.Dir(id)}/clips/{g.name}.anim", loop, inPlace: skill);
+                clips[g.name] = clip;
+                rig.clips.Add(new FighterRig.NamedClip { name = g.name, clip = clip, loop = loop, game = true });
+            }
+            rig.skillSheetJson = DoaFighter.MakeSkillSheet(id, def, clips);
+            rig.weaponRenderers = new Renderer[0];
+            rig.clothOverGameClips = true;      // her clips key none of her loose bones
+            rig.audioSource = root.AddComponent<AudioSource>();
+            rig.audioSource.playOnAwake = false;
+            rig.audioSource.spatialBlend = 0f;
+            Debug.Log($"[ROE] fighter {id} (DOA6): stance {(rig.stance != null ? rig.stance.name : "none")}, own strikes " +
+                      $"{(rig.strikePack != null ? string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}")) : "none")}, " +
+                      $"{rig.clips.Count} clips ({string.Join(" ", rig.clips.Select(c => c.name))}), DOA6 physics {(rig.animator.GetComponent<RoeDoaRig>() != null ? "yes" : "none")}");
+            return rig;
         }
 
         public static string BuildScene(string stage, string p1, string p2)
@@ -83,7 +138,7 @@ namespace RoeFighter.EditorTools
                       $"fighters along {layout.axis}, camera side {layout.normal}");
 
             var manifest = RoeManifest.Load();
-            var roster = ids.Select(id => MakeFighter(manifest.characters.First(c => c.id == id))).ToArray();
+            var roster = ids.Select(id => DoaFighter.IsDoa(id) ? MakeDoaFighter(id) : MakeFighter(manifest.characters.First(c => c.id == id))).ToArray();
             int pick1 = Mathf.Max(0, ids.IndexOf(p1)), pick2 = Mathf.Max(0, ids.IndexOf(p2));
             var rigs = new[] { roster[pick1], roster[pick2] };
             // the ones not in the match wait put away (the select screen brings them out)
@@ -176,15 +231,17 @@ namespace RoeFighter.EditorTools
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
                 if (prefab == null)
                     continue;
-                var stance = RoeHumanoidClips.Standing(id, out _);
+                // a DOA6 character stands in her own stance (the guard of her strike pack)
+                var stance = DoaFighter.IsDoa(id) ? RoeMotionPacks.Load(DoaFighter.Load(id).pack)?.Get("guard") : RoeHumanoidClips.Standing(id, out _);
                 var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
                 if (stance != null)
                     RoeCapture.Pose(go, stance, 0f);
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 var forward = RoeShowcase.Forward(go);
-                var head = RoeShowcase.FindBone(go, "Bip001 Head");
-                var chest = RoeShowcase.FindBone(go, "Bip001 Spine2") ?? RoeShowcase.FindBone(go, "Bip001 Spine1");
+                var bones = RoeHumanoid.MapBones(go);
+                var head = bones.TryGetValue("Head", out var hb) ? hb : null;
+                var chest = bones.TryGetValue("UpperChest", out var cb) ? cb : bones.TryGetValue("Chest", out cb) ? cb : null;
                 var target = head != null && chest != null ? Vector3.Lerp(chest.position, head.position, 0.75f) : RoeShowcase.WorldBounds(go).center;
                 studio.LightFrom(forward);
                 // no depth of field: the studio's volume profile is the fight scene's too (a focus left in it blurred the match)

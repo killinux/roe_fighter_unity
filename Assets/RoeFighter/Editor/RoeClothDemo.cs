@@ -20,8 +20,9 @@ namespace RoeFighter.EditorTools
     ///   Rests  the skirt's animation pose (RoeSkirtRig): rest_guard (fitted, rest in the guard), rest_stance
     ///          (fitted, rest in the stance), drape (hangs on the body) -> _work/rest_demo/&lt;id&gt;_&lt;variant&gt;
     /// tools/cloth_demo_video.py puts the takes side by side.  -roeView backright (or backleft) films the
-    /// hips up close from behind and to that side instead of the whole fighter from the front.
-    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720] [-roeView front]
+    /// hips up close from behind and to that side instead of the whole fighter from the front; -roeView chest
+    /// the chest up close from the front (breasts).
+    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720] [-roeView front|backright|backleft|chest]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Packs [-roePacks bandai1,cmu1] [-roeChars g04,a08]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Rests [-roeView backright] [-roeChars g04,a08] [-roeRests rest_stance,drape]
     /// </summary>
@@ -152,7 +153,8 @@ namespace RoeFighter.EditorTools
                     me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 5.5f;
                     me.foe.Place();
                     string about = describe(game, variant, me);
-                    takes.Add($"{id}\t{variant}\t{about}\t" + string.Join("|", game.moves.Select(m => $"{m.button}={m.name}")));
+                    // the strikes she uses: her own (strikePack) or the motion pack's
+                    takes.Add($"{id}\t{variant}\t{about}\t" + string.Join("|", (me.moves ?? game.moves).Select(m => $"{m.button}={m.name}")));
                     if (about.Length > 0)
                         log.Append($"\n[ROE]   {id} {variant}: {about}");
 
@@ -161,12 +163,24 @@ namespace RoeFighter.EditorTools
                         Directory.Delete(dir, true);
                     Directory.CreateDirectory(dir);
                     var cam = game.cam;
-                    bool close = view.StartsWith("back");
+                    bool close = view.StartsWith("back"), chest = view == "chest";
                     float sideways = view == "backleft" ? -1f : 1f;
                     var hips = me.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
-                    Vector3 Aim() => close ? new Vector3(me.pos.x, hips.position.y - 0.12f, me.pos.z) : me.pos + Vector3.up * 0.95f;
-                    cam.fieldOfView = close ? 28f : 30f;
+                    var neck = me.rig.animator.GetBoneTransform(HumanBodyBones.Neck) ?? me.rig.animator.GetBoneTransform(HumanBodyBones.Head);
+                    var shoulders = new[] { me.rig.animator.GetBoneTransform(HumanBodyBones.LeftUpperArm), me.rig.animator.GetBoneTransform(HumanBodyBones.RightUpperArm) };
+                    // the way her chest faces (a side-on stance turns it away from her fighting direction)
+                    Vector3 ChestAhead()
+                    {
+                        var across = shoulders[1].position - shoulders[0].position;
+                        across.y = 0f;
+                        return across.sqrMagnitude > 1e-6f ? Vector3.Cross(across.normalized, Vector3.up) : me.Forward;
+                    }
+                    Vector3 Aim() => close ? new Vector3(me.pos.x, hips.position.y - 0.12f, me.pos.z)
+                                   : chest ? neck.position - Vector3.up * 0.18f
+                                   : me.pos + Vector3.up * 0.95f;
+                    cam.fieldOfView = close || chest ? 28f : 30f;
                     var look = Aim();
+                    var chestAhead = chest ? ChestAhead() : Vector3.zero;
                     int steps = Mathf.RoundToInt(Length * 60f), shot = 0;
                     for (int s = 0; s < steps; s++)
                     {
@@ -184,11 +198,14 @@ namespace RoeFighter.EditorTools
                         game.Step(inputs);
                         // the camera: in front of her, a little to the side, following softly (or behind her
                         // and to one side, at the hips)
-                        var fwd = me.Forward;
+                        if (chest)
+                            chestAhead = Vector3.Slerp(chestAhead, ChestAhead(), 0.1f).normalized;
+                        var fwd = chest ? chestAhead : me.Forward;
                         var side = Vector3.Cross(Vector3.up, fwd).normalized;
-                        look = Vector3.Lerp(look, Aim(), s == 0 ? 1f : 0.08f);
+                        look = Vector3.Lerp(look, Aim(), s == 0 ? 1f : chest ? 0.25f : 0.08f);
                         cam.transform.position = close
                             ? look + (-fwd * 0.8f + side * (0.6f * sideways)).normalized * 1.9f + Vector3.up * 0.1f
+                            : chest ? look + (fwd * 0.9f - side * 0.35f).normalized * 1.15f + Vector3.up * 0.05f
                             : look + (fwd * 0.8f - side * 0.6f).normalized * 3.6f + Vector3.up * 0.2f;
                         cam.transform.LookAt(look, Vector3.up);
                         if (s % 2 != 0)
@@ -202,6 +219,10 @@ namespace RoeFighter.EditorTools
                         shot++;
                     }
                     log.Append($"\n[ROE]   {id} {variant}: {shot} frames to {dir}");
+                    // what the take changed (a solver that reports how far it moved)
+                    string after = describe(game, variant, me);
+                    if (after != about)
+                        log.Append($"\n[ROE]   {id} {variant} after the take: {after}");
                 }
             File.WriteAllText(Path.Combine(outDir, "script.txt"), string.Join("\n", Script.Select(x =>
                 $"{x.from.ToString("F1", CultureInfo.InvariantCulture)} {x.what}")));

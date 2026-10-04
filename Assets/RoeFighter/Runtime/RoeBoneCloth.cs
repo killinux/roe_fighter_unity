@@ -219,7 +219,19 @@ namespace RoeFighter
         /// exclude: bones something else drives; legacy: the 10-02 solver.
         /// </summary>
         public RoeBoneCloth(Animator animator, Transform world, ICollection<Transform> exclude, bool legacy = false)
+            : this(new RoeClothScope { animator = animator, world = world, exclude = exclude }, legacy)
         {
+        }
+
+        /// <summary>
+        /// The same for a physics setup (RoeClothBackends): only the kinds in scope.kinds (another solver takes the rest),
+        /// and the loose bones by scope.kindOf when the rig's bone names do not tell (DOA6's bone_&lt;id&gt;).
+        /// </summary>
+        public RoeBoneCloth(RoeClothScope scope, bool legacy)
+        {
+            var animator = scope.animator;
+            var world = scope.world;
+            var exclude = scope.exclude;
             this.world = world != null ? world : animator.transform;
             this.legacy = legacy;
             var human = new Dictionary<Transform, HumanBodyBones>();
@@ -227,7 +239,12 @@ namespace RoeFighter
                 if (hb != HumanBodyBones.LastBone && animator.GetBoneTransform(hb) != null)
                     human[animator.GetBoneTransform(hb)] = hb;
             var skin = SkinPoints(animator);
-            var kindOf = Classify(animator.transform, human.Keys.ToList(), exclude);
+            var kindOf = scope.kindOf != null
+                ? scope.kindOf.Where(kv => kv.Key != null && !human.ContainsKey(kv.Key) && (exclude == null || !exclude.Contains(kv.Key)))
+                    .ToDictionary(kv => kv.Key, kv => kv.Value)
+                : Classify(animator.transform, human.Keys.ToList(), exclude);
+            foreach (var t in kindOf.Keys.Where(t => !scope.Takes(kindOf[t])).ToList())
+                kindOf.Remove(t);
 
             // colliders: thighs, calves, the hips; the torso for hair
             Transform B(HumanBodyBones b) => animator.GetBoneTransform(b);

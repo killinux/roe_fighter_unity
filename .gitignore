@@ -13,6 +13,9 @@
 # Game assets extracted from Rise of Eros (commercial game: personal use only, never committed)
 /Assets/ROE/
 /Assets/ROE.meta
+# ... and from Dead or Alive 6 / Dead or Alive 5 Last Round (Koei Tecmo: the same rule)
+/Assets/DOA/
+/Assets/DOA.meta
 # Prefabs and data generated from those assets
 /Assets/RoeFighter/Generated/
 /Assets/RoeFighter/Generated.meta

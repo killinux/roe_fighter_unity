@@ -44,10 +44,12 @@ namespace RoeFighter
             }
         }
 
-        public RoeMagicaCloth(Animator animator, Transform world, ICollection<Transform> exclude)
+        public RoeMagicaCloth(RoeClothScope scope)
         {
-            // the pieces and colliders exactly as our Magica-style solver finds and measures them
-            var ours = new RoeBoneCloth(animator, world, exclude, legacy: false);
+            // the pieces and colliders exactly as our Magica-style solver finds and measures them (only the kinds the
+            // physics setup gives Magica: scope.kinds)
+            var animator = scope.animator;
+            var ours = new RoeBoneCloth(scope, legacy: false);
             var colliders = new Dictionary<RoeBoneCloth.Capsule, MagicaCapsuleCollider>();
             foreach (var cap in ours.capsules)
             {

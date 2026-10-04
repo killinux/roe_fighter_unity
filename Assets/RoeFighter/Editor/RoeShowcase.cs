@@ -24,10 +24,11 @@ namespace RoeFighter.EditorTools
         public static Vector3 Forward(GameObject character)
         {
             var sum = Vector3.zero;
-            foreach (var side in new[] { "L", "R" })
+            // Biped feet, or a Dead or Alive 6 rig's (bone_7 / bone_23 left foot and toes, bone_8 / bone_24 right)
+            foreach (var (footName, toeName) in new[] { ("Bip001 L Foot", "Bip001 L Toe0"), ("Bip001 R Foot", "Bip001 R Toe0"), ("bone_7", "bone_23"), ("bone_8", "bone_24") })
             {
-                var foot = FindBone(character, $"Bip001 {side} Foot");
-                var toe = FindBone(character, $"Bip001 {side} Toe0");
+                var foot = FindBone(character, footName);
+                var toe = FindBone(character, toeName);
                 if (foot != null && toe != null)
                     sum += toe.position - foot.position;
             }

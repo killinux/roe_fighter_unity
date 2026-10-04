@@ -48,6 +48,18 @@ namespace RoeFighter.EditorTools
             ("RightToes", "Bip001 R Toe0"),
         };
 
+        // ... and in Dead or Alive 6's rigs (Kasumi): bones are named by their global id, bone_<id>, the same in every
+        // character and every part (costume, hair, face); G1M +X is her left (ripper_tpose docs/doa6-fighting-motions.md,
+        // scripts/doa6/g2a_bvh.py).  No UpperChest.
+        static readonly (string human, string bone)[] Doa6Body =
+        {
+            ("Hips", "bone_2"), ("Spine", "bone_9"), ("Chest", "bone_10"), ("Neck", "bone_11"), ("Head", "bone_12"),
+            ("LeftShoulder", "bone_13"), ("LeftUpperArm", "bone_15"), ("LeftLowerArm", "bone_17"), ("LeftHand", "bone_19"),
+            ("RightShoulder", "bone_14"), ("RightUpperArm", "bone_16"), ("RightLowerArm", "bone_18"), ("RightHand", "bone_20"),
+            ("LeftUpperLeg", "bone_3"), ("LeftLowerLeg", "bone_5"), ("LeftFoot", "bone_7"), ("LeftToes", "bone_23"),
+            ("RightUpperLeg", "bone_4"), ("RightLowerLeg", "bone_6"), ("RightFoot", "bone_8"), ("RightToes", "bone_24"),
+        };
+
         static readonly string[] FingerNames = { "Thumb", "Index", "Middle", "Ring", "Little" };
         static readonly string[] FingerParts = { "Proximal", "Intermediate", "Distal" };
 
@@ -60,9 +72,12 @@ namespace RoeFighter.EditorTools
                     byName[t.name] = t;
 
             var map = new Dictionary<string, Transform>();
-            foreach (var (human, bone) in Body)
+            bool doa = !byName.ContainsKey("Bip001 Pelvis") && byName.ContainsKey("bone_2");
+            foreach (var (human, bone) in doa ? Doa6Body : Body)
                 if (byName.TryGetValue(bone, out var t))
                     map[human] = t;
+            if (doa)
+                return map;
             foreach (var side in new[] { ("Left", "L"), ("Right", "R") })
             {
                 for (int finger = 0; finger < 5; finger++)
@@ -247,7 +262,7 @@ namespace RoeFighter.EditorTools
             return $"{posed} extra bones at their idle values; held: {(notes.Count > 0 ? string.Join(", ", notes) : "nothing")}";
         }
 
-        static Avatar BuildAvatar(GameObject posed, Dictionary<string, Transform> map)
+        internal static Avatar BuildAvatar(GameObject posed, Dictionary<string, Transform> map)
         {
             var human = new List<HumanBone>();
             foreach (var pair in map)

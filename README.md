@@ -1,12 +1,12 @@
 # ROE Fighter（Unity 版）
 
 用 Rise of Eros（ROE）的角色做的 3D 格斗游戏。引擎是 Unity 6000.4.12f1 + URP。原计划用 UFE 2（Universal Fighting Engine 2）做对战框架，暂时买不了，所以先自己写了一套能玩的格斗逻辑（见"格斗"一节）；角色、动作、技能、特效这些数据以后换 UFE 也照样能用。
-角色：a08（Inase）、g04（Luf）首发，10-03 晚加了 b10（Kart）和 g05（Luf 的女神套装）；开局先进选人界面。
+角色：a08（Inase）、g04（Luf）首发，10-03 晚加了 b10（Kart）和 g05（Luf 的女神套装），10-04 加了《死或生 6》（DOA6）的霞（Kasumi）；开局先进选人界面。
 
-从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`_work`、`out`。
-这些素材来自商业游戏，只在本机自己用。
+从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/DOA`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`_work`、`out`。
+这些素材来自商业游戏（ROE、DOA6、DOA5LR），只在本机自己用。
 
-## 现状（2026-10-03）
+## 现状（2026-10-04）
 
 | 内容 | 状态 |
 |---|---|
@@ -31,6 +31,7 @@
 | 选人界面：四个角色的头像卡片，选中的两人站在场上；两边选同一个角色时复制一份 | 完成（10-03 晚），见"选人界面"一节；演示 `out\select_screen_demo.mp4` |
 | Luffee（g04、g05）的站架也换成不知火舞的（DOA6 00000） | 完成（10-03 晚），对比视频 `out\luffee_mai_stance.mp4`（左：动作包的拳击架势；右：不知火舞的架势和四招） |
 | 爆衣（比赛中把衣服打掉） | 完成到第二步（10-03）：超必杀的最后一下打中、被 KO，各掉一段（每人四段），决胜的 KO 把剩下的全打掉，整场比赛不回来，F6 开关；衣服下面换成家族的裸体底模，所以能掉到全身（g04 留着鞋），见"爆衣"一节；演示 `out\clothes_burst_demo.mp4`，检查图 `out\clothes_burst\unity\a08_sheet.png`、`g04_sheet.png`，电脑对电脑整场 `out\fight_cpu_match_burst.mp4`。调研和后面几步（补身体、打哪破哪）见 [`docs/clothes-burst.md`](docs/clothes-burst.md) |
+| DOA6 的霞加入战斗；调研 DOA6、DOA5LR 的胸、头发、衣服物理；物理做成可插拔（F4 换方案，以后可接 Magica Cloth 2） | 完成（10-04），见"霞（DOA6）和可插拔物理"一节和 [`docs/doa-physics.md`](docs/doa-physics.md)；对比视频 `out\kas_physics_body.mp4`、`out\kas_physics_chest.mp4`（左：骨骼布料，中：DOA6 的物理，右：关），电脑对电脑 `out\kas_fight_test.mp4` |
 
 ## 目录
 
@@ -40,10 +41,11 @@ Assets/RoeFighter/Runtime/     运行时也要用的代码：技能表的数据�
 Assets/RoeFighter/Editor/      编辑器脚本：建工程设置、拼角色、拍图、转动作、场景、对打演示、各种检查
 Assets/RoeFighter/Settings/    渲染管线、影棚的后期和地面
 Assets/ROE/                    （不入库）从游戏取出的素材，按角色和游戏包分文件夹
+Assets/DOA/                    （不入库）DOA6 角色的模型、贴图、物理数据、动作（Assets/DOA/<id>）
 Assets/RoeFighter/Generated/   （不入库）拼好的角色预制体、人形骨架、转好的动作、mocap/ 下是动作捕捉转成的基础动作
 Assets/RoeFighter/Scenes/      （不入库）生成的对战场景（游戏的战斗场景 + 两个角色 + 格斗逻辑）
 tools/                         Python / PowerShell 工具
-docs/                          调研记录（Magica Cloth 2 是怎么做的）
+docs/                          调研记录（Magica Cloth 2、爆衣、DOA 的物理是怎么做的）
 _work/                         （不入库）游戏包的副本、提取结果、日志、渲染帧
 out/                           （不入库）给人看的视频和图
 ```
@@ -327,7 +329,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
-| 换布料（Magica 式新版 / 10-02 旧版 / 关；比赛重新开始） | F4 | |
+| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / 10-02 旧版 / 关；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
@@ -538,6 +540,7 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
 - **照 Magica 的做法重做（10-02 晚）**：用户选了上面的方案 A，"做成可插拔的方式，先用A，后续我想办法买到 Magica 再切换"。细节和全部数字在
   [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 9 节。
   - **可插拔**：布料后端接口 `IRoeCloth`（`Runtime/RoeCloth.cs`），游戏里 **F4** 依次换：Magica 式骨骼布料（默认）/ 10-02 旧版 / 关。
+    10-04 扩成按类别分配解算器的"物理方案"（各用自己游戏的、DOA6 的……），见"霞（DOA6）和可插拔物理"一节。
     Magica Cloth 2 的适配器草稿 `Runtime/RoeMagicaCloth.cs` 已按手册的运行时构建接口写好（同样的分片、参数、腿部胶囊），
     装上插件后在 Player 设置里加 `ROE_MAGICA` 宏就会编译、出现在 F4 里；没装时不参与编译。它按自己的时钟在播放模式里跑，批处理检查和录视频时不动。
   - **裙子的动画姿势跟腿走**（`RoeSkirtRig`，`RoeHelperFit.FitSkirt` 拟合）：每节裙骨的尾端由胯部朝向、骨盆、两条大腿、两条小腿按权重带着走，
@@ -1064,6 +1067,47 @@ python tools\cloth_demo_video.py _work\hover_demo out\g05_hover_fix.mp4 --chars 
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.HelperHeel -Extra '-roeChar','g05'                          # 辅助骨拟合对脚跟皮肤的误差
 ```
 
+### 霞（DOA6）和可插拔物理（10-04）
+
+用户 10-04："doa6中的 Kasumi也加入一个角色，看看乳摇，头发，衣服物理是怎么做的，是否比目前的物理做得更好"，
+接着"doa5lr 也调研一下……最好做成可插拔的设计，后续我买到magic cloth也能替换"。全部细节、数字、哪些是猜的，见 [`docs/doa-physics.md`](docs/doa-physics.md)。
+
+- **霞**：
+  - 模型：DOA6 的默认服装、头发、脸合成一副骨架。
+  - 动作：她自己的 DOA6 站架和四个普通攻击（刺拳、侧踢、上勾拳、高位回旋踢）。
+  - 游戏动作：受击、倒地、躺地、开场、胜利、三个技能（空翻踢、剪刀脚、手翻扑击，技能表按肢体速度合成）。
+  - 没有游戏的特效和语音。
+  - 素材放在 `Assets/DOA/kas`（不入库），定义在 `tools/doa/kas.json`，动作包 `tools/motionpacks/doa6_kas.json`。
+  - 名单默认加上 `kas`，没有她的文件时自动跳过。
+- **DOA6 的物理**：
+  - 胸是体积软体：每边 188 个格点，外面一层壳保持体积，被手臂、大腿顶，网格按格子插值；
+  - 马尾、飘带、绳子是骨链；
+  - 刘海是摆动骨；
+  - 裙子、袖子是粗网格布（霞的默认服装没有）。
+  - 读成 `Assets/DOA/kas/physics.json`（`tools/doa6_physics.py`），由 `DoaPhysicsBuilder` 挂到预制体上（`RoeDoaRig`），`RoeDoaPhysics` 每步模拟。
+  - 骨架脚本驱动的扭转辅助骨（`RF_*`）也补上了（`RoeDoaRig.DriveHelpers`）。
+- **DOA5LR**：
+  - 胸不模拟，按每套衣服选的预设表驱动 7 根骨；
+  - 衣服头发是"一个质点就是一根骨头"的全套弹簧网（竖、横环、斜拉、隔一根）；
+  - 刘海是姿势混合。
+  - 只调研，没做成解算器。
+- **可插拔**：
+  - F4 换"物理方案"，每个方案给胸、身体、头发、裙子、飘带、链子各指定一个解算器（骨骼布料 / 10-02 旧版 / DOA6 / Magica Cloth 2）。
+  - 解算器在某个角色身上做不了的类别交给骨骼布料。
+  - 默认 `auto`：霞用 DOA6 的，ROE 角色用骨骼布料。
+- **比我们好吗**：
+  - DOA6 的胸确实更丰富（会被挤、保持体积）；
+  - 头发飘带和我们同一类，但多一个往动画姿势拉回的量，更安静。
+  - 软体参数的含义都是猜的：照现在的读法，平常晃得自然（平均偏 0.4–2 厘米），猛的动作会甩出 6–9 厘米，罩杯下缘和胸衣之间有一条细缝。
+- 顺手修的老毛病：F4 从 44b174e 起只改了屏幕提示，实际一直是骨骼布料（场景把没设的 `clothBackend` 存成了空字符串）。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaFighter.Build -Extra '-roeDoa','kas'                         # 预制体 + 物理（DoaPhysicsBuilder）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','kas','-roeCloths','magica_style,doa6,off','-roeView','chest'
+python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --chars kas --variants magica_style,doa6,off
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaPhysicsProbe.Soft -Extra '-roeSteps','30,120,620'              # 软体格点偏离多少、被谁推
+```
+
 ### 选人界面（10-03 晚）
 
 - 场景里放着名单上的所有人（`-roeRoster`，默认 `a08,g04,b10,g05`），开局先进选人界面；没选上的收起来（不显示、不计算）。
@@ -1128,6 +1172,17 @@ python tools\cloth_demo_video.py _work\hover_demo out\g05_hover_fix.mp4 --chars 
 - 命中特效的点光按顶点照到地面上，地面网格稀的地方还会有一块块亮斑；游戏里同样是按顶点算的，先保持一致。
 - 场景导入时还没有改写官方包脚本的引用，所以场景里游戏自己的后期（调色 LUT、景深）和灯光附加数据被当成缺失脚本去掉了；`import_skills.py` 的做法搬过去就能用上。
 - 战斗动作里脚尖会短暂穿到地面以下 10–20 厘米，这是原动作就有的。
+- **霞（DOA6，10-04）**：
+  - 软体参数的读法要在游戏里实拍对照；
+  - 侧踢起手胸被甩起 6–9 厘米；
+  - 罩杯下缘和胸衣之间有细缝；
+  - 手掌片碰撞体比游戏的厚；
+  - 肘、膝、胯的修形骨和前臂扭转没驱动；
+  - 开场从 2.5 米高处跳下，落地时胸顶到上限；
+  - 没有游戏特效和语音。
+
+  见 `docs/doa-physics.md` 第 9 节。
+- KO 镜头不避墙：KO 发生在场地边上时，镜头会在铁栅栏后面（`out\kas_fight_test.mp4` 第 57 秒）。
 
 ## 环境
 

@@ -183,6 +183,7 @@ namespace RoeFighter.Fight
         /// <summary>Size of the weapons (g04's fan): 1 = the game's.  Scales the bone that carries each weapon's own bones.</summary>
         [Range(0.2f, 2f)] public float weaponScale = 1f;
         [NonSerialized] Transform[] weaponRoots;
+        [NonSerialized] RoeDoaRig doaRig;
         [NonSerialized] Vector3[] weaponRootScale;
         public string Current => current >= 0 ? clips[current].name : "";
         public float CurrentTime => current >= 0 ? (float)playables[current].GetTime() : 0f;
@@ -240,6 +241,10 @@ namespace RoeFighter.Fight
                     footSide[i] = Quaternion.Inverse(footRest[i]) * Vector3.right;
             }
             helpers = animator.GetComponent<RoeHelperRig>();
+            doaRig = animator.GetComponent<RoeDoaRig>();
+            // a DOA6 character's breast meshes are skinned to their soft-body nodes, up to 12 bones a vertex, whatever moves them
+            if (doaRig != null && doaRig.softs.Count > 0)
+                QualitySettings.skinWeights = SkinWeights.Unlimited;
             // the skirt panels hung on the hips (bones with a chain under them; single bones such as g04's
             // waist pieces and a08's sword points stay rigid on the pelvis, as the game keeps them): how they
             // hang in the stance, against the hips' heading
@@ -259,8 +264,15 @@ namespace RoeFighter.Fight
                 Debug.Log($"[ROE] {id} hung on the hips: {string.Join(", ", hipCloth.Select(t => t.name))}");
             }
             // skirts, hair, chains and breasts: found and measured in the stance pose, by the chosen backend
-            backend = RoeClothBackends.Find(useCloth ? (clothBackend ?? ClothBackend) : "off");
-            cloth = backend.make?.Invoke(animator, transform, helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null);
+            // (a scene stores an unset clothBackend as "", not null: F4 changed only the notice until 10-04)
+            backend = RoeClothBackends.Find(RoeClothBackends.Resolve(useCloth ? (string.IsNullOrEmpty(clothBackend) ? ClothBackend : clothBackend) : "off", animator));
+            cloth = backend.Make(new RoeClothScope
+            {
+                animator = animator, world = transform,
+                exclude = helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null,
+                // a DOA6 character: her loose bones by kind from her physics data (their names are only numbers)
+                kindOf = RoeDoaPhysics.KindsOf(animator),
+            });
             if (cloth != null)
                 Debug.Log($"[ROE] {id} cloth {backend.name}: {cloth.Report}");
             // the skirt's animation pose under motion capture: its rest is the stance's skirt against the hips'
@@ -632,6 +644,9 @@ namespace RoeFighter.Fight
             // the limb helpers: the game's clips animate them; under motion capture they follow the limbs
             if (helpers != null)
                 helpers.Apply(mocap);
+            // a DOA6 character's twist helpers (her game turns them by script, her clips do not key them)
+            if (doaRig != null)
+                doaRig.DriveHelpers();
             // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
             // game's animators key it, then hung on the body (the skin, posed with the helpers above); the
             // cloth swings from there.  On the legs' final pose.
@@ -644,12 +659,12 @@ namespace RoeFighter.Fight
             // the cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
             if (cloth != null)
             {
-                if (cloth is RoeBoneCloth boneCloth)
+                if (Cloth is RoeBoneCloth boneCloth)
                 {
                     boneCloth.skirtOnSkin = skirtRig != null && skirtRig.Ready && RoeSkirtRig.Drape > 0f;
                     boneCloth.alwaysWeight = clothWeight;     // sashes: over the game's clips too (RoeBoneCloth.AlwaysKinds)
                 }
-                cloth.Weight = mocap * clothWeight;
+                cloth.Weight = (clothOverGameClips ? 1f : mocap) * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
         }
@@ -658,9 +673,9 @@ namespace RoeFighter.Fight
 
         public bool useCloth = true;
         [Range(0f, 1f)] public float clothWeight = 1f;
-        public string clothBackend;         // null: the fight's choice (ClothBackend)
+        public string clothBackend;         // null or empty: the fight's choice (ClothBackend)
         /// <summary>The cloth backend every fighter uses unless it names its own (F4 in the fight).</summary>
-        public static string ClothBackend = "magica_style";
+        public static string ClothBackend = "auto";
         IRoeCloth cloth;
         RoeClothBackends.Backend backend;
         RoeSkirtRig skirtRig;
@@ -672,7 +687,15 @@ namespace RoeFighter.Fight
         public static bool NoHipCloth;      // for checks (RoeFightProbe.SkirtSwing -roeVariant nohip)
 
         /// <summary>The bone cloth, for checks (null when off or another backend).</summary>
-        public RoeBoneCloth Cloth => cloth as RoeBoneCloth;
+        public RoeBoneCloth Cloth => cloth as RoeBoneCloth ?? (cloth as RoeClothRouter)?.Part<RoeBoneCloth>();
+        /// <summary>The solver of a type among the fighter's cloth (for checks).</summary>
+        public T ClothPart<T>() where T : class => cloth as T ?? (cloth as RoeClothRouter)?.Part<T>();
+
+        /// <summary>
+        /// The cloth is simulated over the game-style clips too: a DOA6 character's clips (her moves, hurt, knockdown) key
+        /// none of her loose bones - unlike ROE's, whose skills key skirts and hair by hand.
+        /// </summary>
+        public bool clothOverGameClips;
 
         public string ClothReport => cloth != null ? cloth.Report : "off";
 

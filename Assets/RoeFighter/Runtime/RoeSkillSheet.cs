@@ -173,7 +173,9 @@ namespace RoeFighter
             return actions.FirstOrDefault(a => a.name == name);
         }
 
-        public static string PathOf(string id) => $"Assets/ROE/{id}/skill_sheet_unity.json";
+        /// <summary>The unit's sheet: the game's (Assets/ROE), or one made for a Dead or Alive 6 character (Assets/DOA, DoaFighter).</summary>
+        public static string PathOf(string id) =>
+            System.IO.File.Exists($"Assets/DOA/{id}/skill_sheet_unity.json") ? $"Assets/DOA/{id}/skill_sheet_unity.json" : $"Assets/ROE/{id}/skill_sheet_unity.json";
 
         public static RoeSkillSheet FromJson(string json)
         {

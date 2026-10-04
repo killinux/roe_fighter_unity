@@ -22,55 +22,193 @@ namespace RoeFighter
     }
 
     /// <summary>
-    /// The cloth backends, in the order F4 goes through them.
-    ///   magica_style  RoeBoneCloth the way Magica Cloth 2 does it (10-03): the skirt's animation pose
-    ///                 follows the legs (RoeSkirtRig), chains that are one piece of cloth are linked
-    ///                 across, tether, world and local inertia (docs/magica-cloth-2.md)
-    ///   legacy        RoeBoneCloth as it was on 10-02 (e4b0b28): independent chains, the skirt pinned
-    ///                 to the pelvis from the guard
-    ///   off           no simulation: skirts and hair keep the battle stance's keys
-    /// Magica Cloth 2 itself goes in here once it is installed: a class implementing IRoeCloth on its
-    /// MagicaCloth components (BoneCloth, mesh connection, the same colliders), registered below behind
-    /// the MAGICACLOTH2 define the package adds.  The skirt's skinned pose works for it too: Magica takes
-    /// the pose it finds on the bones as the animation pose.
+    /// What one solver takes on, on one fighter: the model, which kinds of loose parts, and how they are told apart.
+    /// The kinds: breast, body (other soft flesh: hips, thighs), hair, skirt (any garment cloth: skirts, sleeves,
+    /// flaps), ribbon (sashes, ties), chain (chains, tassels, hard ornaments).
     /// </summary>
-    public static class RoeClothBackends
+    public class RoeClothScope
     {
-        public class Backend
+        public Animator animator;
+        public Transform world;
+        /// <summary>Bones something else drives (the limb helpers).</summary>
+        public ICollection<Transform> exclude;
+        /// <summary>The kinds this solver simulates; null: every kind.</summary>
+        public ICollection<string> kinds;
+        /// <summary>The loose bones by kind, when their names do not tell (DOA6's bone_&lt;id&gt;: from the game's physics data, RoeDoaRig); null: by name.</summary>
+        public IDictionary<Transform, string> kindOf;
+
+        public bool Takes(string kind) => kinds == null || kinds.Contains(kind);
+
+        public RoeClothScope With(ICollection<string> only) => new RoeClothScope
+        {
+            animator = animator, world = world, exclude = exclude, kinds = only, kindOf = kindOf,
+        };
+    }
+
+    /// <summary>
+    /// The solvers a physics setup can give a kind to.
+    ///   bone          RoeBoneCloth the way Magica Cloth 2 does it (10-03): chains, the skirt's animation pose follows the
+    ///                 legs (RoeSkirtRig), chains that are one piece of cloth linked across, tether, world and local inertia
+    ///                 (docs/magica-cloth-2.md)
+    ///   bone_legacy   RoeBoneCloth as it was on 10-02 (e4b0b28): independent chains, the skirt pinned to the pelvis
+    ///   doa6          Dead or Alive 6's own systems from the character's data (RoeDoaRig): soft bodies (breasts), bone
+    ///                 chains, swing bones, colliders grouped per piece (docs/doa-physics.md) - only for a character that
+    ///                 has DOA6 data; the kinds it cannot take go to the bone cloth
+    ///   magica        Magica Cloth 2 itself, once it is installed (RoeMagicaCloth, behind the MAGICACLOTH2 define the
+    ///                 package adds + ROE_MAGICA)
+    /// A new solver (another engine, another game's system) is one more entry here: a class implementing IRoeCloth
+    /// that simulates only scope.kinds, and says which kinds it can take on a model (Covers).
+    /// </summary>
+    public static class RoeClothSolvers
+    {
+        public class Solver
         {
             public string name, title;
             public bool skinnedSkirt;           // RoeSkirtRig turns the skirt to follow the legs first
-            public Func<Animator, Transform, ICollection<Transform>, IRoeCloth> make;
+            public Func<RoeClothScope, IRoeCloth> make;
+            /// <summary>Whether it can take this kind on this fighter (null: any kind, any fighter).</summary>
+            public Func<RoeClothScope, string, bool> covers;
         }
+
+        public static readonly List<Solver> All = new List<Solver>
+        {
+            new Solver { name = "bone", title = "Magica-style bone cloth", skinnedSkirt = true, make = s => new RoeBoneCloth(s, legacy: false) },
+            new Solver { name = "bone_legacy", title = "Bone cloth (10-02)", make = s => new RoeBoneCloth(s, legacy: true) },
+            new Solver
+            {
+                name = "doa6", title = "DOA6 physics", make = s => new RoeDoaPhysics(s),
+                covers = (s, kind) => RoeDoaPhysics.Covers(s, kind),
+            },
+#if MAGICACLOTH2 && ROE_MAGICA
+            new Solver { name = "magica", title = "Magica Cloth 2", skinnedSkirt = true, make = s => new RoeMagicaCloth(s) },
+#endif
+        };
+
+        public static Solver Find(string name) => All.FirstOrDefault(s => s.name == name);
+    }
+
+    /// <summary>
+    /// The physics setups, in the order F4 goes through them: which solver takes which kind (user 10-04: "最好做成可插拔的设计，
+    /// 后续我买到magic cloth也能替换").  A kind not listed goes to the setup's fallback; a kind its solver cannot take on a
+    /// fighter (DOA6 data on a ROE character) goes to "bone".
+    ///   auto          each fighter her own game's: a DOA6 character on "doa6", the others on "magica_style" (the default)
+    ///   magica_style  everything on the Magica-style bone cloth
+    ///   doa6          a DOA6 character on her game's own systems: soft-body breasts, cloth grids, swing hair
+    ///   doa6_breasts  DOA6 soft-body breasts, everything else on the bone cloth (to compare one kind at a time)
+    ///   legacy        the 10-02 bone cloth
+    ///   off           no simulation: skirts and hair keep the battle stance's keys
+    ///   magica        Magica Cloth 2 for everything (when installed)
+    /// </summary>
+    public static class RoeClothBackends
+    {
+        public static readonly string[] Kinds = { "breast", "body", "hair", "skirt", "ribbon", "chain" };
+
+        public class Backend
+        {
+            public string name, title;
+            public string fallback;             // the solver for kinds not in byKind; null: none (off)
+            public Dictionary<string, string> byKind = new Dictionary<string, string>();
+
+            public string SolverFor(string kind) => byKind.TryGetValue(kind, out var s) ? s : fallback;
+
+            /// <summary>The skirt follows the legs first (RoeSkirtRig) when its solver wants it.</summary>
+            public bool skinnedSkirt => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.skinnedSkirt ?? false;
+
+            /// <summary>The solvers on one fighter, one per solver used, each with its kinds; null when nothing is simulated.</summary>
+            public IRoeCloth Make(RoeClothScope scope)
+            {
+                var assign = new Dictionary<string, List<string>>();
+                foreach (var kind in Kinds)
+                {
+                    string name = SolverFor(kind);
+                    var solver = name != null ? RoeClothSolvers.Find(name) : null;
+                    if (solver == null)
+                        continue;
+                    if (solver.covers != null && !solver.covers(scope, kind))
+                        solver = RoeClothSolvers.Find("bone");
+                    if (!assign.TryGetValue(solver.name, out var list))
+                        assign[solver.name] = list = new List<string>();
+                    list.Add(kind);
+                }
+                var parts = assign.Select(kv => (solver: RoeClothSolvers.Find(kv.Key), kinds: kv.Value))
+                    .Select(p => (p.solver, p.kinds, cloth: p.solver.make(scope.With(p.kinds)))).Where(p => p.cloth != null).ToList();
+                if (parts.Count == 0)
+                    return null;
+                return parts.Count == 1 && parts[0].kinds.Count == Kinds.Length ? parts[0].cloth : new RoeClothRouter(parts);
+            }
+        }
+
+        static Backend All_(string name, string title, string solver) => new Backend { name = name, title = title, fallback = solver };
 
         public static readonly List<Backend> All = new List<Backend>
         {
-            new Backend
-            {
-                name = "magica_style", title = "Magica-style bone cloth", skinnedSkirt = true,
-                make = (animator, world, exclude) => new RoeBoneCloth(animator, world, exclude, legacy: false),
-            },
-            new Backend
-            {
-                name = "legacy", title = "Bone cloth (10-02)", skinnedSkirt = false,
-                make = (animator, world, exclude) => new RoeBoneCloth(animator, world, exclude, legacy: true),
-            },
-            new Backend { name = "off", title = "No cloth", skinnedSkirt = false, make = null },
+            All_("auto", "Each her own game's (DOA6 for DOA6 fighters, else bone cloth)", "bone"),
+            All_("magica_style", "Magica-style bone cloth", "bone"),
+            All_("doa6", "DOA6 physics (soft bodies, cloth grids)", "doa6"),
+            new Backend { name = "doa6_breasts", title = "DOA6 soft breasts + bone cloth", fallback = "bone", byKind = { { "breast", "doa6" }, { "body", "doa6" } } },
+            All_("legacy", "Bone cloth (10-02)", "bone_legacy"),
+            All_("off", "No cloth", null),
 #if MAGICACLOTH2 && ROE_MAGICA
-            new Backend
-            {
-                name = "magica", title = "Magica Cloth 2", skinnedSkirt = true,
-                make = (animator, world, exclude) => new RoeMagicaCloth(animator, world, exclude),
-            },
+            All_("magica", "Magica Cloth 2", "magica"),
 #endif
         };
 
         public static Backend Find(string name) => All.FirstOrDefault(b => b.name == name) ?? All[0];
+
+        /// <summary>The setup a fighter takes for a choice: "auto" picks her own game's.</summary>
+        public static string Resolve(string name, Animator animator) =>
+            name != "auto" ? name : animator != null && animator.GetComponent<RoeDoaRig>() != null ? "doa6" : "magica_style";
 
         public static string Next(string name)
         {
             int i = All.FindIndex(b => b.name == name);
             return All[(i + 1) % All.Count].name;
         }
+    }
+
+    /// <summary>Several solvers on one fighter, each on its own kinds (RoeClothBackends.Backend.Make).</summary>
+    public class RoeClothRouter : IRoeCloth
+    {
+        readonly List<(RoeClothSolvers.Solver solver, List<string> kinds, IRoeCloth cloth)> parts;
+        float weight = 1f;
+
+        public RoeClothRouter(List<(RoeClothSolvers.Solver solver, List<string> kinds, IRoeCloth cloth)> parts)
+        {
+            this.parts = parts;
+        }
+
+        public string Report => string.Join(" | ", parts.Select(p => $"{p.solver.name} [{string.Join(" ", p.kinds)}]: {p.cloth.Report}"));
+
+        public float Weight
+        {
+            get => weight;
+            set
+            {
+                weight = value;
+                foreach (var p in parts)
+                    p.cloth.Weight = value;
+            }
+        }
+
+        public void Rest()
+        {
+            foreach (var p in parts)
+                p.cloth.Rest();
+        }
+
+        public void Step(float dt, float floor)
+        {
+            foreach (var p in parts)
+                p.cloth.Step(dt, floor);
+        }
+
+        public void Reset()
+        {
+            foreach (var p in parts)
+                p.cloth.Reset();
+        }
+
+        /// <summary>The first part of a type (the bone cloth, for checks).</summary>
+        public T Part<T>() where T : class => parts.Select(p => p.cloth as T).FirstOrDefault(c => c != null);
     }
 }
