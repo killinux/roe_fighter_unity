@@ -185,6 +185,8 @@ namespace RoeFighter.EditorTools
             foreach (var id in RoeCapture.Arg("-roeDoa", "kas").Split(','))
             {
                 var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+                // the cloth rebuilt from its control points at rest: must look as imported (a check of RebuildSurfaces)
+                CheckSurfaces(go);
                 var forward = RoeShowcase.Forward(go);
                 var bounds = RoeShowcase.WorldBounds(go);
                 var map = RoeHumanoid.MapBones(go);
@@ -210,6 +212,70 @@ namespace RoeFighter.EditorTools
                 RoeCapture.Render(studio.camera, 1400, 1800, Path.Combine(outDir, $"{id}_4_back.png"));
                 Object.DestroyImmediate(go);
                 Debug.Log($"[ROE] {id}: stills in {outDir} (bounds {bounds.min}..{bounds.max})");
+            }
+        }
+
+        /// <summary>
+        /// Rebuilds her grid-cloth surfaces at rest and measures them against the imported meshes they replace (each source
+        /// skinned as it is, hidden): how far the rebuilt vertices are, and how far their normals and tangents turn.
+        /// </summary>
+        public static void CheckSurfaces(GameObject go)
+        {
+            var rig = go.GetComponent<RoeDoaRig>();
+            if (rig == null || rig.surfaces.Count == 0)
+                return;
+            var baked = new List<(Vector3[] pos, Vector3[] normal, Vector4[] tangent)>();
+            foreach (var s in rig.surfaces)
+            {
+                var m = new Mesh();
+                s.source.BakeMesh(m, true);
+                var w = s.source.transform.localToWorldMatrix;
+                baked.Add((m.vertices.Select(p => w.MultiplyPoint3x4(p)).ToArray(),
+                           m.normals.Select(n => w.MultiplyVector(n).normalized).ToArray(),
+                           m.tangents.Select(t => { var v = w.MultiplyVector(new Vector3(t.x, t.y, t.z)).normalized; return new Vector4(v.x, v.y, v.z, t.w); }).ToArray()));
+                Object.DestroyImmediate(m);
+            }
+            rig.RebuildSurfaces();
+            for (int si = 0; si < rig.surfaces.Count; si++)
+            {
+                var s = rig.surfaces[si];
+                var mesh = s.filter.sharedMesh;
+                var w = s.filter.transform.localToWorldMatrix;
+                var pos = mesh.vertices;
+                var normal = mesh.normals;
+                var tangent = mesh.tangents;
+                var bytes = s.binding.bytes;
+                int n = System.BitConverter.ToInt32(bytes, 8);
+                var (bp, bn, bt) = baked[si];
+                int rebuilt = 0, flipped = 0, wFlip = 0;
+                double sumD = 0, sumA = 0, sumT = 0;
+                float maxD = 0f, maxA = 0f, maxT = 0f;
+                int worst = -1;
+                for (int v = 0; v < n && v < pos.Length; v++)
+                {
+                    if (System.BitConverter.ToInt32(bytes, 12 + 4 * v) == 0)
+                        continue;
+                    rebuilt++;
+                    float d = Vector3.Distance(w.MultiplyPoint3x4(pos[v]), bp[v]);
+                    float a = Vector3.Angle(w.MultiplyVector(normal[v]), bn[v]);
+                    sumD += d;
+                    sumA += a;
+                    if (d > maxD) { maxD = d; worst = v; }
+                    maxA = Mathf.Max(maxA, a);
+                    if (a > 90f)
+                        flipped++;
+                    if (bt.Length == n)
+                    {
+                        float t = Vector3.Angle(w.MultiplyVector(tangent[v]), bt[v]);
+                        sumT += t;
+                        maxT = Mathf.Max(maxT, t);
+                        if (Mathf.Sign(tangent[v].w) != Mathf.Sign(bt[v].w))
+                            wFlip++;
+                    }
+                }
+                Debug.Log($"[ROE] {go.name}: surface {s.name} at rest, {rebuilt}/{n} rebuilt vertices vs the import: position mean " +
+                          $"{1000 * sumD / Mathf.Max(1, rebuilt):0.00} max {1000 * maxD:0.00} mm (vertex {worst}), normal mean {sumA / Mathf.Max(1, rebuilt):0.0} " +
+                          $"max {maxA:0.0} deg ({flipped} flipped), tangent mean {sumT / Mathf.Max(1, rebuilt):0.0} max {maxT:0.0} deg ({wFlip} handedness flips)");
             }
         }
 
@@ -305,16 +371,24 @@ namespace RoeFighter.EditorTools
             }
 
             // the model: our materials on it, readable meshes (the soft bodies and the cloth grids rebuild vertices)
+            // (reimported only when a setting changes: her 1373-bone FBX takes minutes, and a new FBX is imported by the Refresh)
             var mi = (ModelImporter)AssetImporter.GetAtPath(fbxPath);
-            mi.animationType = ModelImporterAnimationType.Generic;
-            mi.optimizeGameObjects = false;
-            mi.importAnimation = false;
-            mi.importBlendShapes = false;
-            mi.isReadable = true;
-            mi.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
-            foreach (var kv in made)
-                mi.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), kv.Key), kv.Value);
-            mi.SaveAndReimport();
+            var remaps = mi.GetExternalObjectMap();
+            bool reimport = mi.animationType != ModelImporterAnimationType.Generic || mi.optimizeGameObjects || mi.importAnimation ||
+                            mi.importBlendShapes || !mi.isReadable || mi.materialImportMode != ModelImporterMaterialImportMode.ImportStandard ||
+                            made.Any(kv => !remaps.TryGetValue(new AssetImporter.SourceAssetIdentifier(typeof(Material), kv.Key), out var o) || o != kv.Value);
+            if (reimport)
+            {
+                mi.animationType = ModelImporterAnimationType.Generic;
+                mi.optimizeGameObjects = false;
+                mi.importAnimation = false;
+                mi.importBlendShapes = false;
+                mi.isReadable = true;
+                mi.materialImportMode = ModelImporterMaterialImportMode.ImportStandard;
+                foreach (var kv in made)
+                    mi.AddRemap(new AssetImporter.SourceAssetIdentifier(typeof(Material), kv.Key), kv.Value);
+                mi.SaveAndReimport();
+            }
             var model = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath);
 
             // the Generic prefab

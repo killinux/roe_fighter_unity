@@ -134,9 +134,6 @@ namespace RoeFighter.EditorTools
                     var game = Object.FindFirstObjectByType<FightGame>();
                     game.cpu = new[] { false, false };
                     game.hud.gameObject.SetActive(false);
-                    foreach (var rig in game.rigs)
-                        foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
-                            smr.forceMatrixRecalculationPerRender = true;
                     string pack = RoeCapture.Arg("-roeMotions", null);
                     if (pack != null)
                         game.motionPack = Mathf.Max(0, game.motionPacks.FindIndex(p => p.name == pack));
@@ -145,6 +142,12 @@ namespace RoeFighter.EditorTools
                         game.PickIds(null, id);
                     apply(game, variant);
                     game.Setup();
+                    // skinned anew for every render (no player loop here): set on the two Setup picked - set before it,
+                    // a fighter picked only now (the first take of one the scene did not pick) kept the skinning of
+                    // her first frame, the body left behind while the unskinned cloth surfaces moved on
+                    foreach (var rig in game.rigs)
+                        foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                            smr.forceMatrixRecalculationPerRender = true;
                     while (game.phase != FightGame.Phase.Fight)
                         game.Step(new FighterInput[2]);
                     int who = game.f[0].rig.id == id ? 0 : 1;

@@ -28,12 +28,22 @@ namespace RoeFighter
         public static float Teleport = 0.5f;
         /// <summary>Whether the soft bodies collide with their limb colliders (for checks).</summary>
         public static bool SoftColliders = true;
+        /// <summary>
+        /// The soft lattice's rest shape (edge, diagonal lengths, hull volume): true, its targets as the pose has them; false,
+        /// the bind pose's.  Her hips' lattice spans the hip joint and its targets bend with the thighs: held to the bind
+        /// pose's lengths it pulled 2-5 cm off them standing in the guard, at the 1.5 cm per-axis limit every step.
+        /// </summary>
+        public static bool SoftRestFromPose = true;
+        /// <summary>Grid cloth tuning on top of the game's words: gravity (x 9.8 m/s2), shear and bend stiffness, how far a column may
+        /// stretch, the pull back to the rest shape (x word 6).</summary>
+        public static float GridGravity = 1f, GridShear = 1f, GridBend = 1f, GridStretch = 1.05f, GridRestore = 1f;
         const float ParticleRadius = 0.01f, NodeRadius = 0.01f;
 
         readonly RoeDoaRig rig;
         readonly Transform root;
         readonly List<ChainSim> chains = new List<ChainSim>();
         readonly List<SoftSim> softs = new List<SoftSim>();
+        readonly List<GridSim> grids = new List<GridSim>();
         // the bones placed from the soft bodies, as they rest: put back before each pose (their soft body's targets hang
         // partly on them - left where the last step put them, the breasts drifted off by up to 19 cm)
         readonly List<(Transform bone, Vector3 position, Quaternion rotation)> attachedRest = new List<(Transform, Vector3, Quaternion)>();
@@ -41,9 +51,10 @@ namespace RoeFighter
 
         string report;
         /// <summary>What it simulates, and since the last Reset how far the soft bodies and chain tips moved off the animated pose.</summary>
-        public string Report => report + (softs.Any(s => s.Steps > 0) || chains.Any(c => c.Steps > 0)
+        public string Report => report + (softs.Any(s => s.Steps > 0) || chains.Any(c => c.Steps > 0) || grids.Any(g => g.Steps > 0)
             ? "; off the animated pose since the start: " + string.Join(", ", softs.Where(s => s.Steps > 0).Select(s => s.Stats)
-                .Concat(chains.Where(c => c.Steps > 0).GroupBy(c => c.kind).Select(g => $"{g.Key} tips max {g.Max(c => c.MaxOff) * 100f:F1} cm")))
+                .Concat(chains.Where(c => c.Steps > 0).GroupBy(c => c.kind).Select(g => $"{g.Key} tips max {g.Max(c => c.MaxOff) * 100f:F1} cm"))
+                .Concat(grids.Where(g => g.Steps > 0).Select(g => g.Stats)))
             : "");
         public float Weight { get => weight; set => weight = value; }
 
@@ -75,8 +86,11 @@ namespace RoeFighter
             foreach (var a in rig.attachments)
                 if (a.bone != null)
                     attachedRest.Add((a.bone, a.bone.localPosition, a.bone.localRotation));
+            foreach (var g in rig.grids.Where(g => scope.Takes(g.kind)))
+                grids.Add(new GridSim(g, Colliders(g.groups)));
             report = $"DOA6: {chains.Count} chains ({string.Join(", ", chains.Select(c => $"{c.name} {c.Count}"))}), " +
-                     $"{softs.Count} soft bodies ({string.Join(", ", softs.Select(s => s.Name))})";
+                     $"{softs.Count} soft bodies ({string.Join(", ", softs.Select(s => s.Name))}), " +
+                     $"{grids.Count} cloth grids ({string.Join(", ", grids.Select(g => g.Name))})";
         }
 
         static int Depth(Transform t)
@@ -95,7 +109,8 @@ namespace RoeFighter
         public static bool Covers(RoeClothScope scope, string kind)
         {
             var r = scope.animator != null ? scope.animator.GetComponent<RoeDoaRig>() : null;
-            return r != null && (r.chains.Any(c => c.kind == kind) || (kind == "hair" && r.swings.Count > 0) || r.softs.Any(s => s.kind == kind));
+            return r != null && (r.chains.Any(c => c.kind == kind) || (kind == "hair" && r.swings.Count > 0) || r.softs.Any(s => s.kind == kind)
+                                 || r.grids.Any(g => g.kind == kind));
         }
 
         /// <summary>The loose bones of a DOA6 character by kind (null for the others: their bones are told apart by name).</summary>
@@ -109,6 +124,8 @@ namespace RoeFighter
                 s.Rest();
             foreach (var (bone, position, rotation) in attachedRest)
                 bone.SetLocalPositionAndRotation(position, rotation);
+            foreach (var g in grids)
+                g.Rest();
         }
 
         public void Step(float dt, float floor)
@@ -133,6 +150,9 @@ namespace RoeFighter
                 if (a.bone != null && softs.Any(s => a.body.Any(b => rig.softs[b] == s.Data)))
                     a.bone.position = at;
             }
+            // grid cloth last: a flap hangs from a bone the soft body just placed
+            foreach (var g in grids)
+                g.Step(dt, sub, floor);
         }
 
         public void Reset()
@@ -141,6 +161,8 @@ namespace RoeFighter
                 c.Reset();
             foreach (var s in softs)
                 s.Reset();
+            foreach (var g in grids)
+                g.Reset();
         }
 
         /// <summary>For checks: per soft body, the nodes furthest off their targets right now.</summary>
@@ -342,6 +364,206 @@ namespace RoeFighter
             }
         }
 
+        // ---- grid cloth (NUNO3)
+
+        /// <summary>
+        /// A grid cloth: the control points of its top rows follow the body (skinned), the others fall, swing and keep the
+        /// grid's links, cell diagonals (shear) and every-other links (bend), no further down their column than its rest
+        /// length (x GridStretch), out of the limbs of their collider groups (radius word 36) and above the floor.  Words read
+        /// (guesses): 5 the share of speed lost per 1/60 s, 6 the share of the way back to the rest shape per 1/60 s, 7 / 8
+        /// shear / bend stiffness, 12 friction, 37 iteration bytes.
+        /// The visible cloth is rebuilt from the points afterwards (RoeDoaRig.RebuildSurfaces).
+        /// </summary>
+        class GridSim
+        {
+            public readonly RoeDoaRig.Grid Data;
+            public string Name => $"{Data.cols}x{Data.rows} on {Data.parent.name}";
+            readonly RoeDoaRig.Collider[] colliders;
+            readonly int n, fixedCount, iterations;
+            readonly Vector3[] x, xOld, anim, target, targetPrev;
+            readonly Vector3[] restPos;
+            readonly Quaternion[] restRot;
+            readonly int[] column;          // the column's last skinned point
+            readonly float[] tether;        // its rest distance down the column
+            readonly bool[] hit;            // touched a collider or the floor this substep
+            readonly float keep, shear, bend, friction, restore;
+            bool ready;
+            public int Steps;
+            float maxOff, sumOff;
+            int maxAt;
+            public string Stats => $"cloth {Name} max {maxOff * 100f:F1} cm from its rest on the body at step {maxAt} " +
+                                   $"(mean of each step's largest {sumOff / Mathf.Max(1, Steps) * 100f:F1} cm)";
+
+            float P(int i, float fallback) => Data.param != null && Data.param.Length > i ? Data.param[i] : fallback;
+
+            public GridSim(RoeDoaRig.Grid g, RoeDoaRig.Collider[] colliders)
+            {
+                Data = g;
+                this.colliders = colliders;
+                n = g.cps.Length;
+                fixedCount = g.skinnedRows * g.cols;
+                x = new Vector3[n];
+                xOld = new Vector3[n];
+                anim = new Vector3[n];
+                target = new Vector3[n];
+                targetPrev = new Vector3[n];
+                restPos = g.cps.Select(t => t.localPosition).ToArray();
+                restRot = g.cps.Select(t => t.localRotation).ToArray();
+                keep = 1f - Mathf.Clamp(P(5, 0.05f), 0f, 0.9f);
+                // word 6: the share of the way back to its rest shape on the parent per 1/60 s, as the chains' word 8 reads
+                // (guess: 0.2 on the skirt, 0.7 on the puffed sleeves and the flap that keep their shape; without it the
+                // skirt flipped up by her 2.5 m drop into the fight stayed bunched on her hips for 2.5 s)
+                restore = Mathf.Clamp01(P(6, 0.2f));
+                shear = Mathf.Clamp01(P(7, 0.7f));
+                bend = Mathf.Clamp01(P(8, 0.1f));
+                friction = Mathf.Clamp01(P(12, 0.8f));
+                hit = new bool[n];
+                int sum = g.iterations != null ? g.iterations.Sum() : 0;
+                iterations = Mathf.Clamp(sum > 0 ? sum : 4, 3, 8);
+                column = new int[n];
+                tether = new float[n];
+                for (int i = 0; i < n; i++)
+                {
+                    int r = i / g.cols, c = i % g.cols;
+                    int top = (g.skinnedRows - 1) * g.cols + c;
+                    column[i] = r < g.skinnedRows ? -1 : top;
+                    float len = 0f;
+                    for (int k = g.skinnedRows; k <= r; k++)
+                        len += Vector3.Distance(g.restLocal[(k - 1) * g.cols + c], g.restLocal[k * g.cols + c]);
+                    tether[i] = len;
+                }
+            }
+
+            public void Rest()
+            {
+                for (int i = 0; i < n; i++)
+                    Data.cps[i].SetLocalPositionAndRotation(restPos[i], restRot[i]);
+            }
+
+            public void Reset()
+            {
+                ready = false;
+                Steps = 0;
+                maxOff = sumOff = 0f;
+                maxAt = 0;
+            }
+
+            void Targets()
+            {
+                for (int i = 0; i < n; i++)
+                {
+                    anim[i] = Data.parent.TransformPoint(Data.restLocal[i]);
+                    if (i >= fixedCount)
+                        continue;
+                    var t = Vector3.zero;
+                    float w = 0f;
+                    for (int k = Data.targetStart[i]; k < Data.targetStart[i + 1]; k++)
+                    {
+                        t += Data.targetWeight[k] * Data.targetBone[k].TransformPoint(Data.targetLocal[k]);
+                        w += Data.targetWeight[k];
+                    }
+                    target[i] = w > 0f ? t / w : anim[i];
+                }
+            }
+
+            public void Step(float dt, int sub, float floor)
+            {
+                System.Array.Copy(target, targetPrev, fixedCount);
+                Targets();
+                float jump = 0f;
+                for (int i = 0; i < fixedCount; i++)
+                    jump = Mathf.Max(jump, (target[i] - targetPrev[i]).sqrMagnitude);
+                if (!ready || sub == 0 || jump > Teleport * Teleport)
+                {
+                    for (int i = 0; i < n; i++)
+                        x[i] = xOld[i] = i < fixedCount ? target[i] : anim[i];
+                    System.Array.Copy(target, targetPrev, fixedCount);
+                    ready = true;
+                    if (sub == 0)
+                    {
+                        Write();
+                        return;
+                    }
+                }
+                float h = dt / sub;
+                float kv = Mathf.Pow(keep, h * 60f);
+                float kr = 1f - Mathf.Pow(1f - Mathf.Clamp01(restore * GridRestore), h * 60f);
+                var g = Vector3.down * 9.8f * GridGravity * h * h;
+                float sShear = Mathf.Clamp01(shear * GridShear), sBend = Mathf.Clamp01(bend * GridBend);
+                for (int s = 0; s < sub; s++)
+                {
+                    float f = (s + 1f) / sub;
+                    for (int i = 0; i < fixedCount; i++)
+                        x[i] = xOld[i] = Vector3.LerpUnclamped(targetPrev[i], target[i], f);
+                    for (int i = fixedCount; i < n; i++)
+                    {
+                        var v = (x[i] - xOld[i]) * kv;
+                        xOld[i] = x[i];
+                        x[i] += v + g;
+                        x[i] += (anim[i] - x[i]) * kr;
+                        hit[i] = false;
+                    }
+                    for (int it = 0; it < iterations; it++)
+                    {
+                        for (int e = 0; e < Data.springRest.Length; e++)
+                        {
+                            int a = Data.springs[2 * e], b = Data.springs[2 * e + 1];
+                            float wa = a < fixedCount ? 0f : 1f, wb = b < fixedCount ? 0f : 1f;
+                            if (wa + wb == 0f)
+                                continue;
+                            float stiff = Data.springClass[e] == 0 ? 1f : Data.springClass[e] == 1 ? sShear : sBend;
+                            var d = x[b] - x[a];
+                            float len = d.magnitude;
+                            if (len < 1e-7f)
+                                continue;
+                            var corr = d / len * ((len - Data.springRest[e]) * stiff / (wa + wb));
+                            x[a] += corr * wa;
+                            x[b] -= corr * wb;
+                        }
+                        for (int i = fixedCount; i < n; i++)
+                        {
+                            // no further from the top of its column than the cloth reaches there
+                            var top = x[column[i]];
+                            var d = x[i] - top;
+                            float max = tether[i] * GridStretch;
+                            if (d.sqrMagnitude > max * max)
+                                x[i] = top + d.normalized * max;
+                            if (SoftColliders)
+                                foreach (var c in colliders)
+                                    hit[i] |= PushOut(ref x[i], c, Data.radius, Depth(anim[i], c, Data.radius));
+                            if (x[i].y < floor + Data.radius)
+                            {
+                                x[i].y = floor + Data.radius;
+                                hit[i] = true;
+                            }
+                        }
+                    }
+                    // friction once a substep where it touched (each iteration it held the skirt on her hips)
+                    for (int i = fixedCount; i < n; i++)
+                        if (hit[i])
+                            xOld[i] += (x[i] - xOld[i]) * friction * 0.25f;
+                }
+                Steps++;
+                float off = 0f;
+                for (int i = fixedCount; i < n; i++)
+                    off = Mathf.Max(off, Vector3.Distance(x[i], anim[i]));
+                if (off > maxOff)
+                {
+                    maxOff = off;
+                    maxAt = Steps;
+                }
+                sumOff += off;
+                Write();
+            }
+
+            void Write()
+            {
+                // row by row: a point's column hangs from it, so the ones above are placed first
+                for (int i = 0; i < n; i++)
+                    Data.cps[i].position = x[i];
+            }
+        }
+
         // ---- lattice soft bodies
 
         class SoftSim
@@ -378,7 +600,8 @@ namespace RoeFighter
                 now = new Vector3[n];
                 grad = new Vector3[n];
                 restLocal = s.nodes.Select(t => t.localPosition).ToArray();
-                pinned = s.flags.Select(f => (f & 1) != 0).ToArray();
+                // 0x01: the chest wall of a breast; a hip-class body (0x80) has 0x81 on every node, and is no rigid lump
+                pinned = s.flags.Select(f => (f & 1) != 0 && (f & 0x80) == 0).ToArray();
                 share = s.wSelf.Select(w => Mathf.Clamp01(w)).ToArray();
                 pushMax = new float[colliders.Length];
                 pushes = new int[colliders.Length];
@@ -451,13 +674,18 @@ namespace RoeFighter
                 float diagStiff = Data.coef != null && Data.coef.Length > 1 ? Data.coef[1] : 0.5f;
                 float volStiff = Data.coef != null && Data.coef.Length > 2 ? Data.coef[2] : 0.4f;
                 var axes = root != null ? root.rotation : Quaternion.identity;
+                bool fromPose = SoftRestFromPose;
                 for (int s = 0; s < sub; s++)
                 {
                     // the targets in between the fight's steps: on a straight line from the last ones
                     float f = (s + 1f) / sub;
                     for (int i = 0; i < n; i++)
-                    {
                         now[i] = Vector3.LerpUnclamped(targetPrev[i], target[i], f);
+                    // the lattice's rest shape: the targets as the pose has them (their skinning bends it over a joint -
+                    // her hips' lattice spans the hip joint), or the bind pose's
+                    float restVolume = !fromPose ? Data.restVolume : Data.hull != null ? Mathf.Abs(Volume(now)) : 0f;
+                    for (int i = 0; i < n; i++)
+                    {
                         if (pinned[i])
                         {
                             x[i] = now[i];
@@ -488,12 +716,13 @@ namespace RoeFighter
                             float wi = pinned[i] ? 0f : 1f, wj = pinned[j] ? 0f : 1f;
                             if (wi + wj == 0f)
                                 continue;
-                            var corr = d / len * ((len - Data.springRest[e]) * stiff / (wi + wj));
+                            float rest = fromPose ? Vector3.Distance(now[i], now[j]) : Data.springRest[e];
+                            var corr = d / len * ((len - rest) * stiff / (wi + wj));
                             x[i] += corr * wi;
                             x[j] -= corr * wj;
                         }
                         // the hull keeps its volume
-                        if (Data.hull != null && Data.hull.Length >= 3 && Data.restVolume > 0f)
+                        if (Data.hull != null && Data.hull.Length >= 3 && restVolume > 0f)
                         {
                             System.Array.Clear(grad, 0, n);
                             float vol = 0f;
@@ -506,7 +735,7 @@ namespace RoeFighter
                                 grad[p2] += Vector3.Cross(x[p0], x[p1]) / 6f;
                             }
                             float sign = Mathf.Sign(vol);
-                            float cErr = Mathf.Abs(vol) - Data.restVolume;
+                            float cErr = Mathf.Abs(vol) - restVolume;
                             float sum = 0f;
                             for (int i = 0; i < n; i++)
                                 if (!pinned[i])
@@ -588,12 +817,14 @@ namespace RoeFighter
                         .Select(k => $"{Data.targetBone[k].name} {Data.targetWeight[k]:F2}");
                     var inside = colliders.Select(c => (c.bone.name, depth: Depth(target[i], c, NodeRadius))).Where(c => c.depth > 0f)
                         .Select(c => $"{c.name} by {c.depth * 100f:F1} cm");
-                    // how far its springs are stretched (rest = 1)
+                    // how far its springs are stretched (rest = 1; the rest the solver uses)
                     float worst = 1f;
                     for (int e = 0; e < Data.springRest.Length; e++)
                         if (Data.springs[2 * e] == i || Data.springs[2 * e + 1] == i)
                         {
-                            float r = Vector3.Distance(x[Data.springs[2 * e]], x[Data.springs[2 * e + 1]]) / Data.springRest[e];
+                            int a = Data.springs[2 * e], b = Data.springs[2 * e + 1];
+                            float rest = SoftRestFromPose ? Vector3.Distance(target[a], target[b]) : Data.springRest[e];
+                            float r = Vector3.Distance(x[a], x[b]) / Mathf.Max(1e-6f, rest);
                             if (Mathf.Abs(r - 1f) > Mathf.Abs(worst - 1f))
                                 worst = r;
                         }
@@ -601,6 +832,14 @@ namespace RoeFighter
                               $"target on {string.Join(" ", bones)}{(inside.Any() ? ", target inside " + string.Join(" ", inside) : "")}");
                 }
                 return sb.ToString();
+            }
+
+            float Volume(Vector3[] p)
+            {
+                float v = 0f;
+                for (int t = 0; t + 2 < Data.hull.Length; t += 3)
+                    v += Vector3.Dot(p[Data.hull[t]], Vector3.Cross(p[Data.hull[t + 1]], p[Data.hull[t + 2]])) / 6f;
+                return v;
             }
 
             /// <summary>The nodes where the mesh takes them: each shows its share (w_self) of its swing off the target - all

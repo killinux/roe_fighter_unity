@@ -257,6 +257,9 @@ namespace RoeFighter.Fight
                     if (b != HumanBodyBones.LastBone && animator.GetBoneTransform(b) != null)
                         human.Add(animator.GetBoneTransform(b));
                 var driven = new HashSet<Transform>(helpers != null ? helpers.drives.Select(d => d.helper) : Enumerable.Empty<Transform>());
+                // (a DOA6 grid cloth's points are not panels: its top rows follow their skinning, RoeDoaRig.DriveGrids)
+                if (doaRig != null)
+                    driven.UnionWith(doaRig.grids.SelectMany(g => g.cps));
                 hipCloth = hips.Cast<Transform>().Where(t => !human.Contains(t) && !driven.Contains(t) && t.childCount > 0).ToArray();
                 var heading = HipHeading();
                 hipClothRest = hipCloth.Select(t => Quaternion.Inverse(heading) * t.rotation).ToArray();
@@ -644,9 +647,13 @@ namespace RoeFighter.Fight
             // the limb helpers: the game's clips animate them; under motion capture they follow the limbs
             if (helpers != null)
                 helpers.Apply(mocap);
-            // a DOA6 character's twist helpers (her game turns them by script, her clips do not key them)
+            // a DOA6 character's twist helpers (her game turns them by script, her clips do not key them), then her grid
+            // cloth's skinned rows on their bones (they follow the hips and thighs in any setup, the solvers move the rest)
             if (doaRig != null)
+            {
                 doaRig.DriveHelpers();
+                doaRig.DriveGrids();
+            }
             // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
             // game's animators key it, then hung on the body (the skin, posed with the helpers above); the
             // cloth swings from there.  On the legs' final pose.
@@ -667,6 +674,9 @@ namespace RoeFighter.Fight
                 cloth.Weight = (clothOverGameClips ? 1f : mocap) * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
+            // a DOA6 character's visible cloth (skirt, sleeves): rebuilt from its control points, whichever solver moved them
+            if (doaRig != null)
+                doaRig.RebuildSurfaces();
         }
 
         // ---- cloth (RoeClothBackends): skirts, hair, chains, breasts

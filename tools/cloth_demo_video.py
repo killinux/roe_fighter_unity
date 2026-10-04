@@ -20,12 +20,14 @@ MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回�
          'back_fist': '里拳', 'chop': '手刀',
          'mai_jab': '冲步刺拳', 'mai_elbow': '肘击', 'mai_lunge': '扑身冲拳', 'mai_high_kick': '高踢',
          'kas_00051': '刺拳', 'kas_00055': '侧踢', 'kas_00185': '上勾拳', 'kas_00054': '高位回旋踢'}
-NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Luf', 'kas': '霞（DOA6）'}
+NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Luf', 'kas': '霞（DOA6）', 'kas011': '霞 海盗裙（DOA6）'}
 TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '我们的骨骼布料（照 Magica 的做法）',
           'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）',
           'pack': '原来的普通攻击（Bandai 动捕）', 'own': '不知火舞的普通攻击（DOA6）',
           'game': '原来：照游戏浮空，飘带照关键帧', 'floor': '现在：受击倒地落地，技能升空，飘带模拟',
-          'doa6': 'DOA6 自己的物理（软体胸、骨链、摆动骨）', 'doa6_breasts': '胸用 DOA6 软体，其余骨骼布料'}
+          'doa6': 'DOA6 自己的物理（软体胸、骨链、摆动骨）', 'doa6_breasts': '胸用 DOA6 软体，其余骨骼布料',
+          ('kas011', 'doa6'): 'DOA6 自己的物理（软体、发链、网格布裙和袖）',
+          ('kas011', 'magica_style'): '我们的骨骼布料（网格布的每一列当一条链）'}
 
 
 def read_takes(folder):
@@ -83,7 +85,7 @@ def main():
             for n, (v, im) in enumerate(zip(variants, ims)):
                 frame.paste(im, (w * n, 0))
                 about, moves = takes.get((cid, v), ('', {}))
-                title = (TITLES.get(v) or (about.split(';')[0] if about else v)) + a.suffix
+                title = (TITLES.get((cid, v)) or TITLES.get(v) or (about.split(';')[0] if about else v)) + a.suffix
                 d.text((w * n + 16, 10), f'{NAMES.get(cid, cid)}　{title}', font=big, fill=colours[n % len(colours)],
                        stroke_width=3, stroke_fill=(0, 0, 0))
                 if what in moves:

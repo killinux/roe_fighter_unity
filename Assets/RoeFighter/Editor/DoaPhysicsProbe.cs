@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using RoeFighter.Fight;
 using UnityEditor;
@@ -13,6 +14,7 @@ namespace RoeFighter.EditorTools
     /// furthest off their animated targets (offset in her own frame, the target's bones, colliders the target is in,
     /// how far the node's lattice springs are stretched), and at the end the solver's report.
     ///   -executeMethod RoeFighter.EditorTools.DoaPhysicsProbe.Soft [-roeChar kas] [-roeCloth doa6] [-roeSteps 30,120,600] [-roeTop 6] [-roeSoftColliders 0]
+    ///     [-roeSoftRest pose|bind] (the lattice's rest shape, RoeDoaPhysics.SoftRestFromPose)
     /// </summary>
     public static class DoaPhysicsProbe
     {
@@ -24,6 +26,7 @@ namespace RoeFighter.EditorTools
             var at = RoeCapture.Arg("-roeSteps", "30,120,600").Split(',').Select(int.Parse).ToHashSet();
             int top = int.Parse(RoeCapture.Arg("-roeTop", "6"));
             RoeDoaPhysics.SoftColliders = RoeCapture.Arg("-roeSoftColliders", "1") != "0";
+            RoeDoaPhysics.SoftRestFromPose = RoeCapture.Arg("-roeSoftRest", "pose") != "bind";
             EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
             var game = Object.FindFirstObjectByType<FightGame>();
             game.cpu = new[] { false, false };
@@ -70,6 +73,62 @@ namespace RoeFighter.EditorTools
                     sb.Append($"\n[ROE]   step {s} ({me.rig.Current} {me.rig.CurrentTime:F2} s):\n[ROE]   " + doa.Probe(top).Replace("\n", "\n[ROE]   "));
             }
             sb.Append($"\n[ROE]   {doa.Report}");
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
+        /// Which of her transforms a physics setup puts somewhere else than another one does: the first steps of the fight
+        /// under each setup, standing, then every transform under her model compared in her own frame; listed are the ones
+        /// that start a difference (their parent agrees), furthest first.
+        ///   -executeMethod RoeFighter.EditorTools.DoaPhysicsProbe.Moved [-roeChar kas011] [-roeCloths off,magica_style] [-roeSteps 5] [-roeTop 15]
+        /// </summary>
+        public static void Moved()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "kas011");
+            var setups = RoeCapture.Arg("-roeCloths", "off,magica_style").Split(',');
+            int steps = int.Parse(RoeCapture.Arg("-roeSteps", "5"));
+            int top = int.Parse(RoeCapture.Arg("-roeTop", "15"));
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var poses = new List<Dictionary<Transform, Vector3>>();
+            var sb = new System.Text.StringBuilder($"[ROE] {id}: where the setups {string.Join(" / ", setups)} put her transforms after {steps} steps:");
+            Transform root = null;
+            foreach (var setup in setups)
+            {
+                FighterRig.ClothBackend = setup;
+                var game = Object.FindFirstObjectByType<FightGame>();
+                game.cpu = new[] { false, false };
+                if (game.roster.Length > 0 && game.roster[game.pick[0]].id != id && game.roster[game.pick[1]].id != id)
+                    game.PickIds(null, id);
+                foreach (var rig in game.rigs)
+                    rig.useCloth = true;
+                game.Setup();
+                while (game.phase != FightGame.Phase.Fight)
+                    game.Step(new FighterInput[2]);
+                var me = game.f[game.f[0].rig.id == id ? 0 : 1];
+                me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 5.5f;
+                me.foe.Place();
+                for (int s = 0; s < steps; s++)
+                    game.Step(new FighterInput[2]);
+                root = me.rig.animator.transform;
+                sb.Append($"\n[ROE]   {setup}: {me.rig.ClothTitle}; her place {me.pos}, model root {root.position} turned {root.eulerAngles}");
+                poses.Add(root.GetComponentsInChildren<Transform>(true).ToDictionary(t => t, t => root.InverseTransformPoint(t.position)));
+            }
+            for (int k = 1; k < poses.Count; k++)
+            {
+                var a = poses[0];
+                var b = poses[k];
+                float Off(Transform t) => a.TryGetValue(t, out var p) && b.TryGetValue(t, out var q) ? Vector3.Distance(p, q) : 0f;
+                var starts = a.Keys.Where(t => b.ContainsKey(t) && Off(t) > 0.01f && (t.parent == null || Off(t.parent) < 0.01f))
+                              .OrderByDescending(Off).ToList();
+                int moved = a.Keys.Count(t => Off(t) > 0.01f);
+                sb.Append($"\n[ROE]   {setups[0]} -> {setups[k]}: {moved} transforms more than 1 cm apart, {starts.Count} start it:");
+                foreach (var t in starts.Take(top))
+                {
+                    int under = t.GetComponentsInChildren<Transform>(true).Length - 1;
+                    sb.Append($"\n[ROE]     {t.name} (on {t.parent?.name}, {under} under it): {Off(t) * 100f:F1} cm, {a[t]} vs {b[t]}");
+                }
+            }
             Debug.Log(sb.ToString());
         }
     }

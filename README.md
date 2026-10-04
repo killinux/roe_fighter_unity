@@ -1,7 +1,8 @@
 # ROE Fighter（Unity 版）
 
 用 Rise of Eros（ROE）的角色做的 3D 格斗游戏。引擎是 Unity 6000.4.12f1 + URP。原计划用 UFE 2（Universal Fighting Engine 2）做对战框架，暂时买不了，所以先自己写了一套能玩的格斗逻辑（见"格斗"一节）；角色、动作、技能、特效这些数据以后换 UFE 也照样能用。
-角色：a08（Inase）、g04（Luf）首发，10-03 晚加了 b10（Kart）和 g05（Luf 的女神套装），10-04 加了《死或生 6》（DOA6）的霞（Kasumi）；开局先进选人界面。
+角色：a08（Inase）、g04（Luf）首发，10-03 晚加了 b10（Kart）和 g05（Luf 的女神套装），10-04 加了《死或生 6》（DOA6）的霞（Kasumi），
+晚上又加了霞的海盗裙（kas011，裙子袖子是 DOA6 的网格布）；开局先进选人界面。
 
 从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/DOA`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`_work`、`out`。
 这些素材来自商业游戏（ROE、DOA6、DOA5LR），只在本机自己用。
@@ -32,6 +33,7 @@
 | Luffee（g04、g05）的站架也换成不知火舞的（DOA6 00000） | 完成（10-03 晚），对比视频 `out\luffee_mai_stance.mp4`（左：动作包的拳击架势；右：不知火舞的架势和四招） |
 | 爆衣（比赛中把衣服打掉） | 完成到第二步（10-03）：超必杀的最后一下打中、被 KO，各掉一段（每人四段），决胜的 KO 把剩下的全打掉，整场比赛不回来，F6 开关；衣服下面换成家族的裸体底模，所以能掉到全身（g04 留着鞋），见"爆衣"一节；演示 `out\clothes_burst_demo.mp4`，检查图 `out\clothes_burst\unity\a08_sheet.png`、`g04_sheet.png`，电脑对电脑整场 `out\fight_cpu_match_burst.mp4`。调研和后面几步（补身体、打哪破哪）见 [`docs/clothes-burst.md`](docs/clothes-burst.md) |
 | DOA6 的霞加入战斗；调研 DOA6、DOA5LR 的胸、头发、衣服物理；物理做成可插拔（F4 换方案，以后可接 Magica Cloth 2） | 完成（10-04），见"霞（DOA6）和可插拔物理"一节和 [`docs/doa-physics.md`](docs/doa-physics.md)；对比视频 `out\kas_physics_body.mp4`、`out\kas_physics_chest.mp4`（左：骨骼布料，中：DOA6 的物理，右：关），电脑对电脑 `out\kas_fight_test.mp4` |
+| 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
 
 ## 目录
 
@@ -1079,11 +1081,13 @@ python tools\cloth_demo_video.py _work\hover_demo out\g05_hover_fix.mp4 --chars 
   - 没有游戏的特效和语音。
   - 素材放在 `Assets/DOA/kas`（不入库），定义在 `tools/doa/kas.json`，动作包 `tools/motionpacks/doa6_kas.json`。
   - 名单默认加上 `kas`，没有她的文件时自动跳过。
+  - 第二套衣服海盗裙是另一个角色 `kas011`（`Assets/DOA/kas011`、`tools/doa/kas011.json`），动作、技能同上。
 - **DOA6 的物理**：
   - 胸是体积软体：每边 188 个格点，外面一层壳保持体积，被手臂、大腿顶，网格按格子插值；
   - 马尾、飘带、绳子是骨链；
   - 刘海是摆动骨；
-  - 裙子、袖子是粗网格布（霞的默认服装没有）。
+  - 裙子、袖子是粗网格布：默认服装没有，海盗裙 `kas011` 有。控制点网格模拟，看得见的布每帧从 4 × 4 个控制点插值、再加厚度
+    （`RoeDoaRig.RebuildSurfaces`，`docs/doa-physics.md` 第 10 节）。
   - 读成 `Assets/DOA/kas/physics.json`（`tools/doa6_physics.py`），由 `DoaPhysicsBuilder` 挂到预制体上（`RoeDoaRig`），`RoeDoaPhysics` 每步模拟。
   - 骨架脚本驱动的扭转辅助骨（`RF_*`）也补上了（`RoeDoaRig.DriveHelpers`）。
 - **DOA5LR**：
@@ -1106,11 +1110,13 @@ python tools\cloth_demo_video.py _work\hover_demo out\g05_hover_fix.mp4 --chars 
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','kas','-roeCloths','magica_style,doa6,off','-roeView','chest'
 python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --chars kas --variants magica_style,doa6,off
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaPhysicsProbe.Soft -Extra '-roeSteps','30,120,620'              # 软体格点偏离多少、被谁推
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaFighter.Stills -Graphics -Extra '-roeDoa','kas011'           # 静帧 + 布面静止重建对不对
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaPhysicsProbe.Moved -Extra '-roeChar','kas011'                # 两个物理方案把她的节点放得哪里不同
 ```
 
 ### 选人界面（10-03 晚）
 
-- 场景里放着名单上的所有人（`-roeRoster`，默认 `a08,g04,b10,g05`），开局先进选人界面；没选上的收起来（不显示、不计算）。
+- 场景里放着名单上的所有人（`-roeRoster`，默认 `a08,g04,b10,g05,kas,kas011`，没有文件的自动跳过），开局先进选人界面；没选上的收起来（不显示、不计算）。
 - 下面一排卡片，头像是建场景时在影棚里拍的（`Generated\<id>\<id>_portrait.png`）；选中的两人站在场上，播她们的展示待机。上方写着轮到谁选。
 - 1P 是人、2P 是电脑（默认）：1P 先选自己的，确认后接着替电脑选；两边都是人就各选各的；两边都是电脑（F1 + F2）就随机选好直接开打。
 - 两边选同一个角色时，复制一份那个角色（第一次用到时复制，之后留着）。
@@ -1134,7 +1140,7 @@ python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --ch
   但布料模拟只拿每节骨的尾端 / 骨段去碰腿部胶囊，宽的裙片、厚的毛边在模拟里还会被腿带进去，单条链也没法顺着屁股弯过去。可以试：
   ① 模拟里也用皮肤表面（`RoeBodySurface`）和每节布的采样顶点做碰撞，不只用胶囊；② 一片宽布拆成几条虚拟链，或者补三角弯曲约束；
   ③ 换成按网格顶点模拟（Magica 的 MeshCloth / 代理网格）；④ 先把 `SkirtSwing` 加上皮肤穿透的逐帧统计，所有动作都量一遍再定。
-  10-03 拆了 DOA6 的数据：它的裙子就是③的做法。
+  10-03 拆了 DOA6 的数据：它的裙子就是③的做法。10-04 晚霞的海盗裙照这个做法跑起来了（`docs/doa-physics.md` 第 10 节）。
   - 每块布只模拟一张粗的控制点网格：不知火舞每块 5 列 × 6–11 行，霞的整圈裙子是 20 × 10 的环。
   - 看得见的布料网格每帧从这张网插值出来，再沿布面法线加厚度。
   - 碰撞体按布分组，每块布只碰附近 6–16 个。
@@ -1179,10 +1185,12 @@ python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --ch
   - 手掌片碰撞体比游戏的厚；
   - 肘、膝、胯的修形骨和前臂扭转没驱动；
   - 开场从 2.5 米高处跳下，落地时胸顶到上限；
-  - 没有游戏特效和语音。
+  - 没有游戏特效和语音；
+  - 海盗裙：网格布的 46 个参数字只读了 7 个；臀部软体（标志 0x80）怎么读未定，站架里顶在每轴上限；骨骼布料方案里裙子的列和列之间没连起来。
 
   见 `docs/doa-physics.md` 第 9 节。
 - KO 镜头不避墙：KO 发生在场地边上时，镜头会在铁栅栏后面（`out\kas_fight_test.mp4` 第 57 秒）。
+- exe 开局要等约 17 秒才出画面（10-03 只有四个 ROE 角色时不到 12 秒）：名单上的人都在场景里初始化，两个霞各有 1373 根骨、60 块网格。时间具体花在哪还没量。
 
 ## 环境
 

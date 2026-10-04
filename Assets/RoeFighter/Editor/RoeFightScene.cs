@@ -44,8 +44,9 @@ namespace RoeFighter.EditorTools
         };
 
         /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
-        /// kas comes in when her DOA6 files are there, DoaFighter.IsDoa).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,kas";
+        /// kas comes in when her DOA6 files are there, DoaFighter.IsDoa; kas011 is her pirate dress, COS_011, whose skirt and
+        /// sleeves are the game's grid cloth).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -236,6 +237,7 @@ namespace RoeFighter.EditorTools
                 var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
                 if (stance != null)
                     RoeCapture.Pose(go, stance, 0f);
+                go.GetComponent<RoeDoaRig>()?.RebuildSurfaces();     // a DOA6 skirt on the pose
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 var forward = RoeShowcase.Forward(go);

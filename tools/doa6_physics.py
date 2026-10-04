@@ -16,7 +16,12 @@ Everything stays in G1M model space (cm, +Y up, faces +Z, +X = her left); bones 
   - softMeshes: per soft-body mesh (the part's submesh number = the Blender object <part>_sm<n>) every vertex's rest
     position, UV, 8 lattice nodes + weights and its blend back to plain skinning;
   - attachments: bones placed from the soft body (565/566 at the cleavage);
-  - twists: the RF_ twist helpers the game's rig script drives (twists()), from the costume's skeleton.
+  - twists: the RF_ twist helpers the game's rig script drives (twists()), from the costume's skeleton;
+  - grids (NUNO3 grid cloth: skirts, sleeves, flaps): control points (model position, left/right/up/down links, rest distances),
+    the skinned top rows (bones + weights), the simulated ranges, extra constraints, the 46 parameter words, collider groups;
+  - gridMeshes: per cloth surface mesh (type 1) its rest positions and UVs, and for each rebuilt vertex the 16 control
+    points of its 4x4 patch with the weights w_h, w_v, dw_h, dw_v, the depth and the normal / tangent coefficients
+    (the other vertices are rigid: the imported mesh's own skinning).
 Hair parts reference the costume's collider group 0 (the body colliders for hair, ripper_tpose doa6_physics_findings).
 """
 import json
@@ -81,7 +86,7 @@ def twists(skeleton):
 def main():
     out, parts = sys.argv[1], sys.argv[2:]
     data = {"source": [], "colliders": [], "groups": [], "chains": [], "swings": [], "softs": [], "softMeshes": [], "attachments": [],
-            "twists": []}
+            "twists": [], "grids": [], "gridMeshes": []}
     group_index = {}
     costume = None
     for path in parts:
@@ -165,6 +170,39 @@ def main():
                                         "refs": [{"body": soft_base + r["body"], "weight": r["weight"], "nodes": r["nodes"], "w": r["node_weights"]} for r in a["refs"]]})
         if "_COS_" in part:
             data["twists"] = twists(d["skeleton"])
+        # grid cloth (NUNO3: the one the meshes use; NUNO1 / NUNV1 are the same grid with untuned words)
+        grid_base = len(data["grids"])
+        for cl in d.get("cloth", []):
+            cps = cl["control_points"]
+            n3 = cl.get("nuno3") or {}
+            params, iterations = [], []
+            for p in n3.get("params", []):
+                v = p.get("value")
+                if isinstance(v, dict) and "bytes" in v:
+                    params.append(0.0)
+                    if p["i"] == 37:
+                        iterations = v["bytes"]
+                else:
+                    params.append(float(v["int"]) if isinstance(v, dict) else float(v or 0))
+            skin = [{"cp": s["cp"], "bones": [b["id"] for b in s["bones"]], "weights": s["weights"]} for s in cl["skin"]]
+            data["grids"].append({
+                "name": f"{part} cloth {cl['index']}", "kind": "skirt", "parent": cl["parent"]["id"],
+                "cols": cl["cols"], "rows": cl["rows"], "ring": bool(cl["ring"]),
+                "pos": [c for p in cps for c in p["model_pos"]],
+                "links": [k for p in cps for k in (p["left"], p["right"], p["up"], p["down"])],
+                "restRight": [p["rest_right"] for p in cps], "restDown": [p["rest_down"] for p in cps],
+                "skin": skin, "simRanges": [x for r in n3.get("sim_ranges", []) for x in r],
+                "extra": [x for e in n3.get("extra_constraints", []) for x in (e["a"], e["b"], e["rest"])] if n3.get("extra_constraints") else [],
+                "params": params, "iterations": iterations, "groups": [f"{part}:{g}" for g in cl["collision_groups"]]})
+        for m in d["meshes"]:
+            if m["type"] != 1:
+                continue
+            cv = m["cloth_vertices"]
+            data["gridMeshes"].append({
+                "mesh": f"{part}_sm{m['submesh']}", "grid": grid_base + m["driver"]["cloth_index"], "count": m["vertex_count"],
+                "pos": [c for p in m["rest_model_pos"] for c in p], "uv": [c for p in m["uv"] for c in p],
+                "cloth": cv["index"], "cp": cv["cp"], "wh": cv["w_h"], "wv": cv["w_v"], "dwh": cv["dw_h"], "dwv": cv["dw_v"],
+                "depth": cv["depth"], "normalCoef": cv["normal_coef"], "tangentCoef": cv["tangent_coef"]})
     os.makedirs(os.path.dirname(os.path.abspath(out)), exist_ok=True)
     with open(out, "w", encoding="utf-8") as f:
         json.dump(data, f)
@@ -172,7 +210,8 @@ def main():
           f"({', '.join(c['kind'] + ' ' + str(len(c['bones'])) for c in data['chains'])}), {len(data['swings'])} swing bones, "
           f"{len(data['softs'])} soft bodies ({', '.join(s['kind'] + ' ' + str(len(s['nodes'])) for s in data['softs'])}), "
           f"{len(data['softMeshes'])} soft meshes ({sum(len(m['vertices']) for m in data['softMeshes'])} vertices), {len(data['attachments'])} attachments, "
-          f"{len(data['twists'])} twist helpers")
+          f"{len(data['twists'])} twist helpers, {len(data['grids'])} cloth grids ({', '.join(f"{g['cols']}x{g['rows']}" for g in data['grids'])}), "
+          f"{len(data['gridMeshes'])} cloth surfaces ({sum(m['count'] for m in data['gridMeshes'])} vertices)")
 
 
 if __name__ == "__main__":

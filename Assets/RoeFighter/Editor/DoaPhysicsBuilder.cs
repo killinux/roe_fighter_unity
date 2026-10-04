@@ -46,6 +46,24 @@ namespace RoeFighter.EditorTools
         [Serializable] class JRef { public int body; public float weight; public int[] nodes; public float[] w; }
         [Serializable] class JAttachment { public int bone; public JRef[] refs; }
         [Serializable] class JTwist { public int bone, source, toward; public float share; public string name; }
+        [Serializable] class JSkinCP { public int cp; public int[] bones; public float[] weights; }
+        [Serializable] class JGrid
+        {
+            public string name, kind;
+            public int parent, cols, rows;
+            public bool ring;
+            public float[] pos, restRight, restDown, extra, @params;
+            public int[] links, simRanges, iterations;
+            public JSkinCP[] skin;
+            public string[] groups;
+        }
+        [Serializable] class JGridMesh
+        {
+            public string mesh;
+            public int grid, count;
+            public float[] pos, uv, wh, wv, dwh, dwv, depth, normalCoef, tangentCoef;
+            public int[] cloth, cp;
+        }
         [Serializable] class JData
         {
             public string[] source;
@@ -57,6 +75,8 @@ namespace RoeFighter.EditorTools
             public JSoftMesh[] softMeshes;
             public JAttachment[] attachments;
             public JTwist[] twists;
+            public JGrid[] grids;
+            public JGridMesh[] gridMeshes;
         }
 
         public static void Build()
@@ -290,7 +310,8 @@ namespace RoeFighter.EditorTools
                     soft.springRest = pairs.Select(p => Vector3.Distance(nodes[p.Item1].position, nodes[p.Item2].position)).ToArray();
                     soft.restVolume = Mathf.Abs(Volume(nodes.Select(n => n.position).ToArray(), s.hull));
                     rig.softs.Add(soft);
-                    notes.Add($"{s.name} ({s.kind}): {nodes.Length} nodes ({soft.flags.Count(f => (f & 1) != 0)} pinned), {soft.edgeCount} edges + " +
+                    // pinned as the solver has it: 0x01 on a breast; a hip-class body (0x80) has 0x01 on every node and moves all of them
+                    notes.Add($"{s.name} ({s.kind}): {nodes.Length} nodes ({soft.flags.Count(f => (f & 1) != 0 && (f & 0x80) == 0)} pinned), {soft.edgeCount} edges + " +
                               $"{pairs.Count - soft.edgeCount} diagonals, hull {s.hull.Length / 3} triangles {soft.restVolume * 1e3f:F2} L, gravity {s.gravity}, " +
                               $"damping {s.damping}, stiffness {s.stiffness}, groups {string.Join(" ", s.groups)}");
                 }
@@ -328,9 +349,119 @@ namespace RoeFighter.EditorTools
                     rig.attachments.Add(att);
                     notes.Add($"bone_{a.bone} placed from {att.body.Length} soft-body cells (rest miss {att.offset.magnitude * 1000f:F1} mm)");
                 }
+                // grid cloth: a transform per control point, each column a chain hanging from the cloth's bone
+                var gridIndex = new Dictionary<int, int>();
+                var jgrids = data.grids ?? new JGrid[0];
+                for (int gi = 0; gi < jgrids.Length; gi++)
+                {
+                    var jg = jgrids[gi];
+                    var parent = Bone(jg.parent);
+                    if (parent == null)
+                    {
+                        notes.Add($"{jg.name}: no bone_{jg.parent}, left out");
+                        continue;
+                    }
+                    int cols = jg.cols, rows = jg.rows, n = cols * rows;
+                    var world = new Vector3[n];
+                    for (int i = 0; i < n; i++)
+                        world[i] = M(new[] { jg.pos[3 * i], jg.pos[3 * i + 1], jg.pos[3 * i + 2] });
+                    var cps = new Transform[n];
+                    for (int r = 0; r < rows; r++)
+                        for (int c = 0; c < cols; c++)
+                        {
+                            int i = r * cols + c;
+                            var t = new GameObject($"{parent.name}_grid{gi}_r{r}c{c}").transform;
+                            t.SetParent(r == 0 ? parent : cps[i - cols], false);
+                            t.position = world[i];
+                            t.rotation = parent.rotation;
+                            cps[i] = t;
+                        }
+                    int skinnedRows = jg.simRanges != null && jg.simRanges.Length > 0 ? Mathf.Max(1, jg.simRanges[0] / cols) : 2;
+                    var grid = new RoeDoaRig.Grid
+                    {
+                        name = jg.name, kind = jg.kind, parent = parent, cols = cols, rows = rows, ring = jg.ring, cps = cps,
+                        restLocal = world.Select(parent.InverseTransformPoint).ToArray(), links = jg.links, skinnedRows = skinnedRows,
+                        param = jg.@params, iterations = jg.iterations, groups = Groups(jg.groups),
+                        radius = jg.@params != null && jg.@params.Length > 36 ? jg.@params[36] * 0.01f : 0.01f,
+                    };
+                    // the skinned rows' targets
+                    var bySkin = (jg.skin ?? new JSkinCP[0]).ToDictionary(x => x.cp, x => x);
+                    var start = new List<int>();
+                    var tb = new List<Transform>();
+                    var tl = new List<Vector3>();
+                    var tw = new List<float>();
+                    for (int i = 0; i < n; i++)
+                    {
+                        start.Add(tb.Count);
+                        if (!bySkin.TryGetValue(i, out var sk))
+                            continue;
+                        for (int k = 0; k < sk.bones.Length; k++)
+                        {
+                            var b = Bone(sk.bones[k]);
+                            if (b == null || sk.weights[k] <= 0f)
+                                continue;
+                            tb.Add(b);
+                            tl.Add(BindLocal(b, world[i]));
+                            tw.Add(sk.weights[k]);
+                        }
+                    }
+                    start.Add(tb.Count);
+                    grid.targetStart = start.ToArray();
+                    grid.targetBone = tb.ToArray();
+                    grid.targetLocal = tl.ToArray();
+                    grid.targetWeight = tw.ToArray();
+                    // springs: the grid's own links, the cells' diagonals, every other point (between two free points or one)
+                    var pairs = new List<(int a, int b, int cls)>();
+                    var seenPair = new HashSet<(int, int)>();
+                    int L(int i, int k) => i >= 0 ? jg.links[4 * i + k] : -1;     // 0 left, 1 right, 2 up, 3 down
+                    void Spring(int a, int b, int cls)
+                    {
+                        if (a < 0 || b < 0 || a == b || (a < skinnedRows * cols && b < skinnedRows * cols))
+                            return;
+                        if (seenPair.Add(a < b ? (a, b) : (b, a)))
+                            pairs.Add((a, b, cls));
+                    }
+                    for (int i = 0; i < n; i++)
+                    {
+                        Spring(i, L(i, 1), 0);
+                        Spring(i, L(i, 3), 0);
+                    }
+                    for (int i = 0; i < n; i++)
+                    {
+                        Spring(i, L(L(i, 1), 3), 1);
+                        Spring(i, L(L(i, 0), 3), 1);
+                    }
+                    for (int i = 0; i < n; i++)
+                    {
+                        Spring(i, L(L(i, 1), 1), 2);
+                        Spring(i, L(L(i, 3), 3), 2);
+                    }
+                    grid.springs = pairs.SelectMany(x => new[] { x.a, x.b }).ToArray();
+                    grid.springRest = pairs.Select(x => Vector3.Distance(world[x.a], world[x.b])).ToArray();
+                    grid.springClass = pairs.Select(x => x.cls).ToArray();
+                    gridIndex[gi] = rig.grids.Count;
+                    rig.grids.Add(grid);
+                    notes.Add($"{jg.name} on {parent.name}: {cols}x{rows}{(jg.ring ? " ring" : "")}, {skinnedRows} rows skinned, " +
+                              $"{pairs.Count(x => x.cls == 0)} links + {pairs.Count(x => x.cls == 1)} shear + {pairs.Count(x => x.cls == 2)} bend, " +
+                              $"radius {grid.radius * 100f:F1} cm, groups {string.Join(" ", jg.groups)}");
+                }
+                // the visible cloth: a dynamic mesh per surface, its vertices bound to the grid (RoeDoaRig.RebuildSurfaces)
+                foreach (var jm in data.gridMeshes ?? new JGridMesh[0])
+                {
+                    if (!renderers.TryGetValue(jm.mesh, out var smr) || !gridIndex.TryGetValue(jm.grid, out int g))
+                    {
+                        notes.Add($"{jm.mesh}: no renderer or grid");
+                        continue;
+                    }
+                    var surface = Surface(smr, jm, M, rig.grids[g].cps.Select(t => t.position).ToArray(), meshDir);
+                    surface.Item1.grid = g;
+                    rig.surfaces.Add(surface.Item1);
+                    notes.Add(surface.Item2);
+                }
                 Debug.Log($"[ROE] {id}: DOA6 physics ({rig.source}): {rig.groups.Count} collider groups ({rig.colliders.Count} colliders), " +
                           $"{rig.chains.Count} chains ({string.Join(", ", rig.chains.Select(c => $"{c.kind} {c.bones.Length}"))}), {rig.swings.Count} swing bones, " +
-                          $"{rig.softs.Count} soft bodies, {rig.attachments.Count} attachments\n[ROE]   " + string.Join("\n[ROE]   ", notes));
+                          $"{rig.softs.Count} soft bodies, {rig.attachments.Count} attachments, {rig.grids.Count} cloth grids, {rig.surfaces.Count} cloth surfaces\n[ROE]   " +
+                          string.Join("\n[ROE]   ", notes));
                 PrefabUtility.SaveAsPrefabAsset(root, prefabPath);
             }
             finally
@@ -346,6 +477,163 @@ namespace RoeFighter.EditorTools
             for (int t = 0; t + 2 < tris.Length; t += 3)
                 v += Vector3.Dot(p[tris[t]], Vector3.Cross(p[tris[t + 1]], p[tris[t + 2]])) / 6f;
             return v;
+        }
+
+        /// <summary>
+        /// A cloth surface (the game's mesh type 1): the imported skinned mesh stays (hidden; its skinning places the rigid
+        /// vertices, the waistband), a plain copy is drawn instead and rebuilt every frame from the grid.  Each vertex is
+        /// matched to the game's by position and UV, and by normal where two share both (the two faces of a double-sided
+        /// frill); a rebuilt one gets its 4x4 control points, weights, depth and normal coefficients, written to a binding
+        /// next to the mesh (RoeDoaRig.WriteBinding).  Its tangent coefficients are fitted to the imported tangent: Unity's
+        /// own (MikkTSpace, from the flipped UVs of her mirrored model), the frame her normal maps are read in everywhere else
+        /// - the game's give another one.  cpWorld: the grid's control points at rest.
+        /// </summary>
+        static (RoeDoaRig.Surface, string) Surface(SkinnedMeshRenderer smr, JGridMesh jm, Func<float[], Vector3> M, Vector3[] cpWorld, string meshDir)
+        {
+            var src = smr.sharedMesh;
+            var verts = src.vertices;
+            var uvs = src.uv;
+            var normals = src.normals;
+            var tangents = src.tangents;
+            var toWorld = smr.transform.localToWorldMatrix;
+            int count = jm.count;
+            var world = new Vector3[count];
+            var cells = new Dictionary<Vector3Int, List<int>>();
+            Vector3Int Key(Vector3 p) => Vector3Int.RoundToInt(p * 1000f);
+            for (int i = 0; i < count; i++)
+            {
+                world[i] = M(new[] { jm.pos[3 * i], jm.pos[3 * i + 1], jm.pos[3 * i + 2] });
+                var k = Key(world[i]);
+                if (!cells.TryGetValue(k, out var l))
+                    cells[k] = l = new List<int>();
+                l.Add(i);
+            }
+            // each rebuilt game vertex: its patch (RoeDoaRig's layout) and its normal at rest
+            var record = new Dictionary<int, int>();
+            int records = jm.cloth.Length;
+            var gcp = new int[16 * records];
+            var gw = new float[16 * records];
+            var gNormal = new Vector3[records];
+            for (int r = 0; r < records; r++)
+            {
+                record[jm.cloth[r]] = r;
+                for (int k = 0; k < 16; k++)
+                    gcp[16 * r + k] = jm.cp[16 * r + k];
+                for (int k = 0; k < 4; k++)
+                {
+                    gw[16 * r + k] = jm.wh[4 * r + k];
+                    gw[16 * r + 4 + k] = jm.wv[4 * r + k];
+                    gw[16 * r + 8 + k] = jm.dwh[4 * r + k];
+                    gw[16 * r + 12 + k] = jm.dwv[4 * r + k];
+                }
+                RoeDoaRig.Patch(cpWorld, gcp, gw, 16 * r, out _, out var b0, out var c0, out var d0);
+                // the game's coefficients are for cm (RoeDoaRig.Load): d's share x 100 in metres
+                gNormal[r] = (c0 * jm.normalCoef[3 * r] + b0 * jm.normalCoef[3 * r + 1] + d0 * (100f * jm.normalCoef[3 * r + 2])).normalized;
+            }
+            int n = verts.Length, matched = 0, rebuilt = 0, byNormal = 0, fitted = 0;
+            float worst = 0f;
+            var rigid = new bool[n];
+            var cp = new int[16 * n];
+            var w = new float[16 * n];
+            var depth = new float[n];
+            var nCoef = new Vector3[n];
+            var tCoef = new Vector4[n];
+            for (int v = 0; v < n; v++)
+            {
+                var p = toWorld.MultiplyPoint3x4(verts[v]);
+                var nv = normals.Length == n ? toWorld.MultiplyVector(normals[v]).normalized : Vector3.zero;
+                var key = Key(p);
+                int best = -1, bestPlace = -1;
+                float bestScore = float.MaxValue, bestPlaceScore = float.MaxValue;
+                for (int dx = -2; dx <= 2; dx++)
+                    for (int dy = -2; dy <= 2; dy++)
+                        for (int dz = -2; dz <= 2; dz++)
+                            if (cells.TryGetValue(new Vector3Int(key.x + dx, key.y + dy, key.z + dz), out var l))
+                                foreach (int j in l)
+                                {
+                                    var juv = new Vector2(jm.uv[2 * j], jm.uv[2 * j + 1]);
+                                    float du = uvs.Length > v ? Mathf.Min(Vector2.Distance(uvs[v], juv), Vector2.Distance(uvs[v], new Vector2(juv.x, 1f - juv.y))) : 0f;
+                                    float place = Vector3.Distance(p, world[j]) + du * 0.01f;
+                                    // twins at one place: the one facing the same way (0.1 mm per unit of disagreement)
+                                    float score = place + (record.TryGetValue(j, out int jr) ? (1f - Vector3.Dot(nv, gNormal[jr])) * 1e-4f : 0f);
+                                    if (score < bestScore)
+                                    {
+                                        bestScore = score;
+                                        best = j;
+                                    }
+                                    if (place < bestPlaceScore)
+                                    {
+                                        bestPlaceScore = place;
+                                        bestPlace = j;
+                                    }
+                                }
+                if (best >= 0)
+                {
+                    matched++;
+                    worst = Mathf.Max(worst, Vector3.Distance(p, world[best]));
+                    if (best != bestPlace)
+                        byNormal++;
+                }
+                rigid[v] = best < 0 || !record.TryGetValue(best, out int rec);
+                if (rigid[v])
+                    continue;
+                rec = record[best];
+                rebuilt++;
+                for (int k = 0; k < 16; k++)
+                {
+                    cp[16 * v + k] = gcp[16 * rec + k];
+                    w[16 * v + k] = gw[16 * rec + k];
+                }
+                depth[v] = jm.depth[rec];
+                nCoef[v] = new Vector3(jm.normalCoef[3 * rec], jm.normalCoef[3 * rec + 1], jm.normalCoef[3 * rec + 2]);
+                tCoef[v] = new Vector4(jm.tangentCoef[4 * rec], jm.tangentCoef[4 * rec + 1], jm.tangentCoef[4 * rec + 2], jm.tangentCoef[4 * rec + 3]);
+                // the imported tangent in the patch's frame at rest: t = c x + b y + d (100 z), the game's units; its
+                // handedness as the game's (RoeDoaRig.Load turns it round for the mirror)
+                if (tangents.Length == n)
+                {
+                    RoeDoaRig.Patch(cpWorld, cp, w, 16 * v, out _, out var b0, out var c0, out var d0);
+                    var frame = Matrix4x4.identity;
+                    frame.SetColumn(0, c0);
+                    frame.SetColumn(1, b0);
+                    frame.SetColumn(2, 100f * d0);
+                    float scale = c0.magnitude * b0.magnitude * 100f * d0.magnitude;
+                    if (scale > 1e-12f && Mathf.Abs(frame.determinant) > 1e-3f * scale)
+                    {
+                        var t = toWorld.MultiplyVector(new Vector3(tangents[v].x, tangents[v].y, tangents[v].z)).normalized;
+                        var x = frame.inverse.MultiplyVector(t);
+                        tCoef[v] = new Vector4(x.x, x.y, x.z, -tangents[v].w);
+                        fitted++;
+                    }
+                }
+            }
+            // the binding, and a plain copy of the mesh to draw
+            string bindingPath = $"{meshDir}/{smr.name}_cloth.bytes";
+            File.WriteAllBytes(bindingPath, RoeDoaRig.WriteBinding(rigid, cp, w, depth, nCoef, tCoef));
+            AssetDatabase.ImportAsset(bindingPath);
+            var plain = Object.Instantiate(src);
+            plain.name = src.name + "_cloth";
+            plain.boneWeights = new BoneWeight[0];
+            plain.bindposes = new Matrix4x4[0];
+            string meshPath = $"{meshDir}/{smr.name}_cloth.asset";
+            AssetDatabase.DeleteAsset(meshPath);
+            AssetDatabase.CreateAsset(plain, meshPath);
+            var go = new GameObject(smr.name + "_cloth");
+            go.transform.SetParent(smr.transform.parent, false);
+            go.transform.SetLocalPositionAndRotation(smr.transform.localPosition, smr.transform.localRotation);
+            go.transform.localScale = smr.transform.localScale;
+            var filter = go.AddComponent<MeshFilter>();
+            filter.sharedMesh = plain;
+            var mr = go.AddComponent<MeshRenderer>();
+            mr.sharedMaterials = smr.sharedMaterials;
+            mr.shadowCastingMode = smr.shadowCastingMode;
+            mr.receiveShadows = smr.receiveShadows;
+            smr.enabled = false;
+            var surface = new RoeDoaRig.Surface
+            {
+                name = smr.name, source = smr, filter = filter, binding = AssetDatabase.LoadAssetAtPath<TextAsset>(bindingPath),
+            };
+            return (surface, $"{smr.name}: cloth surface, {matched}/{n} vertices matched to the game's ({count}; worst {worst * 1000f:F2} mm; " +
+                             $"{byNormal} twins told apart by their normals), {rebuilt} rebuilt from the grid ({fitted} tangents fitted), {n - rebuilt} rigid");
         }
 
         /// <summary>
