@@ -35,6 +35,7 @@
 | DOA6 的霞加入战斗；调研 DOA6、DOA5LR 的胸、头发、衣服物理；物理做成可插拔（F4 换方案，以后可接 Magica Cloth 2） | 完成（10-04），见"霞（DOA6）和可插拔物理"一节和 [`docs/doa-physics.md`](docs/doa-physics.md)；对比视频 `out\kas_physics_body.mp4`、`out\kas_physics_chest.mp4`（左：骨骼布料，中：DOA6 的物理，右：关），电脑对电脑 `out\kas_fight_test.mp4` |
 | 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
 | DOA5LR 式弹簧网（F4 的 `doa5lr_style`）：同样的骨链，约束换成 DOA5LR 网格布的横向、斜拉、隔一个、远程弹簧；霞的网格布在骨骼方案里也连成一片 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 11 节；对比视频 `out\doa5lr_style_compare.mp4`（g04、a08、霞的海盗裙；左：骨骼布料，中：DOA5LR 式，右：关）。比骨骼布料更贴动画、晃得少 |
+| Magica Cloth 2 插件（用户 10-04 下载）：F4 的 `magica`；a08 的长裙片、g04 的裙片用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth，霞的网格布模拟控制点 | 完成（10-04 晚），见 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节；插件不进仓库，只在播放模式里跑（另写了播放模式录像）。对比视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（a08：左 Magica、中骨骼布料、右关；霞的海盗裙：左 Magica、中 DOA6 的、右关）。a08 的裙片有了褶皱、踢腿时搭在腿上；不是默认方案 |
 
 ## 目录
 
@@ -332,7 +333,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
-| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / 10-02 旧版 / 关；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
+| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
@@ -544,8 +545,7 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
   [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 9 节。
   - **可插拔**：布料后端接口 `IRoeCloth`（`Runtime/RoeCloth.cs`），游戏里 **F4** 依次换：Magica 式骨骼布料（默认）/ 10-02 旧版 / 关。
     10-04 扩成按类别分配解算器的"物理方案"（各用自己游戏的、DOA6 的……），见"霞（DOA6）和可插拔物理"一节。
-    Magica Cloth 2 的适配器草稿 `Runtime/RoeMagicaCloth.cs` 已按手册的运行时构建接口写好（同样的分片、参数、腿部胶囊），
-    装上插件后在 Player 设置里加 `ROE_MAGICA` 宏就会编译、出现在 F4 里；没装时不参与编译。它按自己的时钟在播放模式里跑，批处理检查和录视频时不动。
+    Magica Cloth 2 的适配器 `Runtime/RoeMagicaCloth.cs`（同样的分片、参数、腿部胶囊）：10-04 晚插件装上后能用了，见下面"Magica Cloth 2 装上了"。
   - **裙子的动画姿势跟腿走**（`RoeSkirtRig`，`RoeHelperFit.FitSkirt` 拟合）：每节裙骨的尾端由胯部朝向、骨盆、两条大腿、两条小腿按权重带着走，
     权重用游戏手调的裙子动画拟合。在拟合没用到的游戏动作上，裙骨方向偏离游戏关键帧：a08 35.5° → 31.1°，g04 47.2° → 37.2°（剩下的主要是美术加的摆动，由模拟补）。
     基准和拟合时一样是游戏站姿：骨盆、大腿、小腿从站姿里动了多少，权重在它们身上的裙骨就跟着动多少（第一版的基准是动捕站架，见下面"屁股附近翘起来"）。
@@ -596,6 +596,16 @@ ripper_tpose 仓库里另一个窗口做了 Blender 插件 `scripts/blender_addo
   - 数字（Bandai 包，布料开）：没贴身体的裙骨平均偏离竖直（站架 / 前进 / 后退）a08 20 / 19 / 23° → 11 / 8 / 9°，g04 17 / 19 / 19° → 11 / 15 / 14°；
     裙子网格陷进皮肤的顶点 a08 0 / 0 / 3% → 0 / 0 / 0%，g04 0.3 / 0.8 / 2.0% → 0.1 / 0.9 / 0.8%；g04 后片上端贴着屁股（0.6 厘米 → 贴住）。
   - 看：`out\skirt_drape_compare.mp4`（右后方跟拍胯部、再从正面，左上一版 52f11de，右自然下垂，两个角色），`out\skirt_drape_g04.jpg`、`out\skirt_drape_a08.jpg`。
+- **Magica Cloth 2 装上了（10-04 晚）**：用户下载了插件，"之前riseoferos的布料都不完美，尽量修正一个，inase和一个 kasumi 先试试，两个游戏的骨骼和衣服是否都能适配"。
+  全文在 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节。
+  - 插件解到 `Assets/MagicaCloth2`（不进仓库）；它自己往 `ProjectSettings/ProjectSettings.asset` 加编译符号 `MAGICACLOTH2`，**这个文件不要提交**。F4 里多出 `magica`。
+  - a08 的两片长裙和后腰垂片、g04 的前片、左飘带、后片（爆衣早把它们拆成了独立的网格）用 **MeshCloth** 直接模拟网格：顶点按蒙皮权重分固定 / 可动，
+    参数从 Magica 自带的裙子预设往"重布料"调（`RoeMagicaCloth.MeshSettings`）。头发、链子、胸和霞的网格布控制点用 BoneCloth。
+  - 修了四个坑：胶囊方向（Magica 的胶囊沿轴的负方向伸出，第一版腿等于没碰撞体）、布的静止形状改用绑定姿势、换方案时当场删组件（不然新组件接手旧数据）、
+    DOA6 网格是厘米单位缩放 0.01（烘出的皮肤点要用完整矩阵转到世界，之前霞身上一个皮肤点都读不到）。
+  - Magica 只在播放模式里跑：`Editor/RoeClothPlayDemo.cs` 进播放模式录像，每步量布陷进身体多少、顿挫、拉伸、离动画多远、翻过去多少（`metrics.txt`）。
+  - a08（全段平均）：陷进身体 0.3%（骨骼布料 0.4%，关 2.5%），拉伸 6.6%（7.4%，5.0%），顿挫 6.3 毫米（3.6，0.1）——比骨骼布料"活"，布有褶皱、踢腿时搭在腿上。
+    视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`。不是默认方案（`auto` 照旧）。
 
 ```powershell
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.FitSkirt                                   # 裙子跟腿走的权重 → 人形预制体上的 RoeSkirtRig（在 RoeHelperFit.Run 之后）
@@ -612,6 +622,11 @@ python tools\cloth_demo_video.py _work\rest_demo out\skirt_rest_compare.mp4 --va
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.Skirt -Graphics -Extra '-roeChar','g04','-roePacks','bandai1','-roeCloths','legacy,magica_style'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeCloths','legacy,magica_style','-roeOut','_work\cloth_demo_mc2'
 python tools\cloth_demo_video.py _work\cloth_demo_mc2 out\x.mp4 --variants legacy,magica_style --suffix "（Bandai 包）"
+# Magica Cloth 2（装了插件才有）：装好没有；爆衣布片的网格、权重；播放模式录像 + 量（-roeNoFrames 只量；magica:字段=值;… 试参数）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMagicaSetup.Check
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMagicaSetup.Pieces -Extra '-roeChar','a08'
+.\tools\unity_batch.ps1 -NoQuit -Graphics -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Extra '-roeChars','a08,kas011','-roeCloths','magica,magica_style,doa6,off','-roeOut','E:\code\othercode\roe_fighter_unity\_work\mc2_final_front'
+python tools\cloth_demo_video.py _work\mc2_final_front out\x.mp4 --chars a08 --variants magica,magica_style,off
 ```
 
 ### 动作包：可插拔的基础动作
@@ -1143,6 +1158,8 @@ python tools\cloth_demo_video.py _work\cloth_demo out\kas_physics_chest.mp4 --ch
   ① 模拟里也用皮肤表面（`RoeBodySurface`）和每节布的采样顶点做碰撞，不只用胶囊；② 一片宽布拆成几条虚拟链，或者补三角弯曲约束；
   ③ 换成按网格顶点模拟（Magica 的 MeshCloth / 代理网格）；④ 先把 `SkirtSwing` 加上皮肤穿透的逐帧统计，所有动作都量一遍再定。
   10-03 拆了 DOA6 的数据：它的裙子就是③的做法。10-04 晚霞的海盗裙照这个做法跑起来了（`docs/doa-physics.md` 第 10 节）。
+  10-04 晚③也用 Magica Cloth 2 的 MeshCloth 在 a08、g04 身上做了（F4 的 `magica`，"布料"一节最后一条），④的逐帧量法也有了（`RoeClothPlayDemo` 的量法，
+  按脚本每段统计）：a08 布顶点陷进身体超过 1 厘米的全段 0.3%、回旋踢那段 0.9%（骨骼布料 0.4% / 0.7%，关 2.5% / 4.6%）。还没当默认。
   - 每块布只模拟一张粗的控制点网格：不知火舞每块 5 列 × 6–11 行，霞的整圈裙子是 20 × 10 的环。
   - 看得见的布料网格每帧从这张网插值出来，再沿布面法线加厚度。
   - 碰撞体按布分组，每块布只碰附近 6–16 个。

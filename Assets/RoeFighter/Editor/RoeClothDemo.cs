@@ -28,8 +28,8 @@ namespace RoeFighter.EditorTools
     /// </summary>
     public static class RoeClothDemo
     {
-        // (from, to, input) in seconds after the fight starts; presses last one step
-        static readonly (float from, float to, FighterInput input, string what)[] Script =
+        // (from, to, input) in seconds after the fight starts; presses last one step (RoeClothPlayDemo plays it too)
+        internal static readonly (float from, float to, FighterInput input, string what)[] Script =
         {
             (0.0f, 1.0f, default, "guard"),
             (1.0f, 2.6f, new FighterInput { x = 1 }, "walk"),
@@ -41,7 +41,7 @@ namespace RoeFighter.EditorTools
             (8.8f, 8.8f, new FighterInput { d = true }, "D"),
             (10.2f, 10.2f, new FighterInput { b = true }, "B"),
         };
-        const float Length = 11.6f;
+        internal const float Length = 11.6f;
 
         [MenuItem("ROE Fighter/Fight/Bone cloth demo")]
         public static void Run()

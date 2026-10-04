@@ -396,7 +396,7 @@ namespace RoeFighter
                 r.BakeMesh(mesh, true);
                 var v = mesh.vertices;
                 var w = r.sharedMesh.boneWeights;
-                var m = Matrix4x4.TRS(r.transform.position, r.transform.rotation, Vector3.one);
+                var m = r.transform.localToWorldMatrix;   // (BakeMesh with scale: the renderer's own space - a DOA6 mesh's is in cm, scale 0.01)
                 for (int i = 0; i < v.Length && i < w.Length; i++)
                     if (w[i].weight0 >= 0.5f && w[i].boneIndex0 < r.bones.Length && r.bones[w[i].boneIndex0] != null)
                         points.Add((m.MultiplyPoint3x4(v[i]), r.bones[w[i].boneIndex0]));
@@ -693,6 +693,7 @@ namespace RoeFighter
             public Settings settings;
             public List<Transform> roots = new List<Transform>();
             public bool mesh;                   // the chains are linked across (one sheet)
+            public bool loop;                   // ... all the way round (a skirt's ring, a sleeve): the last linked to the first
             public Transform owner;
             public Capsule[] capsules;
         }
@@ -734,7 +735,8 @@ namespace RoeFighter
                             if (seen.Add(m))
                                 stack.Push(m);
                     }
-                    int start = group.FirstOrDefault(k => next[k].Count <= 1);
+                    // (a ring has no end: from any of its chains)
+                    int start = group.Any(k => next[k].Count <= 1) ? group.First(k => next[k].Count <= 1) : group[0];
                     var order = new List<int> { start };
                     for (int prev = -1, at = start; ;)
                     {
@@ -752,6 +754,7 @@ namespace RoeFighter
                     pieces.Add(new Piece
                     {
                         kind = c.kind, settings = c.s, owner = c.anchor, capsules = c.capsules, mesh = order.Count > 1,
+                        loop = order.Count > 2 && group.All(k => next[k].Count >= 2) && next[order[order.Count - 1]].Contains(order[0]),
                         roots = order.Select(k => c.bones[k]).ToList(),
                     });
                 }

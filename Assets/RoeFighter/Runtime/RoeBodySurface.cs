@@ -92,6 +92,8 @@ namespace RoeFighter
                     weapon |= m != null && m.name.StartsWith("wp_");
                 if (weapon)
                     continue;
+                // (baked with scale: in the renderer's own space, to the world by its whole matrix - a DOA6 mesh's space is in
+                // cm under a 0.01 scale; until 10-04 position and rotation only, which found no skin on a DOA6 character)
                 smr.BakeMesh(baked, true);
                 var v = baked.vertices;
                 var nrm = baked.normals;
@@ -105,7 +107,7 @@ namespace RoeFighter
                     if (mats[s] != null && (mats[s].name.ToLowerInvariant().Contains("_skin") || (mats[s].shader != null && mats[s].shader.name == "ROE/Skin")))
                         foreach (int i in baked.GetIndices(s))
                             skin[i] = true;
-                var toWorld = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);
+                var toWorld = smr.transform.localToWorldMatrix;
                 for (int i = 0; i < v.Length; i++)
                 {
                     var bw = w[i];
@@ -197,7 +199,7 @@ namespace RoeFighter
                 smr.BakeMesh(baked, true);
                 var v = baked.vertices;
                 var w = smr.sharedMesh.boneWeights;
-                var toWorld = Matrix4x4.TRS(smr.transform.position, smr.transform.rotation, Vector3.one);
+                var toWorld = smr.transform.localToWorldMatrix;
                 for (int i = 0; i < v.Length && i < w.Length; i++)
                 {
                     if (w[i].weight0 < 0.5f || w[i].boneIndex0 >= smrBones.Length)

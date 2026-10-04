@@ -108,7 +108,8 @@ namespace RoeFighter.Fight
         void Start()
         {
             // the player: ROEFighter.exe -roeBurst 0 starts with the clothes burst off (F6 switches it);
-            // -roeP1 b10 -roeP2 g05 picks the two; -roeSelect 0 goes straight into the match
+            // -roeP1 b10 -roeP2 g05 picks the two; -roeSelect 0 goes straight into the match; -roeCloth magica starts with
+            // that physics setup (F4 goes on from it)
             var args = Environment.GetCommandLineArgs();
             string Arg(string name)
             {
@@ -117,6 +118,8 @@ namespace RoeFighter.Fight
             }
             if (Arg("-roeBurst") != null)
                 RoeClothesBurst.Enabled = Arg("-roeBurst") != "0";
+            if (Arg("-roeCloth") != null)
+                FighterRig.ClothBackend = RoeClothBackends.Find(Arg("-roeCloth")).name;
             PickIds(Arg("-roeP1"), Arg("-roeP2"));
             if (Arg("-roeSelect") != null)
                 selectFirst = Arg("-roeSelect") != "0";

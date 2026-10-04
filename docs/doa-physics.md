@@ -175,7 +175,7 @@
   | `bone_legacy` | 10-02 的骨骼布料 | 全部 |
   | `doa6` | DOA6 自己的系统，用角色的游戏数据（`RoeDoaPhysics`） | 只有带 DOA6 数据的角色、只有数据里有的类别 |
   | `doa5lr` | 同样的骨链，约束换成 DOA5LR 的弹簧网（`RoeBoneCloth.Doa5.cs`，10-04 晚，第 11 节） | 全部（胸在方案里交给骨骼布料） |
-  | `magica` | Magica Cloth 2 本身（`RoeMagicaCloth`） | 全部；要装上插件并加编译符号 `ROE_MAGICA` |
+  | `magica` | Magica Cloth 2 本身（`RoeMagicaCloth`，10-04 装上） | 全部，但 DOA6 角色的胸（软体）交给骨骼布料；要装上插件（插件自己加编译符号 `MAGICACLOTH2`） |
 
   解算器只是一个实现了 `IRoeCloth` 的类，只模拟交给它的类别，再用 `covers` 说明在某个角色身上能做哪些。
   再加一个（别的引擎、别的游戏的系统），就是在列表里加一项。
@@ -193,13 +193,13 @@
   | `magica` | 全部用 Magica Cloth 2（装上插件后才有） |
 
   一个角色身上用到几个解算器，就由 `RoeClothRouter` 把它们合在一起（每步依次跑）。
-- **买了 Magica Cloth 2 之后**：
-  - 导入插件。插件会加编译符号 `MAGICACLOTH2`，再在 Player Settings 里加 `ROE_MAGICA`。
-  - F4 里就多出 `magica` 方案。
+- **Magica Cloth 2（10-04 晚装上，`docs/magica-cloth-2.md` 第 10 节）**：
+  - 插件在 `Assets/MagicaCloth2`（不进仓库），它自己往 `ProjectSettings.asset` 加编译符号 `MAGICACLOTH2`（这个文件不提交），F4 里就多出 `magica` 方案。
+  - ROE 角色里爆衣拆出来的布片（a08 的长裙片和后腰垂片、g04 的前片、左飘带、后片）用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth；
+    霞的网格布用 BoneCloth 模拟控制点（成环的连成 Sequential Loop Mesh），看得见的布照旧从控制点重建。
   - 想只让它接管某几类，比如裙子和头发，在 `RoeClothBackends.All` 里加一行：
     `new Backend { name = "magica_skirts", fallback = "bone", byKind = { { "skirt", "magica" }, { "hair", "magica" } } }`。
-  - `RoeMagicaCloth` 是照手册写的草稿，第一次编译、试跑时可能要改。
-  - Magica 有自己的时钟，批处理里手动推进的探针和录像里它不会动（见 `docs/magica-cloth-2.md`）。
+  - Magica 只在播放模式里跑：批处理里手动推进的探针和录像看不到它，用播放模式录像 `RoeClothPlayDemo` 录、量。
 - **10-04 顺手修的老毛病**：F4 以前只改了屏幕上的提示，实际一直用骨骼布料（从 44b174e 起）。
   - 原因：场景存盘时，没设的 `FighterRig.clothBackend` 存成了空字符串，`clothBackend ?? ClothBackend` 永远取到空字符串，退回第一项。
   - 现在空字符串也当没设。
@@ -564,7 +564,7 @@ python tools\cloth_demo_video.py _work\kas011_demo out\kas011_grid_cloth_front.m
 
 - `out\doa5lr_style_compare.mp4`：g04、a08、霞的海盗裙各一段，左：骨骼布料；中：DOA5LR 式弹簧网；右：关。
 - 看起来：DOA5LR 式更"收"，基本跟着动画，晃得少、停得快；骨骼布料摆得多。哪种更像游戏，要在游戏里对照。
-- F4 的顺序：auto → magica_style → doa6 → doa6_breasts → doa5lr_style → legacy → off。
+- F4 的顺序：auto → magica_style → doa6 → doa6_breasts → doa5lr_style → legacy → off（装了 Magica Cloth 2 时最后还有 magica）。
 
 ```powershell
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','g04,a08,kas011','-roeCloths','magica_style,doa5lr_style,off','-roeOut','E:\code\othercode\roe_fighter_unity\_work\doa5_demo'

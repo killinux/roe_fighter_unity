@@ -331,6 +331,129 @@ g04 的后片和飘带各只有一条链，宽度方向本来就是一整块转�
   g04 后片上端从离屁股 0.6 厘米变成贴住。代价：每个角色每步多约 0.5 毫秒；踢腿时裙片不再跟着腿飞起来，而是被腿顶开。
 - 对比：`out\skirt_drape_compare.mp4`（左 52f11de，右自然下垂），`out\skirt_drape_g04.jpg`、`out\skirt_drape_a08.jpg`（正面、侧面、背面，两个动作包）。
 
+## 10. 装上真的 Magica Cloth 2（10-04 晚）
+
+用户："magic cloth2 下载到E:\Downloads\布料模拟插件 Magica Cloth 2 了，看看能不能用"；接着："之前riseoferos的布料都不完美，尽量修正一个，
+inase和一个 kasumi 先试试，两个游戏的骨骼和衣服是否都能适配"。
+
+**结论：能用，两个游戏的骨骼和衣服都能接上。** ROE 的 a08（Inase）两片长裙和后腰垂片交给 Magica 的 **MeshCloth**（直接模拟裙子网格），
+看起来是真的布：踢腿时裙片搭在抬起的腿上、有褶皱，不再像木板一样跟着腿飞出去或直直地垂着。
+DOA6 的霞（海盗裙 `kas011`）的网格布用 **BoneCloth** 模拟控制点，看得见的布照旧每帧从控制点重建。F4 的 `magica` 方案。
+
+### 装法
+
+- 插件包 `E:\Downloads\布料模拟插件 Magica Cloth 2\Magica Cloth 2 v2.18.2.unitypackage`（只读，没改 Downloads）解到 `Assets/MagicaCloth2`，
+  示例场景没解。这个目录在 `.gitignore` 里，**不进仓库**（付费插件）。依赖的 Burst、Collections、Mathematics 工程里本来就有。
+- 插件一加载就自己往 `ProjectSettings/ProjectSettings.asset` 写编译符号 `MAGICACLOTH2`。**这个文件不提交**：没装插件的克隆带着这个符号会编译不过。
+  我们的代码全在 `#if MAGICACLOTH2` 里，没装插件时 F4 里就没有 `magica`。以前计划的 `ROE_MAGICA` 不要了。
+- 查装好没有：`.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMagicaSetup.Check`。
+
+### 怎么接（`Runtime/RoeMagicaCloth.cs`）
+
+- 用我们自己的骨骼布料（`RoeBoneCloth`）找出的分片和量出的腿、胯、躯干胶囊，在运行时搭 Magica 组件（`BuildAndRun`），放在角色根节点下
+  （不放进骨骼树：下一个方案按骨骼名字找链，延迟销毁的组件名里带 "skirt" 会被当成裙链）。胶囊变成 `MagicaCapsuleCollider`。
+- **BoneCloth**：每个分片一个。横向连成一片的链用 Sequential Non Loop Mesh，成环的（DOA6 的裙子、袖子）用 Sequential Loop Mesh，单链用 Line。
+  参数照我们的骨骼布料换算（第 9 节），`animationPoseRatio` 1：往动画（含 `RoeSkirtRig` 跟腿走）给的姿势复原。
+- **MeshCloth**：衣服里本身是一块独立网格的布片——爆衣（`RoeClothesBurst`）早就把能脱的部件拆成了各自的 SkinnedMeshRenderer，网格可读——
+  直接交给 Magica 模拟网格：a08 的两片长裙和后腰垂片，g04 的前片、左飘带、后片。
+  - 哪些顶点固定、哪些动：不用画权重贴图，用 Magica 的运行时接口 `vertexAttributeList` 逐顶点给。顶点权重里挂在这片布的骨链上的至少一半就动，
+    否则（挂在胯甲、骨盆上）固定。这几条链于是不再做 BoneCloth，`RoeSkirtRig` 照旧摆它们，就是 MeshCloth 的动画姿势。
+  - 写回网格时法线、切线一起写（布料的法线贴图跟着转）。
+- 霞的网格布：Magica 每步算完（`MagicaManager.OnPostSimulation`）再按控制点重建看得见的布。
+- DOA6 角色的胸不给 Magica（`RoeMagicaCloth.Covers`，交给骨骼布料）：软体格子的约 130 个节点直接挂在胸的枢轴下，
+  BoneCloth 会把根骨下面所有物体都收进来，而一个物体最多 127 个子物体（`RenderSetupData`），霞的两个胸组件建不起来。
+- Magica 只在播放模式里跑（它挂在 Unity 的帧循环上，自己的 90 Hz 时钟）。编辑器里一步一步推进的检查、静帧、录像看不到它，
+  所以另写了播放模式录像 `Editor/RoeClothPlayDemo.cs`（下面）。游戏、exe 里都是播放模式，正常。
+
+### 踩到的坑（每个都改了）
+
+1. **胶囊方向反了**：Magica 的胶囊不居中对齐时，从物体位置**沿轴的负方向**伸出，长度还**包括两头的半球**
+   （`ColliderManager`：终点 = 位置 − 方向 × (长度 − 两个半径)）。第一版照手册的字面意思放：大腿胶囊从髋关节往上伸进肚子，还短两个半径——
+   腿等于没有碰撞体，第一版视频 `out\mc2_compare_v1.mp4` 里裙子被腿"推开"其实是 `RoeSkirtRig` 的动画姿势。
+   改成反向（`reverseDirection`）、长度加上两个半径后，MeshCloth 陷进腿里的顶点 2.7% → 0.8%（再调参后 0.3%）。
+2. **布的静止形状取自搭建那一刻的姿势**：Magica 在 `BuildAndRun` 里当场读骨骼姿势，距离、弯曲的静止值、网格简化都按那个姿势算。
+   那时角色在战斗站姿里（上一回合没被站姿动画覆盖的骨还停在上一回合的样子），都不是布本来的形状。
+   现在搭 MeshCloth 时先把它的骨骼摆到绑定姿势（模型原本的样子），搭完再摆回去（`InBindPose`）。
+   所以 `animationPoseRatio` 要保持 1：小于 1 时 Magica 会把骨骼往这个姿势拉。
+3. **同一个网格的数据会被下一个组件接手**：Magica 每个渲染器只存一份数据。换方案时旧组件用 `Destroy` 删，要到这一帧结束才真的删掉，
+   同一帧新搭的 MeshCloth 就接手了旧的那份（按旧组件搭建时的姿势算的）。同一套参数，前一个镜头是不是 MeshCloth，平均拉伸就是 5% 或 9.5%。
+   现在用 `DestroyImmediate` 当场删。
+4. **DOA6 的网格是厘米单位、缩放 0.01**：`BakeMesh(…, true)` 烘出的是渲染器自己空间里的坐标，要用它完整的变换矩阵转到世界；
+   我们好几处只用了位置和旋转（ROE 模型缩放是 1，没出过问题），在霞身上读出来的皮肤全在 100 倍远的地方：
+   身体表面（`RoeBodySurface`）一个点都没有，骨骼布料量腿粗也全退回默认值。改了之后 kas011 的大腿胶囊半径 8.0 / 7.4 厘米（之前默认 7 / 5），
+   kas 的 12 / 11.5 厘米（她的服装把量出来的腿撑粗了；默认方案 `auto` 用 DOA6 自己的碰撞体，不受影响）。
+5. Magica 在后台搭建，要几帧才开始跑：录像等它跑起来（`RoeMagicaCloth.Ready`）再开拍，搭建失败的写进日志（`Failures`）。
+
+### 播放模式录像和量法（`Editor/RoeClothPlayDemo.cs`）
+
+```powershell
+# 录像（要 Unity Hub 开着）；-roeView backright 从右后方拍胯部；-roeNoFrames 只量不拍
+.\tools\unity_batch.ps1 -NoQuit -Graphics -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Extra '-roeChars','a08,kas011','-roeCloths','magica,magica_style,doa6,off','-roeOut','E:\code\othercode\roe_fighter_unity\_work\mc2_final_front'
+python tools\cloth_demo_video.py _work\mc2_final_front out\x.mp4 --chars a08 --variants magica,magica_style,off
+# 试 MeshCloth 参数：冒号后面写 RoeMagicaCloth.MeshSettings 的字段（分号隔开），镜头按参数命名；nohip = 裙子不跟腿走
+.\tools\unity_batch.ps1 -NoQuit -Graphics -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Extra '-roeChars','a08','-roeCloths','magica,magica:limit=60;restore=0.2,off','-roeNoFrames','-roeOut','E:\code\othercode\roe_fighter_unity\_work\mc2_tune'
+```
+
+- 批处理进入播放模式（任务存在 SessionState 里，跨过脚本重载），关掉比赛自己的 Update，往 Unity 的帧循环里插两步：Update 之后推进一步比赛，
+  PostLateUpdate 开头（Magica 写完之后）拍照。`Time.captureFramerate` 60，每帧正好 1/60 秒，Magica 也按这个走。拍完退出播放模式、关编辑器。
+- 每个镜头每一步都量一遍布（`Meter`，不管谁在动它，量法都一样；写进日志和 `metrics.txt`，按脚本的段落分）：
+  - **陷进身体**：布的顶点在皮肤（`RoeBodySurface`：胯、腿的皮肤和腿上穿戴的东西）里面超过 1 厘米的比例；
+  - **顿挫**：顶点在胯部坐标里的二阶差分 |p − 2p′ + p″|（毫米/步），摆得顺就小，抖和突然一跳就大；
+  - **拉伸**：网格的边（3 毫米以上）比模型原本的长度长了多少（平均；最差的取每步第 99 百分位）；DOA6 的重建布和镜头开始时比；
+  - **离动画多远、翻过去多少**：只量 MeshCloth——另外挂一个看不见的复制品在同样的骨骼上烘出"动画给的样子"（也就是"关"的样子），
+    比顶点平均差多少厘米、多少三角形朝向反过来（布翻过去、拧起来）。骨骼方案动的就是这些骨，这两项量不了。
+
+### 调参：从 Magica 自带的裙子预设开始
+
+Magica 的裙子预设（`MC2_Preset_Skirt.json`）像一块轻薄的丝：a08 踢腿时裙片鼓成帆、绕着腿缠，转身时下摆拧成一股。一步一步往重布料调
+（a08，全段平均；陷进 / 顿挫 / 拉伸 / 离动画 / 翻过去）：
+
+| 参数 | 陷进 % | 顿挫 mm | 拉伸 % | 离动画 cm | 翻过去 % |
+|---|---|---|---|---|---|
+| 起点：Magica 的裙子预设（胶囊已修好；网格简化 3%，角度复原全程 0.2） | 0.8 | 5.8 | 10.8 | | |
+| 末端的距离和根部一样硬（预设末端减半）、胶囊碰边不只碰点、阻尼 0.2 | 0.8 | 5.7 | 10.1 | 6.8 | 3.0 |
+| + 角度复原 0.4 → 0.2（预设 0.2 → 0.04）、角度限制 35°（预设 60°） | 0.6 | 5.8 | 9.9 | 6.0 | 2.2 |
+| + 重力 9.8（预设 5）、世界和局部惯性减半、去掉离心力 | 0.8 | 6.0 | 9.8 | 5.4 | 2.2 |
+| + 质点半径 3 厘米（预设 2）、网格简化 4.5% | 0.4 | 6.1 | 7.2 | 5.3 | 1.7 |
+| **网格简化 6%（现在的默认）** | **0.3** | **6.3** | **6.6** | **5.3** | **1.3** |
+
+- 网格简化（Magica 把渲染网格合并成几厘米一个点的代理网格再算）越细，拉伸、翻过去越多：不简化时拉伸 12%、翻过去 5.8%；
+  模拟频率提到 150 Hz 几乎没变化。拉伸最厉害的边在裙片上端、胯甲和链子各占一半权重的地方。
+- 默认值都在 `RoeMagicaCloth.MeshSettings` 里，每一项注明了预设原来是多少；`RoeMagicaCloth.Tuning` 可以整体覆盖（录像的 `magica:` 后缀用的就是它）。
+
+### 结果
+
+全段平均（括号里是 D 键回旋踢那一段）。a08 的"关"是裙子跟腿走的动画姿势本身，踢腿时裙片像木板一样跟着腿飞出去：
+
+| a08 | 陷进 % | 顿挫 mm | 拉伸 % | 翻过去 % |
+|---|---|---|---|---|
+| **Magica MeshCloth（`magica`）** | **0.3 (0.9)** | 6.3 (12.1) | 6.6 (9.9) | 1.3 (3.2) |
+| Magica BoneCloth（同样的骨链，`magica:on=0`） | 0.4 (0.7) | 4.7 (7.8) | 6.4 (8.0) | |
+| 我们的骨骼布料（`magica_style`） | 0.4 (0.7) | 3.6 (4.9) | 7.4 (8.9) | |
+| 关 | 2.5 (4.6) | 0.1 | 5.0 (5.2) | |
+
+| kas011（网格布裙、袖、胸前片） | 陷进 % | 顿挫 mm | 拉伸 % |
+|---|---|---|---|
+| **Magica BoneCloth（`magica`）** | 4.9 (6.0) | **3.7 (8.0)** | 2.6 (3.3) |
+| DOA6 自己的网格布（`doa6`） | 4.3 (5.6) | 6.3 (11.2) | 1.0 (1.3) |
+| 我们的骨骼布料（`magica_style`） | 3.8 (5.2) | 5.5 (11.0) | 2.3 (3.2) |
+| 关 | 4.5 (5.8) | 2.5 (6.1) | 0.6 (0.9) |
+
+- 霞的"陷进"连"关"都有 4.5%：海盗裙的腰身本来就紧贴皮肤，这一项只能横向比。她的拉伸是和镜头开始时比。
+- g04（前片、左飘带、后片也是 MeshCloth）：陷进 0.3%（骨骼布料 0.4%、关 0.8%），顿挫 7.6（8.9、2.5），拉伸 3.9%（2.4%、2.1%）。
+  b10（没有布片）、g05、霞（kas）也都跑通，没有报错。
+- 数字上 MeshCloth 比骨骼布料"活"（顿挫大一倍），拉伸、陷进和骨骼布料相当；看起来的差别在视频里：布有了褶皱，会搭在腿上、被腿顶开。
+- 视频：`out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（各 23 秒，先 a08：左 Magica、中我们的骨骼布料、右关；
+  再霞的海盗裙：左 Magica、中 DOA6 自己的、右关）。`out\mc2_compare_v1.mp4` 是胶囊方向修好之前的第一版。
+
+### 还没做 / 限制
+
+- 不是默认方案：F4 的 `auto` 照旧（ROE 角色用骨骼布料、DOA6 角色用 DOA6 的）。Magica 不在仓库里，没装插件的克隆没有这个方案；
+  它只在播放模式里跑，编辑器里的检查、静帧照旧用我们的解算器。要不要把装了插件时的默认换成它，等用户看了视频再定。
+- MeshCloth 的顿挫比骨骼布料大，最差一步（第 99 百分位的边）还会拉长到 2–3 倍，在裙片上端。
+  自碰撞试过（`selfCollision=1`）：翻过去 3.0% → 2.1%，其余几乎不变，不如把布调重，没默认开。
+- 只有爆衣拆出来的布片能做 MeshCloth（a08、g04）；没拆的（b10、g05 的飘带）和 DOA6 的网格布还是 BoneCloth。
+
 ## 参考
 
 - Magica Cloth 2 手册：[参数设置（基线和深度）](https://magicasoft.jp/en/mc2_baseline/)、

@@ -2,11 +2,13 @@
 #   .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeProjectSetup.Run
 #   .\tools\unity_batch.ps1 -Method X.Y.Z -Name capture -Extra '-roeOut','E:\x' -Graphics
 # -Graphics keeps the GPU (needed to render); without it the editor starts with -nographics.
+# -NoQuit: the method keeps the editor running and quits it itself (play mode: RoeClothPlayDemo).
 param(
     [Parameter(Mandatory = $true)][string]$Method,
     [string]$Name = '',
     [string[]]$Extra = @(),
     [switch]$Graphics,
+    [switch]$NoQuit,
     [int]$TimeoutMinutes = 60
 )
 
@@ -24,7 +26,9 @@ if (Test-Path -LiteralPath $lock) {
     if ($running) { Write-Output "Unity is already running (pid $($running.Id -join ', ')) - the project may be open; aborting."; exit 3 }
 }
 
-$unityArgs = @('-batchmode', '-projectPath', $project, '-executeMethod', $Method, '-quit', '-logFile', $log)
+$unityArgs = @('-batchmode', '-projectPath', $project, '-executeMethod', $Method)
+if (-not $NoQuit) { $unityArgs += '-quit' }
+$unityArgs += @('-logFile', $log)
 if (-not $Graphics) { $unityArgs += '-nographics' }
 $unityArgs += $Extra
 

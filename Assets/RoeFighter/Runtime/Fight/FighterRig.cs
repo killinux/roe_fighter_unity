@@ -270,6 +270,8 @@ namespace RoeFighter.Fight
             // (a scene stores an unset clothBackend as "", not null: F4 changed only the notice until 10-04)
             backend = RoeClothBackends.Find(RoeClothBackends.Resolve(useCloth ? (string.IsNullOrEmpty(clothBackend) ? ClothBackend : clothBackend) : "off", animator));
             var sheets = doaRig != null ? doaRig.Sheets() : default;
+            // a solver that put things in the scene (Magica's components) takes them away again
+            (cloth as IDisposable)?.Dispose();
             cloth = backend.Make(new RoeClothScope
             {
                 animator = animator, world = transform,
@@ -479,6 +481,7 @@ namespace RoeFighter.Fight
         {
             if (graph.IsValid())
                 graph.Destroy();
+            (cloth as IDisposable)?.Dispose();
         }
 
         AnimationMixerPlayable Mixer(int clip) => clips[clip].game ? gameMixer : mocapMixer;

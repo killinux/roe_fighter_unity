@@ -19,6 +19,8 @@ namespace RoeFighter
         void Step(float dt, float floor);
         /// <summary>Start again from the animated pose (a teleport, a new round).</summary>
         void Reset();
+        // a solver that puts components in the scene (RoeMagicaCloth) also implements IDisposable: FighterRig disposes
+        // the old one before it makes the next (every round, F4)
     }
 
     /// <summary>
@@ -64,8 +66,8 @@ namespace RoeFighter
     ///   doa5lr        Dead or Alive 5 Last Round's spring net (across, shear, skip-one, long range; stiffness for shorter /
     ///                 longer than rest; pinned roots) on the bone cloth's chains instead of its angle constraints
     ///                 (RoeBoneCloth.Doa5.cs) - any fighter
-    ///   magica        Magica Cloth 2 itself, once it is installed (RoeMagicaCloth, behind the MAGICACLOTH2 define the
-    ///                 package adds + ROE_MAGICA)
+    ///   magica        Magica Cloth 2 itself, once it is installed in Assets/MagicaCloth2 (RoeMagicaCloth, behind the
+    ///                 MAGICACLOTH2 define the package adds to the project when it loads)
     /// A new solver (another engine, another game's system) is one more entry here: a class implementing IRoeCloth
     /// that simulates only scope.kinds, and says which kinds it can take on a model (Covers).
     /// </summary>
@@ -90,8 +92,12 @@ namespace RoeFighter
                 covers = (s, kind) => RoeDoaPhysics.Covers(s, kind),
             },
             new Solver { name = "doa5lr", title = "DOA5LR-style spring net", skinnedSkirt = true, make = s => new RoeBoneCloth(s, legacy: false, doa5: true) },
-#if MAGICACLOTH2 && ROE_MAGICA
-            new Solver { name = "magica", title = "Magica Cloth 2", skinnedSkirt = true, make = s => new RoeMagicaCloth(s) },
+#if MAGICACLOTH2
+            new Solver
+            {
+                name = "magica", title = "Magica Cloth 2", skinnedSkirt = true, make = s => new RoeMagicaCloth(s),
+                covers = (s, kind) => RoeMagicaCloth.Covers(s, kind),
+            },
 #endif
         };
 
@@ -161,7 +167,7 @@ namespace RoeFighter
             new Backend { name = "doa5lr_style", title = "DOA5LR-style spring net (breasts: bone cloth)", fallback = "doa5lr", byKind = { { "breast", "bone" }, { "body", "bone" } } },
             All_("legacy", "Bone cloth (10-02)", "bone_legacy"),
             All_("off", "No cloth", null),
-#if MAGICACLOTH2 && ROE_MAGICA
+#if MAGICACLOTH2
             All_("magica", "Magica Cloth 2", "magica"),
 #endif
         };
@@ -180,8 +186,14 @@ namespace RoeFighter
     }
 
     /// <summary>Several solvers on one fighter, each on its own kinds (RoeClothBackends.Backend.Make).</summary>
-    public class RoeClothRouter : IRoeCloth
+    public class RoeClothRouter : IRoeCloth, IDisposable
     {
+        public void Dispose()
+        {
+            foreach (var p in parts)
+                (p.cloth as IDisposable)?.Dispose();
+        }
+
         readonly List<(RoeClothSolvers.Solver solver, List<string> kinds, IRoeCloth cloth)> parts;
         float weight = 1f;
 

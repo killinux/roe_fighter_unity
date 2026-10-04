@@ -27,7 +27,11 @@ TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '�
           'game': '原来：照游戏浮空，飘带照关键帧', 'floor': '现在：受击倒地落地，技能升空，飘带模拟',
           'doa6': 'DOA6 自己的物理（软体胸、骨链、摆动骨）', 'doa6_breasts': '胸用 DOA6 软体，其余骨骼布料',
           'doa5lr_style': 'DOA5LR 式弹簧网（同样的骨链，换成 DOA5LR 的弹簧）',
-          ('kas011', 'doa6'): 'DOA6 自己的物理（软体、发链、网格布裙和袖）',
+          'magica': 'Magica Cloth 2 插件本身（同样的骨链和碰撞体）',
+          ('a08', 'magica'): 'Magica Cloth 2（裙片 MeshCloth）',
+          ('g04', 'magica'): 'Magica Cloth 2（裙片 MeshCloth）',
+          ('kas011', 'magica'): 'Magica Cloth 2（网格布 BoneCloth）',
+          ('kas011', 'doa6'): 'DOA6 自己的物理（网格布裙和袖）',
           ('kas011', 'magica_style'): '我们的骨骼布料（网格布的每一列当一条链）'}
 
 
