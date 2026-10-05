@@ -116,3 +116,44 @@ python tools\cloth_demo_video.py _work\a08_skills_all out\a08_skirt_vs_keys.mp4 
 ```
 
 误差数字在每次录像日志的 `skirt against the game's keys` 一行。
+
+## 6. Inase 完全用 Magica Cloth 2（10-05）
+
+用户 10-05："inase完全用magic cloth 2 我看看效果吧"。
+
+**新方案 `magica_full`**（F4 里有；装了 Magica 插件时，Inase 在游戏里默认就用它）：
+
+- **全部用插件自带的预设**：每个部件导入 Magica 自己的预设参数（插件里的 `MC2_Preset_*.json`，用它的 `ImportJson`，只导参数、不动绑定）：
+  - 三块长裙片（网格布 MeshCloth）和裙子：`MC2_Preset_Skirt`；
+  - 头发：前发 `FrontHair`，后发和辫子按长度 `ShortHair` / `LongHair`；
+  - 胸：Magica 专门做弹跳的 BoneSpring 模式 + `MiddleSpring`；
+  - 链子、挂件：`Accessory`。
+  - 只改一处：布料往"动画的姿势"恢复（animationPoseRatio 1）。预设里是 0，意思是往建布料时的姿势恢复；我们是在绑定姿势下建的，不改的话裙子会往 T 字姿势拉。
+- **游戏动作里也由它来动**：技能、受击、出场的裙子关键帧不用，裙子照动捕动作那样处理；头发和胸的关键帧当作 Magica 的动画姿势，在上面模拟。
+- **不用我们的"自然下垂"**（F5 那个），下垂交给 Magica 的重力。
+- 还保留的是"动画姿势"那一层：裙子跟着腿走（`RoeSkirtRig`），这正是 Magica 文档建议的用法；碰撞体是我们量好的腿、胯、躯干胶囊。
+- 预设文件不复制进仓库：建场景时把插件里的预设挂到战斗场景上（`RoeMagicaPresets`），打包时就带进 exe。
+- Magica 只在游戏真正运行时动（编辑器里批量录像是手动一步步推的），所以只在运行时把 Inase 默认切到它；批量录像里仍是原来的方案。
+
+**效果**：`out\a08_magica_full_front.mp4`（正面全身）、`out\a08_magica_full_backright.mp4`（背后胯部特写）。
+动作是前进、后退、侧步、四个攻击，然后技能 1、技能 2，共 24 秒；左：Magica 全接管，右：原来的（骨骼布料，技能用游戏关键帧）。
+
+- **动起来**：走路、侧步时长裙片往身后飘；回旋踢时两片长裙片大幅甩开，有点游戏手 K 的味道。原来的方案几乎一直垂着。
+- **背后特写**：后片在屁股上折出柔软的褶子，踢腿时折叠着让开大腿。原来的后片像一块板，踢腿时腿直接穿过去（8.0、9.2 秒）。
+- **技能里**：Magica 的裙子是它自己甩出来的，和游戏手 K 的不一样。比如技能 2（19.5 秒），游戏里裙片往前飞，Magica 的还垂着。
+- **数字**（播放模式录像的测量，整段平均）：
+
+| | Magica 全接管 | 原来的 |
+|---|---|---|
+| 布料顶点穿进身体超过 1 厘米 | 1.1% | 0.4% |
+| 抖动（每帧位置的二阶差） | 8.7 毫米 | 4.8 毫米 |
+| 拉伸 | 7.4% | 7.3% |
+
+- 技能 1 里 Magica 有一处很大的跳动：最大抖动 33 厘米，最长的一条边拉长到 9 倍。技能开始时人一下子被动作带走，布料跟不上。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics      # 把 Magica 的预设挂到场景上
+.\tools\unity_batch.ps1 -NoQuit -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Graphics -Extra '-roeChars','a08','-roeCloths','magica_full,magica_style','-roeScript','full','-roeView','front','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_mc2full_front'
+python tools\merge_takes.py _work\a08_mc2full_front_v _work\a08_mc2full_front:a08_magica_full=magica_full _work\a08_mc2full_front:a08_magica_style=old_default
+python tools\cloth_demo_video.py _work\a08_mc2full_front_v out\a08_magica_full_front.mp4 --chars a08 --variants magica_full,old_default
+```

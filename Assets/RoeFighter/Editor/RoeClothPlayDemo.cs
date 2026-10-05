@@ -369,10 +369,9 @@ namespace RoeFighter.EditorTools
             shot++;
         }
 
-        static (float from, float to, FighterInput input, string what)[] Script =>
-            current != null && current.script == "skills" ? RoeClothDemo.SkillScript : RoeClothDemo.Script;
+        static (float from, float to, FighterInput input, string what)[] Script => RoeClothDemo.Named(current?.script).script;
 
-        static float Length => current != null && current.script == "skills" ? RoeClothDemo.SkillLength : RoeClothDemo.Length;
+        static float Length => RoeClothDemo.Named(current?.script).length;
 
         static string PartAt(float t)
         {

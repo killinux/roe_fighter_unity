@@ -122,6 +122,9 @@ namespace RoeFighter
 
         public bool Ready => stanceTail != null && guardRot != null && joints.Count > 0;
 
+        /// <summary>Whether the drape may run on this fighter (FighterRig: off under a solver that hangs the skirt itself).</summary>
+        [NonSerialized] public bool drapeAllowed = true;
+
         Transform DriverBone(int k) => k switch { 1 => hips, 2 => leftThigh, 3 => rightThigh, 4 => leftCalf, 5 => rightCalf, _ => null };
 
         /// <summary>In the battle stance: where each tail is against the hips' heading.</summary>
@@ -355,7 +358,7 @@ namespace RoeFighter
                 aimedFrom = new Vector3[joints.Count];
             }
             Predict(headingPos, headingRot, RestOnStance, predicted, aimedFrom);
-            bool drape = Drape > 0f && body != null && body.Count > 0 && chainRoot != null;
+            bool drape = drapeAllowed && Drape > 0f && body != null && body.Count > 0 && chainRoot != null;
             if (drape)
             {
                 body.Pose();

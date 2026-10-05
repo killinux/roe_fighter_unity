@@ -288,7 +288,7 @@ namespace RoeFighter.Fight
             }
             // skirts, hair, chains and breasts: found and measured in the stance pose, by the chosen backend
             // (a scene stores an unset clothBackend as "", not null: F4 changed only the notice until 10-04)
-            backend = RoeClothBackends.Find(RoeClothBackends.Resolve(useCloth ? (string.IsNullOrEmpty(clothBackend) ? ClothBackend : clothBackend) : "off", animator));
+            backend = RoeClothBackends.Find(RoeClothBackends.Resolve(useCloth ? (string.IsNullOrEmpty(clothBackend) ? ClothBackend : clothBackend) : "off", animator, id));
             var sheets = doaRig != null ? doaRig.Sheets() : default;
             // a solver that put things in the scene (Magica's components) takes them away again
             (cloth as IDisposable)?.Dispose();
@@ -306,6 +306,8 @@ namespace RoeFighter.Fight
             // the skirt's animation pose under motion capture: its rest is the stance's skirt against the hips'
             // heading, and it hangs on the skin (measured here, in the stance)
             skirtRig = backend.skinnedSkirt ? animator.GetComponent<RoeSkirtRig>() : null;
+            if (skirtRig != null)
+                skirtRig.drapeAllowed = !backend.noDrape;      // a solver that hangs the skirt itself: our drape off
             if (skirtRig != null && hips != null && thighs.All(t => t != null))
             {
                 skirtRig.CaptureStance(hips.position, HipHeading());
@@ -587,7 +589,9 @@ namespace RoeFighter.Fight
             StepLinger(dt);
             float mocap = 1f - gameWeight;
             // (IgnoreSkirtKeys: the skirt as under motion capture in the game's own clips too, its keys kept to measure against)
-            float skirtMocap = IgnoreSkirtKeys ? 1f : mocap;
+            // (a solver over the game's clips too - magica_full - takes their skirt the same way)
+            bool overGame = IgnoreSkirtKeys || (backend != null && backend.overGameClips);
+            float skirtMocap = overGame ? 1f : mocap;
             bool measureKeys = IgnoreSkirtKeys && gameWeight > 0.99f && skirtRig != null && skirtRig.Ready && hips != null;
             if (measureKeys)
                 KeepSkirtKeys();
@@ -727,7 +731,7 @@ namespace RoeFighter.Fight
                     boneCloth.skirtOnSkin = skirtRig != null && skirtRig.Ready && RoeSkirtRig.Drape > 0f;
                     boneCloth.alwaysWeight = clothWeight;     // sashes: over the game's clips too (RoeBoneCloth.AlwaysKinds)
                 }
-                cloth.Weight = (clothOverGameClips || IgnoreSkirtKeys ? 1f : mocap) * clothWeight;
+                cloth.Weight = (clothOverGameClips || overGame ? 1f : mocap) * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
             if (measureKeys)

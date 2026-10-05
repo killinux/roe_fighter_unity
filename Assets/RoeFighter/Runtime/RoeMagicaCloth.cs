@@ -27,6 +27,15 @@ namespace RoeFighter
     /// Magica runs on Unity's player loop with its own 90 Hz clock: in play mode (the game, the exe) it
     /// moves; the editor's batch checks and videos step the fight by hand and it does not (RoeClothPlayDemo
     /// films it in play mode).
+    ///
+    /// With presets (the "magica_full" setup, user 10-05: "inase完全用magic cloth 2"): every piece takes the parameters of
+    /// Magica's own preset for its kind, as the plugin ships them (MC2_Preset_*.json, RoeMagicaPresets; ImportJson keeps
+    /// the set-up - renderers, bones, connection, colliders - and imports the parameters): a skirt MC2_Preset_Skirt (the
+    /// MeshCloth panels too), hair MC2_Preset_FrontHair / ShortHair / LongHair by where and how long, breasts a BoneSpring
+    /// on MC2_Preset_MiddleSpring (Magica's spring mode, made for them), chains, ribbons and the rest MC2_Preset_Accessory.
+    /// The set-up ImportJson leaves alone (clothType, connection, reduction, colliders, animationPoseRatio) is ours:
+    /// animationPoseRatio 1 - the cloth restores towards the animation's pose (the preset files say 0, the pose the cloth
+    /// was built in, here the bind pose: see InBindPose).
     /// </summary>
     public class RoeMagicaCloth : IRoeCloth, System.IDisposable
     {
@@ -91,6 +100,8 @@ namespace RoeFighter
         readonly List<MagicaCloth> cloths = new List<MagicaCloth>();
         readonly List<GameObject> made = new List<GameObject>();
         readonly RoeDoaRig doaRig;
+        readonly bool presets;
+        readonly List<string> missingPresets = new List<string>();
         float weight = 1f;
 
         public string Report { get; }
@@ -136,8 +147,9 @@ namespace RoeFighter
 
         static bool TooManyChildren(Transform root) => root.GetComponentsInChildren<Transform>(true).Any(t => t.childCount > MaxChildren);
 
-        public RoeMagicaCloth(RoeClothScope scope)
+        public RoeMagicaCloth(RoeClothScope scope, bool presets = false)
         {
+            this.presets = presets;
             // the pieces and colliders exactly as our Magica-style solver finds and measures them (only the kinds the
             // physics setup gives Magica: scope.kinds)
             var animator = scope.animator;
@@ -226,7 +238,8 @@ namespace RoeFighter
                     sd.meshWriteMode = ClothMeshWriteMode.PositionAndNormalTangent;   // the outfit's normal maps turn with the cloth
                     sd.reductionSetting.simpleDistance = m.reduction;
                     sd.reductionSetting.shapeDistance = m.shapeReduction;
-                    Apply(sd, m);
+                    if (!presets || !Preset(sd, "MC2_Preset_Skirt"))
+                        Apply(sd, m);
                     foreach (var cap in covered.SelectMany(q => q.capsules).Distinct())
                         if (colliders.TryGetValue(cap, out var col))
                             sd.colliderCollisionConstraint.colliderList.Add(col);
@@ -234,7 +247,8 @@ namespace RoeFighter
                     cloths.Add(cloth);
                     foreach (var q in covered)
                         meshed.Add(q);
-                    parts.Add($"MeshCloth {bp.name} ({mesh.vertexCount} vertices, {moving} moving, {sd.colliderCollisionConstraint.colliderList.Count} colliders; " +
+                    parts.Add($"MeshCloth {bp.name} ({mesh.vertexCount} vertices, {moving} moving, {sd.colliderCollisionConstraint.colliderList.Count} colliders" +
+                              (presets ? ", MC2_Preset_Skirt" : "") + "; " +
                               $"in place of {string.Join("+", covered.SelectMany(q => q.roots).Select(r => r.name))})");
                 }
 
@@ -255,6 +269,27 @@ namespace RoeFighter
                 var s = piece.settings;
                 sd.clothType = ClothProcess.ClothType.BoneCloth;
                 sd.rootBones.AddRange(piece.roots);
+                string preset = presets ? PresetFor(piece) : null;
+                if (preset != null)
+                {
+                    // Magica's own: its preset's parameters on the set-up (a breast on its spring mode)
+                    if (piece.kind == "breast" || piece.kind == "body")
+                        sd.clothType = ClothProcess.ClothType.BoneSpring;
+                    sd.connectionMode = piece.roots.Count > 1 && piece.mesh
+                        ? piece.loop ? RenderSetupData.BoneConnectionMode.SequentialLoopMesh : RenderSetupData.BoneConnectionMode.SequentialNonLoopMesh
+                        : RenderSetupData.BoneConnectionMode.Line;
+                    if (Preset(sd, preset))
+                    {
+                        foreach (var cap in piece.capsules)
+                            if (colliders.TryGetValue(cap, out var pc))
+                                sd.colliderCollisionConstraint.colliderList.Add(pc);
+                        cloth.BuildAndRun();
+                        cloths.Add(cloth);
+                        parts.Add($"{piece.kind} {string.Join("+", piece.roots.Select(r => r.name))} ({sd.clothType} {sd.connectionMode}, {preset})");
+                        continue;
+                    }
+                    sd.clothType = ClothProcess.ClothType.BoneCloth;
+                }
                 // a sheet: its chains joined into one mesh in the order they are linked (round and closed for a ring:
                 // a DOA6 skirt, a sleeve); single chains as lines
                 sd.connectionMode = piece.roots.Count > 1 && piece.mesh
@@ -304,8 +339,10 @@ namespace RoeFighter
                 parts.Add($"{piece.kind} {string.Join("+", piece.roots.Select(r => r.name))} ({sd.connectionMode})");
             }
             int meshCount = parts.Count(p => p.StartsWith("MeshCloth"));
-            Report = $"Magica Cloth 2: {meshCount} MeshCloths, {cloths.Count - meshCount} BoneCloths: {string.Join(", ", parts)}; colliders {colliders.Count}" +
-                     (Tuning.Length > 0 ? $"; tuning {Tuning}" : "");
+            Report = $"Magica Cloth 2{(presets ? " on its own presets" : "")}: {meshCount} MeshCloths, {cloths.Count - meshCount} Bone cloths: " +
+                     $"{string.Join(", ", parts)}; colliders {colliders.Count}" +
+                     (Tuning.Length > 0 ? $"; tuning {Tuning}" : "") +
+                     (missingPresets.Count > 0 ? $"; PRESETS NOT FOUND (our settings used): {string.Join(" ", missingPresets.Distinct())}" : "");
             // a DOA6 character's visible grid cloth is rebuilt from its control points: again once Magica has moved them
             doaRig = animator.GetComponent<RoeDoaRig>();
             if (doaRig != null && doaRig.surfaces.Count > 0)
@@ -349,6 +386,55 @@ namespace RoeFighter
                     b.localRotation = r;
                 }
             }
+        }
+
+        /// <summary>Magica's own preset for a piece: by its kind, hair by where it hangs and how long it is.</summary>
+        static string PresetFor(RoeBoneCloth.Piece piece)
+        {
+            switch (piece.kind)
+            {
+                case "skirt":
+                    return "MC2_Preset_Skirt";
+                case "breast":
+                case "body":
+                    return "MC2_Preset_MiddleSpring";
+                case "hair":
+                {
+                    var names = piece.roots.Select(r => r.name.ToLowerInvariant()).ToList();
+                    if (names.All(n => n.Contains("front") || n.Contains("bang") || System.Text.RegularExpressions.Regex.IsMatch(n, @"_f[lrc]?\d*_")))
+                        return "MC2_Preset_FrontHair";
+                    float length = piece.roots.Average(r => r.GetComponentsInChildren<Transform>(true).Max(t => Vector3.Distance(t.position, r.position)));
+                    return length > 0.3f ? "MC2_Preset_LongHair" : "MC2_Preset_ShortHair";
+                }
+                default:
+                    return "MC2_Preset_Accessory";
+            }
+        }
+
+        /// <summary>
+        /// Magica's preset's parameters over a component's set-up (ImportJson keeps the renderers, bones, connection,
+        /// colliders and pose ratio); the cloth restores towards the animation's pose (animationPoseRatio 1) and updates with
+        /// the fight.  False when the preset is not to be found (our settings then).
+        /// </summary>
+        bool Preset(ClothSerializeData sd, string name)
+        {
+            string json = RoeMagicaPresets.Json(name);
+#if UNITY_EDITOR
+            if (json == null)
+            {
+                var path = System.IO.Path.Combine(Application.dataPath, "MagicaCloth2", "Res", "Preset", name + ".json");
+                if (System.IO.File.Exists(path))
+                    json = System.IO.File.ReadAllText(path);
+            }
+#endif
+            if (json == null || !sd.ImportJson(json))
+            {
+                missingPresets.Add(name);
+                return false;
+            }
+            sd.animationPoseRatio = 1f;
+            sd.updateMode = ClothUpdateMode.Normal;
+            return true;
         }
 
         /// <summary>A MeshCloth's parameters (MeshSettings).</summary>

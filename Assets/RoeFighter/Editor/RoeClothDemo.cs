@@ -56,9 +56,18 @@ namespace RoeFighter.EditorTools
         };
         internal const float SkillLength = 12.6f;
 
-        /// <summary>The demo script named by -roeScript (moves: the default; skills: SkillScript).</summary>
+        /// <summary>"full" (-roeScript full): the moves, then the skills.</summary>
+        internal static readonly (float from, float to, FighterInput input, string what)[] FullScript =
+            Script.Concat(SkillScript.Select(x => (x.from + Length, x.to + Length, x.input, x.what))).ToArray();
+        internal const float FullLength = Length + SkillLength;
+
+        /// <summary>A demo script by name (-roeScript): moves (the default), skills (SkillScript), full (both).</summary>
+        internal static ((float from, float to, FighterInput input, string what)[] script, float length) Named(string name) =>
+            name == "skills" ? (SkillScript, SkillLength) : name == "full" ? (FullScript, FullLength) : (Script, Length);
+
+        /// <summary>The demo script named by -roeScript.</summary>
         internal static ((float from, float to, FighterInput input, string what)[] script, float length) Chosen() =>
-            RoeCapture.Arg("-roeScript", "moves") == "skills" ? (SkillScript, SkillLength) : (Script, Length);
+            Named(RoeCapture.Arg("-roeScript", "moves"));
 
         [MenuItem("ROE Fighter/Fight/Bone cloth demo")]
         public static void Run()

@@ -45,6 +45,7 @@ TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '�
           ('eve37', 'stellar_norig'): '剑星的 Kawaii，不跑 Control Rig',
           ('mai', 'doa6'): 'DOA6 自己的（软体、网格布、骨链）',
           'keys': '游戏手 K 的裙子（标准答案）', 'mc2_nokeys': 'Magica Cloth 2（不用关键帧）',
+          'magica_full': 'Magica Cloth 2（全部交给它，插件自带预设）', 'old_default': '原来的：骨骼布料，技能用游戏关键帧',
           'ours_nokeys': '我们的骨骼布料（不用关键帧）', 'legs_nokeys': '只跟着腿（不模拟、不用关键帧）',
           'bandai1': 'Bandai 动捕（原来的默认）', 'accad_male2': 'ACCAD 开源动捕',
           'ufe_kyle': 'UFE 2：Robot Kyle', 'ufe_ethan': 'UFE 2：Ethan', 'ufe_bot': 'UFE 2：Mecanim Bot'}

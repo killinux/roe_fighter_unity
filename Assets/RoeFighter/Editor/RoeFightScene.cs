@@ -265,6 +265,14 @@ namespace RoeFighter.EditorTools
             (game.effects, game.hitEffect) = Effects(roster);
             // the strikes' hit effects (user 10-05: not g04's skill hit for everything): UFE 2's hit particles by weight when the
             // project has them (RoeHitFx, tools/ufe_extract.py); -roeHitFx game keeps the old spark for every strike
+            // Magica Cloth 2's own presets, when the plugin is installed: the "magica_full" setup reads them (RoeMagicaPresets)
+            const string magicaPresets = "Assets/MagicaCloth2/Res/Preset";
+            if (AssetDatabase.IsValidFolder(magicaPresets))
+            {
+                var holder = game.gameObject.GetComponent<RoeMagicaPresets>() ?? game.gameObject.AddComponent<RoeMagicaPresets>();
+                holder.presets = AssetDatabase.FindAssets("t:TextAsset", new[] { magicaPresets })
+                    .Select(g => AssetDatabase.LoadAssetAtPath<TextAsset>(AssetDatabase.GUIDToAssetPath(g))).Where(t => t != null).ToArray();
+            }
             game.hitLight = game.hitMedium = game.hitHeavy = game.hitBlock = null;
             var ufeFx = RoeCapture.Arg("-roeHitFx", "ufe") == "ufe" ? RoeHitFx.UfePrefabs() : new List<FightGame.NamedPrefab>();
             if (ufeFx.Count > 0)

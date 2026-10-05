@@ -43,6 +43,7 @@
 | Eve 的百褶裙（Office Style，`eve37`）：裙子除了剑星的 KawaiiPhysics，还跑游戏自己的裙子 Control Rig——直接执行它的 UE 4.26 RigVM 字节码，按大腿抬起多少把各裙片转开 | 完成（10-05），见下面"Eve 的百褶裙（eve37）和裙子的 Control Rig"一节和 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md) 第 6 节；对比视频 `out\eve37_skirt_hips.mp4`（胯部特写）、`out\eve37_skirt_back.mp4`（左：剑星自己的，中：不跑 Control Rig，右：我们的骨骼布料），踢腿放大 `out\eve37_skirt_kick.jpg` |
 | Inase 的裙子调研：游戏里逐帧手 K、没有物理；拿她自己的技能当标准答案，我们的骨骼布料、Magica Cloth 2、只跟着腿都差 61–63°，游戏里长裙片大幅飘开，三种方案都贴着腿垂 | 调研完成（10-05），见下面"Inase 的裙子：游戏里怎么动的"一节和 [`docs/inase-skirt.md`](docs/inase-skirt.md)；对比视频 `out\a08_skirt_vs_keys.mp4`；改法等你定 |
 | ROE 战斗里有没有物理：战斗角色、敌人、技能都没有物理组件，舞台只有不会动的碰撞体和少量会碰撞的粒子；真正的物理（Magica Cloth 2）只在大厅 | 调研完成（10-05），见下面"ROE 战斗里有没有物理"一节和 [`docs/roe-battle-physics.md`](docs/roe-battle-physics.md)；工具 `tools/roe_physics_scan.py` |
+| Inase 完全用 Magica Cloth 2（`magica_full`）：所有部件用插件自带的预设，技能里也由它来动；装了插件时她在游戏里默认就用它（F4 可切换） | 完成（10-05），见 [`docs/inase-skirt.md`](docs/inase-skirt.md) 第 6 节；对比视频 `out\a08_magica_full_front.mp4`、`out\a08_magica_full_backright.mp4` |
 
 ## 目录
 
@@ -1642,3 +1643,16 @@ python tools\skirt_key_models.py a08
 python tools\roe_physics_scan.py
 python tools\roe_physics_scan.py --report
 ```
+
+### Inase 完全用 Magica Cloth 2（10-05）
+
+用户 10-05："inase完全用magic cloth 2 我看看效果吧"。细节见 [`docs/inase-skirt.md`](docs/inase-skirt.md) 第 6 节。
+
+- **新方案 `magica_full`**：
+  - Inase 的裙片、头发、胸、链子全交给 Magica Cloth 2，参数全用插件自带的预设（Skirt、FrontHair / ShortHair、胸用弹簧模式 MiddleSpring、Accessory）；
+  - 技能、受击这些游戏动作里也由它来动；
+  - 不用我们的"自然下垂"。
+- **默认**：装了 Magica 插件时，Inase 在游戏里（auto）默认就用它，F4 可以换回别的；没装插件时不变。
+- **效果**（左 Magica 全接管，右原来的）：`out\a08_magica_full_front.mp4`（正面）、`out\a08_magica_full_backright.mp4`（背后特写）。
+  - 走路、侧步时长裙片往身后飘，回旋踢时大幅甩开；后片在屁股上折出褶子，踢腿时折着让开大腿。原来的方案几乎一直垂着，后片像板，踢腿时腿会穿过去。
+  - 代价：穿进身体的布料多一点（1.1% 对 0.4%），抖动大一点；技能 1 开头人被动作一下子带走时，裙子有一处很大的跳动。

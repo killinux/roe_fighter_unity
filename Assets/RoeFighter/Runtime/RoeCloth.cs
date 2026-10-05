@@ -87,6 +87,13 @@ namespace RoeFighter
             /// hips' heading (that is for the hand-keyed skirts of ROE under motion capture).
             /// </summary>
             public bool ownSkirt;
+            /// <summary>
+            /// The solver moves the cloth in the game's own clips too: their skirt keys are left to it as under motion capture
+            /// (the skirt follows the legs, RoeSkirtRig), their hair and breast keys are its animation pose.
+            /// </summary>
+            public bool overGameClips;
+            /// <summary>The solver hangs the skirt by itself: RoeSkirtRig's drape (our natural hang, F5) stays off.</summary>
+            public bool noDrape;
             public Func<RoeClothScope, IRoeCloth> make;
             /// <summary>Whether it can take this kind on this fighter (null: any kind, any fighter).</summary>
             public Func<RoeClothScope, string, bool> covers;
@@ -118,6 +125,12 @@ namespace RoeFighter
                 name = "magica", title = "Magica Cloth 2", skinnedSkirt = true, make = s => new RoeMagicaCloth(s),
                 covers = (s, kind) => RoeMagicaCloth.Covers(s, kind),
             },
+            new Solver
+            {
+                name = "magica_full", title = "Magica Cloth 2, everything (its own presets; the game's clips too)", skinnedSkirt = true,
+                overGameClips = true, noDrape = true, make = s => new RoeMagicaCloth(s, presets: true),
+                covers = (s, kind) => RoeMagicaCloth.Covers(s, kind),
+            },
 #endif
         };
 
@@ -139,6 +152,8 @@ namespace RoeFighter
     ///   legacy        the 10-02 bone cloth
     ///   off           no simulation: skirts and hair keep the battle stance's keys
     ///   magica        Magica Cloth 2 for everything (when installed)
+    ///   magica_full   Magica Cloth 2 for everything on its own presets, in the game's own clips too, without our drape
+    ///                 (when installed; Inase's pick under auto then - Preferred)
     /// </summary>
     public static class RoeClothBackends
     {
@@ -157,6 +172,12 @@ namespace RoeFighter
 
             /// <summary>The skirt hangs as its game has it (RoeClothSolvers.Solver.ownSkirt).</summary>
             public bool ownSkirt => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.ownSkirt ?? false;
+
+            /// <summary>The cloth moves in the game's own clips too (RoeClothSolvers.Solver.overGameClips).</summary>
+            public bool overGameClips => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.overGameClips ?? false;
+
+            /// <summary>Our drape off: the solver hangs the skirt (RoeClothSolvers.Solver.noDrape).</summary>
+            public bool noDrape => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.noDrape ?? false;
 
             /// <summary>The solvers on one fighter, one per solver used, each with its kinds; null when nothing is simulated.</summary>
             public IRoeCloth Make(RoeClothScope scope)
@@ -197,14 +218,24 @@ namespace RoeFighter
             All_("off", "No cloth", null),
 #if MAGICACLOTH2
             All_("magica", "Magica Cloth 2", "magica"),
+            All_("magica_full", "Magica Cloth 2, everything (its presets; also in the game's clips)", "magica_full"),
 #endif
         };
+
+        /// <summary>
+        /// A fighter's own pick under "auto", when the build has its solver (user 10-05: "inase完全用magic cloth 2": Inase on
+        /// Magica Cloth 2 for everything when the plugin is installed; without it she stays on the bone cloth).  Only in play
+        /// mode - the game, the exe: Magica moves on the player loop, and the editor's batch recordings step the fight by hand.
+        /// </summary>
+        public static readonly Dictionary<string, string> Preferred = new Dictionary<string, string> { ["a08"] = "magica_full" };
 
         public static Backend Find(string name) => All.FirstOrDefault(b => b.name == name) ?? All[0];
 
         /// <summary>The setup a fighter takes for a choice: "auto" picks her own game's.</summary>
-        public static string Resolve(string name, Animator animator) =>
-            name != "auto" ? name : animator != null && animator.GetComponent<RoeDoaRig>() != null ? "doa6"
+        public static string Resolve(string name, Animator animator, string id = null) =>
+            name != "auto" ? name
+            : id != null && Application.isPlaying && Preferred.TryGetValue(id, out var own) && All.Any(b => b.name == own) ? own
+            : animator != null && animator.GetComponent<RoeDoaRig>() != null ? "doa6"
                                   : animator != null && animator.GetComponent<RoeSbRig>() != null ? "stellar"
                                   : animator != null && animator.GetComponent<RoeKawaiiRig>() != null ? "kawaii" : "magica_style";
 
