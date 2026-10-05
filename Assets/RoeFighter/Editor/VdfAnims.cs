@@ -114,6 +114,14 @@ namespace RoeFighter.EditorTools
         static Quaternion World(Quaternion q) => WorldTurn * q * Quaternion.Inverse(BoneTurn);
         static Vector3 World(Vector3 p) => new Vector3(-p.x, p.z, p.y) * 0.01f;
 
+        /// <summary>
+        /// The bones her weapons hang on (VdfFighter.AttachWeapons): a humanoid clip has no muscle for them, so each clip
+        /// also gets their own local turn and place as plain transform curves (user 10-05 "继续": the shield's animation was
+        /// next; the game holds shield_l 22.9 degrees off its bind pose in nearly every clip, up to 120 in some).
+        /// -roeProps a,b names others ("-": none).
+        /// </summary>
+        public static readonly string[] PropBones = { "weapon_r", "weapon_l", "shield_l" };
+
         class Rig
         {
             public GameObject go;
@@ -121,6 +129,14 @@ namespace RoeFighter.EditorTools
             public Transform[] target;      // per .psa bone (null: she has no such bone)
             public int root = -1, pelvis = -1;
             public Dictionary<Transform, (Vector3 p, Quaternion q)> bind = new Dictionary<Transform, (Vector3, Quaternion)>();
+            public readonly List<(int bone, Transform t, string path)> props = new List<(int, Transform, string)>();
+            public readonly HashSet<int> propBones = new HashSet<int>();
+        }
+
+        static string[] Props()
+        {
+            string arg = RoeCapture.Arg("-roeProps", null);
+            return arg == null ? PropBones : arg == "-" ? new string[0] : arg.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).ToArray();
         }
 
         static Rig Bind(GameObject go, Psa psa)
@@ -141,6 +157,14 @@ namespace RoeFighter.EditorTools
                     rig.root = b;
                 else if (psa.bones[b] == "pelvis")
                     rig.pelvis = b;
+            }
+            foreach (var name in Props())
+            {
+                int b = Array.IndexOf(psa.bones, name);
+                if (b < 0 || rig.target[b] == null)
+                    continue;
+                rig.props.Add((b, rig.target[b], AnimationUtility.CalculateTransformPath(rig.target[b], go.transform)));
+                rig.propBones.Add(b);
             }
             return rig;
         }
@@ -165,7 +189,7 @@ namespace RoeFighter.EditorTools
                     continue;
                 }
                 t.localRotation = Local(Ue(psa.Q(f, b), reading));
-                if (b == rig.pelvis)
+                if (b == rig.pelvis || rig.propBones.Contains(b))      // a weapon also moves in its socket (the shield's bash)
                     t.localPosition = Local(Ue(psa.P(f, b), reading));
             }
         }
@@ -249,6 +273,8 @@ namespace RoeFighter.EditorTools
         static string LastLimits = "";
 
         static readonly string[] RootNames = { "RootT.x", "RootT.y", "RootT.z", "RootQ.x", "RootQ.y", "RootQ.z", "RootQ.w" };
+        static readonly string[] PropCurves = { "m_LocalRotation.x", "m_LocalRotation.y", "m_LocalRotation.z", "m_LocalRotation.w",
+                                                "m_LocalPosition.x", "m_LocalPosition.y", "m_LocalPosition.z" };
 
         static AnimationClip Convert(Rig rig, Psa psa, int reading, HumanPoseHandler handler, bool holdRoot, bool loop)
         {
@@ -258,6 +284,9 @@ namespace RoeFighter.EditorTools
                 keys[i] = new List<Keyframe>(psa.frames);
             var pose = new HumanPose();
             var last = Quaternion.identity;
+            // the weapon bones: local rotation (x y z w) and position (x y z) per frame
+            var propKeys = rig.props.Select(_ => Enumerable.Range(0, 7).Select(__ => new List<Keyframe>(psa.frames)).ToArray()).ToArray();
+            var propLast = rig.props.Select(p => p.t.localRotation).ToArray();
             float step = 1f / Mathf.Max(1f, psa.rate);
             for (int f = 0; f < psa.frames; f++)
             {
@@ -273,6 +302,18 @@ namespace RoeFighter.EditorTools
                 float[] r = { pose.bodyPosition.x, pose.bodyPosition.y, pose.bodyPosition.z, q.x, q.y, q.z, q.w };
                 for (int i = 0; i < 7; i++)
                     keys[muscles + i].Add(new Keyframe(t, r[i]));
+                for (int j = 0; j < rig.props.Count; j++)
+                {
+                    var bone = rig.props[j].t;
+                    var pq = bone.localRotation;
+                    if (Quaternion.Dot(pq, propLast[j]) < 0f)
+                        pq = new Quaternion(-pq.x, -pq.y, -pq.z, -pq.w);
+                    propLast[j] = pq;
+                    var pp = bone.localPosition;
+                    float[] v = { pq.x, pq.y, pq.z, pq.w, pp.x, pp.y, pp.z };
+                    for (int c = 0; c < 7; c++)
+                        propKeys[j][c].Add(new Keyframe(t, v[c]));
+                }
             }
             Restore(rig);
             // muscles at or past their limits (the avatar's range: a pose beyond it does not come back)
@@ -283,18 +324,28 @@ namespace RoeFighter.EditorTools
             over = over.Where(m => !Regex.IsMatch(m.name, "Thumb|Index|Middle|Ring|Little")).ToList();
             LastLimits = over.Count == 0 ? "none" : string.Join(", ", over.Take(10).Select(m => $"{m.name} {m.max:F2} ({100f * m.share:F0}%)"));
             var clip = new AnimationClip { name = psa.name, frameRate = Mathf.Round(psa.rate) };
-            var bindings = new EditorCurveBinding[keys.Length];
-            var curves = new AnimationCurve[keys.Length];
+            var bindings = new List<EditorCurveBinding>();
+            var curves = new List<AnimationCurve>();
+            AnimationCurve Smooth(List<Keyframe> list)
+            {
+                var curve = new AnimationCurve(list.ToArray());
+                for (int k = 0; k < curve.length; k++)
+                    curve.SmoothTangents(k, 0f);
+                return curve;
+            }
             for (int i = 0; i < keys.Length; i++)
             {
                 string attribute = i < muscles ? RoeHumanoidClips.MuscleAttribute(HumanTrait.MuscleName[i]) : RootNames[i - muscles];
-                bindings[i] = EditorCurveBinding.FloatCurve("", typeof(Animator), attribute);
-                var curve = new AnimationCurve(keys[i].ToArray());
-                for (int k = 0; k < curve.length; k++)
-                    curve.SmoothTangents(k, 0f);
-                curves[i] = curve;
+                bindings.Add(EditorCurveBinding.FloatCurve("", typeof(Animator), attribute));
+                curves.Add(Smooth(keys[i]));
             }
-            AnimationUtility.SetEditorCurves(clip, bindings, curves);
+            for (int j = 0; j < rig.props.Count; j++)
+                for (int c = 0; c < 7; c++)
+                {
+                    bindings.Add(EditorCurveBinding.FloatCurve(rig.props[j].path, typeof(Transform), PropCurves[c]));
+                    curves.Add(Smooth(propKeys[j][c]));
+                }
+            AnimationUtility.SetEditorCurves(clip, bindings.ToArray(), curves.ToArray());
             clip.EnsureQuaternionContinuity();
             var settings = AnimationUtility.GetAnimationClipSettings(clip);
             settings.loopTime = loop;
@@ -322,7 +373,7 @@ namespace RoeFighter.EditorTools
         {
             "upperarm_r", "lowerarm_r", "hand_r", "upperarm_l", "lowerarm_l", "hand_l", "thigh_r", "calf_r", "foot_r",
             "upperarm_twist_01_r", "upperarm_twist_02_r", "lowerarm_twist_01_r", "lowerarm_twist_02_r", "thigh_twist_01_r", "calf_twist_01_r",
-            "spine_02", "spine_03", "spine_04", "spine_05", "neck_02", "head",
+            "spine_02", "spine_03", "spine_04", "spine_05", "neck_02", "head", "weapon_r", "shield_l",
         };
 
         static readonly (string, string)[] Segments =
@@ -458,6 +509,73 @@ namespace RoeFighter.EditorTools
             RoeCapture.EndPosing();
             Object.DestroyImmediate(go);
             Debug.Log($"[ROE] {id}: twist stills of {clipName} to {outDir}: {string.Join(", ", notes)}");
+        }
+
+        /// <summary>
+        /// Her weapons in moments of her clips, from her front-left (the shield's side) and from her front: stills to
+        /// &lt;out&gt;/props_&lt;tag&gt;_&lt;n&gt;_&lt;view&gt;.png, run before and after an import to compare (tools/vdf_prop_sheet.py
+        /// puts the two side by side).  Also logs, per moment, how far shield_l and weapon_r are turned from their bind pose.
+        ///   -executeMethod RoeFighter.EditorTools.VdfAnims.PropStills -Graphics [-roeVdf fio005] [-roeTag after] [-roeOut dir]
+        ///   [-roeShots clip@seconds,clip@seconds]
+        /// </summary>
+        public static void PropStills()
+        {
+            string id = RoeCapture.Arg("-roeVdf", "fio005");
+            string tag = RoeCapture.Arg("-roeTag", "now");
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "vdf", "props"));
+            var shots = RoeCapture.Arg("-roeShots", "AS_pc_fiona_battle_idle@0.5,AS_PC_Fiona_Battle_Guard_Counter@0.3,AS_PC_Fiona_Battle_HeavyStander_During@0.5," +
+                                                    "AS_PC_Fiona_Battle_Attack_Strong03@0.4,AS_PC_Fiona_Test_Emo_Cheering_Evy@0.8").Split(',');
+            Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            var studio = RoeStudio.Build();
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                smr.forceMatrixRecalculationPerRender = true;
+            var all = go.GetComponentsInChildren<Transform>(true);
+            var shield = all.FirstOrDefault(t => t.name == "shield_l");
+            var sword = all.FirstOrDefault(t => t.name == "weapon_r");
+            var bind = new[] { shield, sword }.Select(t => t != null ? t.localRotation : Quaternion.identity).ToArray();
+            var animator = go.GetComponent<Animator>();
+            studio.LightFrom(Vector3.forward);
+            studio.SetFocus(0f, 0f, 0f);
+            bool warmed = false;
+            var notes = new List<string>();
+            for (int n = 0; n < shots.Length; n++)
+            {
+                var parts = shots[n].Split('@');
+                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>($"{ClipDir(id)}/{parts[0]}.anim");
+                if (clip == null)
+                {
+                    notes.Add($"{parts[0]}: no clip");
+                    continue;
+                }
+                float time = parts.Length > 1 ? float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture) : 0f;
+                RoeCapture.Pose(go, clip, Mathf.Min(clip.length, time));
+                var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+                var chest = animator.GetBoneTransform(HumanBodyBones.UpperChest) ?? animator.GetBoneTransform(HumanBodyBones.Chest);
+                var mid = Vector3.Lerp(hips.position, chest.position, 0.5f);
+                // where she faces: square to the line from her left thigh to her right (her bones' own axes are Unreal's)
+                var right = animator.GetBoneTransform(HumanBodyBones.RightUpperLeg).position - animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg).position;
+                var forward = Vector3.Cross(right, Vector3.up);
+                foreach (var (view, yaw) in new[] { ("left", -55f), ("front", 0f) })
+                {
+                    studio.Aim(mid, forward, yaw, 8f, 3.0f, 30f);
+                    string file = Path.Combine(outDir, $"props_{tag}_{n}_{view}.png");
+                    if (!warmed)
+                    {
+                        RoeCapture.Render(studio.camera, 320, 320, file);
+                        RoeCapture.Render(studio.camera, 320, 320, file);
+                        warmed = true;
+                    }
+                    RoeCapture.Render(studio.camera, 700, 800, file);
+                }
+                notes.Add($"{n} {parts[0]} @{time:F2}: shield_l {(shield != null ? Quaternion.Angle(shield.localRotation, bind[0]) : -1f):F1} deg, " +
+                          $"weapon_r {(sword != null ? Quaternion.Angle(sword.localRotation, bind[1]) : -1f):F1} deg off their bind pose");
+            }
+            RoeCapture.EndPosing();
+            Object.DestroyImmediate(go);
+            Debug.Log($"[ROE] {id}: prop stills ({tag}) to {outDir}:\n[ROE]   {string.Join("\n[ROE]   ", notes)}");
         }
 
         [MenuItem("ROE Fighter/Motions/Vindictus: import Fiona's own animations")]

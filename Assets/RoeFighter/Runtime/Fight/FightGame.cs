@@ -36,6 +36,20 @@ namespace RoeFighter.Fight
         public float arenaRadius = 7f;
         public float startGap = 3.2f;
         public Camera cam;
+        // the camera keeps out of the stage (user 10-05 "继续" after 10-04's "镜头跑到栅栏外面"): it films from where the
+        // stage's room (measured when the scene is built) has space and nothing stands between it and the two - square-on
+        // if it can, else swung round up to camMaxOrbit, closer (the view widens to keep the framing), round on the other
+        // side of the two, and with none of that clear what is in the way is cut away (the near plane moves past it)
+        public CameraRoom room;
+        public bool camAvoid = true;          // -roeCamAvoid 0: the old camera, which went wherever the framing put it
+        public float camMargin = 0.6f;        // metres the camera keeps from the stage
+        public float camMaxOrbit = 60f;       // degrees it may swing round from square-on, either way
+        public float camMinDistance = 2.4f;   // the closest it comes
+        public float camMaxFov = 50f;         // the widest view
+        public bool camOtherSide = true;      // with no room on its side, it may go round to the other side
+        public float camCutAngle = 100f;      // a turn round the two larger than this is a cut, not a swing
+        public float camFov;                  // the view square-on (0: the camera's own, taken at the first frame)
+        public float camNear = 0.1f;
         public FightHud hud;
         public int roundsToWin = 2;
         public float roundSeconds = 60f;
@@ -48,11 +62,13 @@ namespace RoeFighter.Fight
         public int motionPack;
         float noticeTime;
 
-        /// <summary>A line under the timer: the motion pack and the cloth in use, for a few seconds after a switch or a new match.</summary>
+        /// <summary>Lines under the timer, one per setting: the motion pack, the cloth, the skirt, the clothes burst, the camera -
+        /// for a few seconds after a switch or a new match.</summary>
         public string Notice => noticeTime <= 0f ? "" :
-            string.Join("    ", new[] { Pack != null ? $"MOTIONS: {Pack.title}" : null, $"CLOTH: {RoeClothBackends.Find(FighterRig.ClothBackend).title}",
+            string.Join("\n", new[] { Pack != null ? $"MOTIONS: {Pack.title}" : null, $"CLOTH: {RoeClothBackends.Find(FighterRig.ClothBackend).title}",
                                        RoeClothBackends.Find(FighterRig.ClothBackend).skinnedSkirt ? $"SKIRT: {(RoeSkirtRig.Drape > 0f ? "hangs" : "fitted")}" : null,
-                                       rigs.Any(r => r != null && r.burst != null) ? $"CLOTHES BURST: {(RoeClothesBurst.Enabled ? "on" : "off")}" : null }.Where(s => s != null));
+                                       rigs.Any(r => r != null && r.burst != null) ? $"CLOTHES BURST: {(RoeClothesBurst.Enabled ? "on" : "off")}" : null,
+                                       room != null && room.Valid ? $"CAMERA: {(camAvoid ? "avoids walls" : "free")}" : null }.Where(s => s != null));
 
         public MotionPack Pack => motionPacks.Count > 0 ? motionPacks[Mathf.Clamp(motionPack, 0, motionPacks.Count - 1)] : null;
 
@@ -104,6 +120,14 @@ namespace RoeFighter.Fight
         Vector3 camSide;
         Vector3 camPos, camTarget;
         float shakeTime, shakeAmplitude, shakeDuration;
+        Vector3 camAim;                 // the direction chosen last step (the next choice prefers to stay near it)
+        float camDistance;
+        bool camWidened, camCut;
+        public int camCuts, camJumps;   // recordings: cuts to the other side, jumps straight to the shot
+
+        public enum CamMode { Cutaway = -1, SquareOn, SwungRound, Closer, OtherSide }
+        public CamMode camMode;
+        public readonly int[] camModeSteps = new int[5];    // recordings: how often the camera did what (index = mode + 1)
 
         void Start()
         {
@@ -120,6 +144,8 @@ namespace RoeFighter.Fight
                 RoeClothesBurst.Enabled = Arg("-roeBurst") != "0";
             if (Arg("-roeCloth") != null)
                 FighterRig.ClothBackend = RoeClothBackends.Find(Arg("-roeCloth")).name;
+            if (Arg("-roeCamAvoid") != null)
+                camAvoid = Arg("-roeCamAvoid") != "0";
             PickIds(Arg("-roeP1"), Arg("-roeP2"));
             if (Arg("-roeSelect") != null)
                 selectFirst = Arg("-roeSelect") != "0";
@@ -446,6 +472,16 @@ namespace RoeFighter.Fight
                 // (0, as of 52f11de); takes effect at once
                 RoeSkirtRig.Drape = RoeSkirtRig.Drape > 0f ? 0f : 1f;
                 noticeTime = 4f;
+            }
+            if (Input.GetKeyDown(KeyCode.F8))
+            {
+                // the camera keeps out of the stage / goes wherever the framing puts it (the old one, through fences)
+                camAvoid = !camAvoid;
+                cam.fieldOfView = camFov > 0f ? camFov : cam.fieldOfView;
+                cam.nearClipPlane = camNear;
+                camWidened = camCut = false;
+                noticeTime = 4f;
+                Debug.Log($"[ROE] camera: {(camAvoid ? "avoids walls" : "free")} (F8)");
             }
             if (Input.GetKeyDown(KeyCode.F6))
             {
@@ -912,13 +948,19 @@ namespace RoeFighter.Fight
         public void SnapCamera()
         {
             camSide = Vector3.zero;
+            camAim = Vector3.zero;
+            camDistance = 0f;
             UpdateCamera(10f);
         }
+
+        bool Avoiding => camAvoid && room != null && room.Valid;
 
         public void UpdateCamera(float dt)
         {
             if (cam == null || f[0] == null)
                 return;
+            if (camFov <= 0f)
+                camFov = cam.fieldOfView;
             var a = f[0].pos;
             var b = f[1].pos;
             var line = Flat(b - a);
@@ -927,14 +969,52 @@ namespace RoeFighter.Fight
                 camSide = Flat(cam.transform.position - (a + b) * 0.5f);
             if (Vector3.Dot(side, camSide) < 0f)
                 side = -side;
-            camSide = Vector3.Slerp(camSide, side, 1f - Mathf.Exp(-dt * 3f)).normalized;
             float sep = Vector3.Distance(a, b);
             float distance = Mathf.Clamp(sep * 0.85f + 2.9f, 3.6f, 9.5f);
-            var target = (a + b) * 0.5f + Vector3.up * 1.0f;
-            var eye = target + camSide * distance + Vector3.up * 0.45f;
+            var mid = (a + b) * 0.5f;
+            var (dir, far, mode) = Frame(mid, side, distance, a, b);
+            camAim = dir;
+            camMode = mode;
+            camModeSteps[(int)mode + 1]++;
+
+            // swing round about the upright through the two; round to the other side is a cut (a swing would pass
+            // through the fence or the two themselves)
+            bool snap = dt >= 1f || (mode == CamMode.OtherSide && Vector3.Angle(camSide, dir) > camCutAngle);
+            if (snap && dt < 1f)
+                camCuts++;
+            float k3 = snap ? 1f : 1f - Mathf.Exp(-dt * 3f);
+            float turn = Vector3.SignedAngle(camSide, dir, Vector3.up);
+            camSide = (Quaternion.AngleAxis(turn * k3, Vector3.up) * camSide).normalized;
+            camDistance = !Avoiding || camDistance <= 0f || snap ? far : Mathf.Lerp(camDistance, far, k3);
+
+            var target = mid + Vector3.up * 1.0f;
+            var eye = target + camSide * camDistance + Vector3.up * 0.45f;
             float k = 1f - Mathf.Exp(-dt * 5f);
-            camPos = dt >= 1f ? eye : Vector3.Lerp(camPos, eye, k);
-            camTarget = dt >= 1f ? target : Vector3.Lerp(camTarget, target, k);
+            camPos = snap ? eye : Vector3.Lerp(camPos, eye, k);
+            camTarget = snap ? target : Vector3.Lerp(camTarget, target, k);
+            // on its way from one shot to the next the camera may pass where the stage is in the way: then straight to the shot
+            if (Avoiding && mode != CamMode.Cutaway && !snap && !Sees(camPos, a, b))
+            {
+                camSide = dir;
+                camDistance = far;
+                camPos = target + camSide * camDistance + Vector3.up * 0.45f;
+                camTarget = target;
+                camJumps++;
+            }
+            // closer than the framing wants: the view widens to keep both in the picture
+            float fov = Mathf.Clamp(2f * Mathf.Atan(Mathf.Tan(camFov * 0.5f * Mathf.Deg2Rad) * distance / Mathf.Max(0.1f, camDistance)) * Mathf.Rad2Deg,
+                                    camFov, Mathf.Max(camFov, camMaxFov));
+            if (Avoiding && (fov > camFov + 0.01f || camWidened))
+            {
+                cam.fieldOfView = fov;
+                camWidened = fov > camFov + 0.01f;
+            }
+            // nothing clear: the near plane moves past whatever stands between the camera and the two
+            if (Avoiding && (mode == CamMode.Cutaway || camCut))
+            {
+                cam.nearClipPlane = mode == CamMode.Cutaway ? Cutaway(camPos, a, b) : camNear;
+                camCut = mode == CamMode.Cutaway;
+            }
             var shake = Vector3.zero;
             if (shakeTime < shakeDuration)
             {
@@ -947,6 +1027,65 @@ namespace RoeFighter.Fight
             cam.transform.position = camPos + shake;
             cam.transform.LookAt(camTarget + shake, Vector3.up);
         }
+
+        /// <summary>
+        /// Where to film from this step: the direction from the two's midpoint to the camera, its distance and how it
+        /// came about.  Tries square-on first, then swung round (5-degree steps up to camMaxOrbit), closer (0.3 m steps,
+        /// no closer than the widest view allows), then the same round on the other side; each try costs by how far it
+        /// is from square-on, how much closer, the other side, and how far it is from the last choice (so the camera
+        /// does not flick between two near-equal shots).  The cheapest that stands in the room with a clear view of
+        /// both wins; with none, square-on and the cut-away.
+        /// </summary>
+        (Vector3 dir, float distance, CamMode mode) Frame(Vector3 mid, Vector3 side, float ideal, Vector3 a, Vector3 b)
+        {
+            if (!Avoiding)
+                return (side, ideal, CamMode.SquareOn);
+            float closest = Mathf.Min(ideal, Mathf.Max(camMinDistance,
+                ideal * Mathf.Tan(camFov * 0.5f * Mathf.Deg2Rad) / Mathf.Tan(Mathf.Max(camFov, camMaxFov) * 0.5f * Mathf.Deg2Rad)));
+            var aim = camAim.sqrMagnitude > 0.5f ? camAim : side;
+            int steps = Mathf.Max(1, Mathf.CeilToInt(camMaxOrbit / 5f));
+            float best = float.MaxValue;
+            var shot = (side, ideal, CamMode.Cutaway);
+            for (int other = 0; other < (camOtherSide ? 2 : 1); other++)
+                for (int j = 0; j <= 2 * steps; j++)
+                {
+                    int i = (j + 1) / 2 * (j % 2 == 1 ? 1 : -1);     // 0, 1, -1, 2, -2, ...: the likely ones first
+                    float orbit = camMaxOrbit * i / steps;
+                    var dir = Quaternion.AngleAxis(orbit + 180f * other, Vector3.up) * side;
+                    float away = Vector3.Angle(dir, aim) / 90f;
+                    float cost0 = Sq(orbit / Mathf.Max(1f, camMaxOrbit)) + 1.5f * other + 0.5f * away * away;
+                    for (float d = ideal; d >= closest - 1e-3f && cost0 < best; d -= 0.3f)
+                    {
+                        float cost = cost0 + 2f * Sq((ideal - d) / ideal);
+                        if (cost >= best)
+                            break;
+                        var eye = mid + dir * d;
+                        if (room.Clearance(eye) < camMargin || !room.Clear(eye, a) || !room.Clear(eye, b))
+                            continue;
+                        best = cost;
+                        shot = (dir, d, other == 1 ? CamMode.OtherSide : d < ideal - 0.01f ? CamMode.Closer : i != 0 ? CamMode.SwungRound : CamMode.SquareOn);
+                        break;
+                    }
+                }
+            return shot;
+        }
+
+        static float Sq(float x) => x * x;
+
+        /// <summary>Does the camera at <paramref name="eye"/> have room and a clear view of both?</summary>
+        bool Sees(Vector3 eye, Vector3 a, Vector3 b) => room.Clearance(eye) >= camMargin * 0.5f && room.Clear(eye, a) && room.Clear(eye, b);
+
+        /// <summary>The near plane just past the last of the stage between the camera and the two (never past the nearer one).</summary>
+        float Cutaway(Vector3 eye, Vector3 a, Vector3 b)
+        {
+            float last = Mathf.Max(room.LastBlocked(eye, a), room.LastBlocked(eye, b));
+            if (last < 0f)
+                return camNear;
+            float nearer = Mathf.Min(Vector3.Distance(Flat0(eye), Flat0(a)), Vector3.Distance(Flat0(eye), Flat0(b)));
+            return Mathf.Clamp(last + 0.3f, camNear, Mathf.Max(camNear, nearer - 0.8f));
+        }
+
+        static Vector3 Flat0(Vector3 v) => new Vector3(v.x, 0f, v.z);
 
         public void Shake(float amplitude, float duration)
         {

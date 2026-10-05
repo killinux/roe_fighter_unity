@@ -99,7 +99,7 @@ namespace RoeFighter.Fight
                                      left ? new Vector2(0.28f, 0.11f) : new Vector2(0.97f, 0.11f));
             }
             timer = Label("timer", "60", 64, TextAnchor.MiddleCenter, new Vector2(0.455f, 0.875f), new Vector2(0.545f, 0.985f));
-            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth   F5: skirt   F6: clothes burst   F7: select",
+            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth   F5: skirt   F6: clothes burst   F7: select   F8: camera",
                          20, TextAnchor.LowerCenter, new Vector2(0.2f, 0.0f), new Vector2(0.8f, 0.04f));
             help.gameObject.SetActive(showHelp && !drawnByCamera);
             BuildSelect(game);
@@ -112,7 +112,12 @@ namespace RoeFighter.Fight
             message.resizeTextForBestFit = true;
             message.resizeTextMinSize = 48;
             message.resizeTextMaxSize = 120;
-            notice = Label("notice", "", 26, TextAnchor.MiddleCenter, new Vector2(0.15f, 0.79f), new Vector2(0.85f, 0.86f));
+            notice = Label("notice", "", 22, TextAnchor.UpperCenter, new Vector2(0.1f, 0.63f), new Vector2(0.9f, 0.865f));
+            notice.horizontalOverflow = HorizontalWrapMode.Wrap;
+            notice.verticalOverflow = VerticalWrapMode.Truncate;
+            notice.resizeTextForBestFit = true;
+            notice.resizeTextMinSize = 10;
+            notice.resizeTextMaxSize = 22;
             Refresh(game);
         }
 
@@ -232,11 +237,13 @@ namespace RoeFighter.Fight
             message.text = game.message;
             if (notice != null)
             {
-                notice.text = game.Notice;
-                // on the select screen along the top edge (below it: the title and whose turn it is)
+                // in the match one setting a line under the timer; on the select screen one line along the top edge (below
+                // it: the title and whose turn it is); the type shrinks to fit (it ran off both sides at 1280 wide)
+                notice.text = selecting ? game.Notice.Replace("\n", "    ") : game.Notice;
                 var rt = notice.rectTransform;
-                rt.anchorMin = selecting ? new Vector2(0.05f, 0.962f) : new Vector2(0.15f, 0.79f);
-                rt.anchorMax = selecting ? new Vector2(0.95f, 0.998f) : new Vector2(0.85f, 0.86f);
+                rt.anchorMin = selecting ? new Vector2(0.05f, 0.962f) : new Vector2(0.1f, 0.63f);
+                rt.anchorMax = selecting ? new Vector2(0.95f, 0.998f) : new Vector2(0.9f, 0.865f);
+                notice.alignment = selecting ? TextAnchor.MiddleCenter : TextAnchor.UpperCenter;
             }
             if (selecting)
             {

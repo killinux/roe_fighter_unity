@@ -123,14 +123,19 @@ namespace RoeFighter.EditorTools
         {
             readonly List<MeshCollider> added = new List<MeshCollider>();
             readonly HashSet<Collider> stage = new HashSet<Collider>();
+            readonly HashSet<Collider> solid = new HashSet<Collider>();
             readonly RaycastHit[] hits = new RaycastHit[64];
+            readonly Collider[] overlaps = new Collider[64];
             readonly bool backfaces;
 
-            public Sight()
+            /// <param name="exclude">Renderers under these are not stage (the fighters, their weapons).</param>
+            public Sight(ICollection<Transform> exclude = null)
             {
                 foreach (var r in Object.FindObjectsByType<MeshRenderer>(FindObjectsInactive.Exclude, FindObjectsSortMode.None))
                 {
                     if (!r.enabled)
+                        continue;
+                    if (exclude != null && exclude.Any(t => t != null && r.transform.IsChildOf(t)))
                         continue;
                     var filter = r.GetComponent<MeshFilter>();
                     if (filter == null || filter.sharedMesh == null)
@@ -144,6 +149,9 @@ namespace RoeFighter.EditorTools
                     if (collider.sharedMesh == null)
                         collider.sharedMesh = filter.sharedMesh;
                     stage.Add(collider);
+                    // what one cannot see through: drawn opaque or cut out (glass, light shafts and fog cards are drawn see-through)
+                    if (r.sharedMaterials.Any(m => m != null && m.renderQueue <= (int)RenderQueue.GeometryLast))
+                        solid.Add(collider);
                 }
                 backfaces = Physics.queriesHitBackfaces;
                 Physics.queriesHitBackfaces = true;     // a prop seen from behind hides a fighter just as well
@@ -151,19 +159,40 @@ namespace RoeFighter.EditorTools
             }
 
             public int Count => stage.Count;
+            public int SeeThrough => stage.Count - solid.Count;
+
+            /// <summary>Does solid stage geometry pass through the box (its surface: a box wholly inside a thick wall is not seen)?</summary>
+            public bool Occupied(Vector3 centre, Vector3 halfExtents)
+            {
+                int n = Physics.OverlapBoxNonAlloc(centre, halfExtents, overlaps, Quaternion.identity, ~0, QueryTriggerInteraction.Ignore);
+                for (int i = 0; i < n; i++)
+                    if (solid.Contains(overlaps[i]))
+                        return true;
+                return false;
+            }
 
             /// <summary>Is there stage geometry between the two points?</summary>
-            public bool Blocked(Vector3 from, Vector3 to, float slack = 0.05f)
+            public bool Blocked(Vector3 from, Vector3 to, float slack = 0.05f) => Blocker(from, to, out _, slack) != null;
+
+            /// <summary>The first piece of stage geometry between the two points and where the line meets it (null: none).</summary>
+            public Collider Blocker(Vector3 from, Vector3 to, out Vector3 point, float slack = 0.05f)
             {
+                point = default;
                 var d = to - from;
                 float length = d.magnitude - slack;
                 if (length <= 0f)
-                    return false;
+                    return null;
                 int n = Physics.RaycastNonAlloc(from, d.normalized, hits, length, ~0, QueryTriggerInteraction.Ignore);
+                Collider first = null;
+                float nearest = float.MaxValue;
                 for (int i = 0; i < n; i++)
-                    if (stage.Contains(hits[i].collider))
-                        return true;
-                return false;
+                    if (stage.Contains(hits[i].collider) && hits[i].distance < nearest)
+                    {
+                        nearest = hits[i].distance;
+                        first = hits[i].collider;
+                        point = hits[i].point;
+                    }
+                return first;
             }
 
             /// <summary>The highest stage surface under a point, looking down from <paramref name="above"/> metres over it.</summary>

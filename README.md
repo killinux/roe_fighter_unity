@@ -7,7 +7,7 @@
 从游戏里取出的素材和买来的插件都不进这个仓库（见 `.gitignore`）：`Assets/ROE`、`Assets/DOA`、`Assets/VDF`、`Assets/RoeFighter/Generated`、`Assets/UFE*`、`Assets/MagicaCloth2`、`_work`、`out`。
 这些素材来自商业游戏（ROE、DOA6、DOA5LR、Vindictus）和付费插件（UFE 2、Magica Cloth 2），只在本机自己用。
 
-## 现状（2026-10-04）
+## 现状（2026-10-05）
 
 | 内容 | 状态 |
 |---|---|
@@ -25,7 +25,7 @@
 | 手臂和腿：皮肤挂在辅助骨上，从游戏动作里拟合出辅助骨怎么跟随肢体，动捕动作时实时驱动；动捕着地；走路不滑；高跟鞋站稳（鞋跟和前掌都着地） | 完成（10-02 下午，高跟鞋 10-02 晚），见"手臂和腿"一节；对比图 `out\feet_fix_1002.jpg` |
 | 布料：裙子、头发、链子、胸的骨骼布料（移植自 bone_cloth 插件，照 Magica Cloth 2） | 完成，基础动作时生效；对比视频 `out\bone_cloth_demo.mp4`；10-02 晚裙子按游戏站姿垂下（之前翘出 45°），对比图 `out\skirt_fix_1002.jpg`。调研 Magica Cloth 2（`docs/magica-cloth-2.md`）后照它的做法重做：裙子跟腿走、一片布连成网，F4 切换新版 / 旧版 / 关，以后可接 Magica；对比视频 `out\skirt_magica_style.mp4`；之后又修了屁股附近后片翘起（裙子的基准改成游戏站姿），对比视频 `out\skirt_rest_compare.mp4`；10-03 裙子改成自然下垂、贴着身体（F5 可切回），对比视频 `out\skirt_drape_compare.mp4` |
 | 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 两个包：`bandai1`（默认）和开源动捕做的 `accad_male2`（拳击架势、步法、前后腿回旋踢，10-02 晚）；对比视频 `out\motion_packs_demo.mp4`，用新包的整场对打 `out\fight_cpu_match_accad.mp4` |
-| 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-02 打包），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
+| 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-05 重新打包：含 Fiona 自己的动作、剑和盾、新镜头），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | g04 的普通攻击换成不知火舞（DOA6）的四招；扇子缩到 0.7 倍 | 完成（10-03），见"不知火舞的普通攻击"一节；对比视频 `out\g04_mai_strikes.mp4`，扇子 `out\weapon_size\g04_fan_sizes.png` |
 | UFE 2（用户 10-04 下载的 Source v2.7.0a） | 框架没换，格斗逻辑还是自己的；它演示角色的动作做成三个动作包 `ufe_kyle`、`ufe_ethan`、`ufe_bot`（F3），Fiona 的受击、倒地、起身、开场、胜利、三个技能也用它的。见"动作包 > 第三组：UFE 2 的演示角色"；对比视频 `out\ufe_packs_demo.mp4` |
 | b10（Kart）、g05（Luf 女神）加入战斗：模型、动作、技能和特效、音效，都能爆衣到全身 | 完成（10-03 晚），见"新角色：b10 和 g05"一节；爆衣演示 `out\clothes_burst_demo_b10_g05.mp4`，电脑对电脑整场 `out\fight_cpu_match_b10_g05.mp4`，检查图 `out\clothes_burst\unity\b10_sheet.png`、`g05_sheet.png`。之后（10-03 晚第二轮）：g05 受击、倒地时落到地上，放技能时慢慢升空，飘带在游戏动作里也交给布料，对比 `out\g05_hover_fix.mp4`；a08、g04 的动作按新的肢体重算重转了。10-04 第三轮：g05 的脚和游戏对齐（后脚不再朝后站），对比图 `out\g05_feet_1004.jpg` |
@@ -36,7 +36,8 @@
 | 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
 | DOA5LR 式弹簧网（F4 的 `doa5lr_style`）：同样的骨链，约束换成 DOA5LR 网格布的横向、斜拉、隔一个、远程弹簧；霞的网格布在骨骼方案里也连成一片 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 11 节；对比视频 `out\doa5lr_style_compare.mp4`（g04、a08、霞的海盗裙；左：骨骼布料，中：DOA5LR 式，右：关）。比骨骼布料更贴动画、晃得少 |
 | Magica Cloth 2 插件（用户 10-04 下载）：F4 的 `magica`；a08 的长裙片、g04 的裙片用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth，霞的网格布模拟控制点 | 完成（10-04 晚），见 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节；插件不进仓库，只在播放模式里跑（另写了播放模式录像）。对比视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（a08：左 Magica、中骨骼布料、右关；霞的海盗裙：左 Magica、中 DOA6 的、右关）。a08 的裙片有了褶皱、踢腿时搭在腿上；不是默认方案 |
-| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg` |
+| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg`。10-05：剑和盾跟着游戏的动作转（举盾反击时盾朝前，胜利时反手握剑），前后对比 `out\fio005_props.jpg` |
+| 对战镜头不跑到场地外面：建场景时量出镜头能站的地方，镜头只站在空处、看两人的视线不被挡（F8 切回旧镜头） | 完成（10-05），见 [`docs/fight-camera.md`](docs/fight-camera.md)；新旧镜头并排 `out\fight_camera_compare.mp4`，同一场电脑对电脑重录 `out\fight_cpu_match_fio005_cam.mp4`，地图 `_work\camera_room\e23_steel_s02.png` |
 
 ## 目录
 
@@ -341,6 +342,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 电脑接管 1P / 2P | F1 / F2 | |
 | 选人界面：换卡片 / 确认 / 退回（只有 1P 是人时，先选自己的，再替电脑选） | A、D / J（或回车、空格）/ K | ←、→ / 小键盘 1 / 小键盘 2 |
 | 回选人界面（比赛结束后按回车也回到这里，上一场的两人还选着，确认两次就是再来一场） | F7 | |
+| 镜头：避开场景 / 旧镜头（只管构图，会跑到栅栏外面；`ROEFighter.exe -roeCamAvoid 0` 以旧镜头启动） | F8 | |
 
 结构（`Assets\RoeFighter\Runtime\Fight\`）：
 
@@ -356,6 +358,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 - `FightGame`：固定每秒 60 步。每步：输入（键盘、手柄或电脑）→ 两个角色的状态机 → 摆姿势 → 命中判定（击打骨骼的球体对对手身体的竖直胶囊）
   → 技能伤害 → 特效 → 回合规则 → 镜头。打中有 4–6 帧的顿帧和小幅震屏；KO 时慢动作。三局两胜，每局 60 秒。
   技能的第一下决定结果：对手按住后退就是挡住（只掉 10%），走出了范围就是打空，否则命中；挡住或命中后对手被锁住直到技能结束（游戏的演法）。
+  镜头从两人连线的侧面拍，离得够远装下两人；10-05 起只站在场地的空处、看两人的视线不被挡（`CameraRoom`，见"镜头"一节）。
 - `FightAI`：电脑对手每 0.1–0.25 秒想一次：保持距离、按距离挑招、看到对方出招时有一定概率防御或侧步、偶尔放技能、满槽放超必杀。
 - `FightHud`：血条（掉血有红色的滞后条）、计时、回合标记、能量槽、中间的大字（ROUND 1 / FIGHT! / K.O. / 谁赢）。录像时由镜头画进画面。
 - `RoeFightProbe`（编辑器）：查问题用的几个探针——每个角色在画什么、时间轴绑定在哪、同一时刻"可播放图"和"直接采样"的姿势对比、技能全程的腿长；
@@ -1210,7 +1213,7 @@ python tools\cloth_demo_video.py _work\cloth_demo out\fio005_physics_back.mp4 --
   - 量招用剑尖，剑尖速度 ≥ 5 m/s 算有效时间。
   - 技能的出招时机按剑尖相对身体的速度（≥ 20 m/s）找，开头 0.1 秒不算。
 - **招式包新功能**（所有包都能用）：攻击可以只截一段（`from` / `to`），也可以指定击打骨骼（`bone`）。
-- **问题**：她的招式前冲大（1–2.5 米），打着打着容易到场边，镜头跑到栅栏外面被挡住。下次处理：镜头留在场内，或挡住的东西淡出。
+- **问题**：她的招式前冲大（1–2.5 米），打着打着容易到场边，镜头跑到栅栏外面被挡住。10-05 解决，见"镜头：不跑到场地外面"一节。
 
 ```powershell
 python tools\vdf_anims.py export                                                        # 191 段 .psa
@@ -1219,6 +1222,23 @@ python tools\vdf_weapons.py --export                                            
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfFighter.Build                 # 预制体（含 RoeUeRig、剑和盾）
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools\motionpacks\vdf_fiona.json'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.TwistStills -Graphics   # 前臂扭转骨：不驱动 / 驱动
+```
+
+#### 剑和盾跟着游戏的动作走（10-05）
+
+用户："继续"（上一轮留下的第三件事）。细节见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md) 第 4 节"剑和盾"。
+
+- 人形动作只有肌肉曲线，剑和盾挂的 `weapon_r`、`shield_l` 没有，上一版一直停在绑定姿势。
+- 游戏里盾几乎所有动作都偏 22.9°，举盾反击 73°、重装防御架势 81°、胜利欢呼 121°；剑只在欢呼、喝药这类动作里动（欢呼时反手握剑，95°）。
+- 现在转动作时把这几根骨骼每帧的局部旋转和位置也写进去（`VdfAnims.PropBones`：`weapon_r`、`weapon_l`、`shield_l`）。
+- 和游戏比，盾的朝向误差平均 26.1° → 5.5°（剩下的是前臂本身的误差），最差 127° → 17°；剑最差 95° → 0°。招式的量法不受影响。
+- 前后对比 `out\fio005_props.jpg`。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.PropStills -Graphics -Extra '-roeTag','before'   # 改之前拍
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.Import                                            # 重转动作（带剑和盾的曲线）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.PropStills -Graphics -Extra '-roeTag','after'
+python tools\vdf_prop_sheet.py _work\vdf\props out\fio005_props.jpg
 ```
 
 ### 选人界面（10-03 晚）
@@ -1231,6 +1251,33 @@ python tools\vdf_weapons.py --export                                            
 - `ROEFighter.exe -roeP1 b10 -roeP2 g05` 预先选好这两人；`-roeSelect 0` 跳过选人直接开打。
 - 演示 `out\select_screen_demo.mp4`（`RoeFightScene.SelectDemo`：批处理里没有键盘，用脚本按同样的步骤换卡片）：1P 从 INASE 换到 LUF（两边都是 LUF 时复制了一份）再到 KART、确认，替电脑从 LUF 换到 INASE 再到 GODDESS LUF、确认，开打。
 - 坑：拍头像时开了景深，而影棚的后期设置文件（`Settings\RoeStudioVolume.asset`）比赛场景也在用，焦点 1.45 米的景深就留在了比赛里，exe 整个画面是虚的（批处理录像没受影响）。现在头像不开景深。
+
+### 镜头：不跑到场地外面（10-05）
+
+用户："继续"（上一轮留下的第一件事）。细节见 [`docs/fight-camera.md`](docs/fight-camera.md)。
+
+- **问题**：旧镜头只管构图（两人连线的侧面，离中点 3.6–9.5 米），不管场地。
+  - Fiona 的招式前冲大，对局漂到擂台边；两人连线顺着围绳时，镜头就在围绳外面往里拍。
+  - 量下来，Fiona 对 a08 那场 31.6% 的帧至少有一人的头、胸或胯被围绳挡住，最长一段连续 38 秒。
+- **地图**（`CameraRoom`，建场景时量，存在场景里）：48 米见方、0.25 米一格。
+  - 每格做一次盒子重叠检测，看地面以上 0.3–2.6 米有没有场景物体；再算每格离最近的物体多远。
+  - 擂台的地图 `_work\camera_room\e23_steel_s02.png`。
+- **挑位置**（`FightGame.Frame`，每一步）：依次试正面 → 左右绕开（最多 60°）→ 拉近（视角放大，两人在画面里大小不变）→ 换到两人另一侧（直接切镜头）。
+  - 条件：离场景物体至少 0.6 米，到两人的视线不穿过任何东西。
+  - 平滑移动的路上如果被挡，直接跳到选好的位置。
+  - 全都不行时，把近裁面推过挡在中间的东西（测的几场里没用上）。
+- **效果**：会打到场边的三场，被挡的帧 31.6% → 0.2%、9.9% → 0.3%、20.4% → 2.8%；一直在中间打的两场，新旧都是 0%。
+  - 剩下的都是有人被打倒、躺在擂台边上：身体伸到围绳下面，或头贴着地面、在擂台 10 厘米高的边沿外，镜头站在场内哪里都会隔着。
+- **开关**：游戏里 F8；`ROEFighter.exe -roeCamAvoid 0` 以旧镜头启动。全部参数在场景里 `Fight` 物体的 `FightGame` 上，有默认值（文档第 4 节）。
+- **检查**：录像和 `RoeFightScene.CameraStats` 每帧从镜头向两人的头、胸、胯打 6 条射线，用场景网格本身检测，不用地图，
+  日志写出被挡的时间段和挡住的物体。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics                    # 重建场景，顺带量地图
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.CameraStats -Graphics -Extra '-roeMatches','fio005:a08:2,g05:fio005:3'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','fio005','-roeP2','a08','-roeSeconds','120','-roeCamAvoid','0','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_camold2'
+python tools\camera_compare_video.py _work\fight_camold2 _work\fight_camnew2 out\fight_camera_compare.mp4 --to 70
+```
 
 ## 已知问题和待定的事
 
@@ -1298,7 +1345,7 @@ python tools\vdf_weapons.py --export                                            
   - 海盗裙：网格布的 46 个参数字只读了 7 个；臀部软体（标志 0x80）怎么读未定，站架里顶在每轴上限；骨骼布料方案里裙子的列和列之间没连起来。
 
   见 `docs/doa-physics.md` 第 9 节。
-- KO 镜头不避墙：KO 发生在场地边上时，镜头会在铁栅栏后面（`out\kas_fight_test.mp4` 第 57 秒）。
+- ~~KO 镜头不避墙：KO 发生在场地边上时，镜头会在铁栅栏后面（`out\kas_fight_test.mp4` 第 57 秒）。~~ 10-05 解决，见"镜头：不跑到场地外面"一节。
 - exe 开局要等约 17 秒才出画面（10-03 只有四个 ROE 角色时不到 12 秒）：名单上的人都在场景里初始化，两个霞各有 1373 根骨、60 块网格。时间具体花在哪还没量。
 
 ## 环境
