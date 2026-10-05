@@ -27,7 +27,7 @@
 | 动作包：基础动作可以整套替换（F3 切换，买来的人形动作写个 JSON 就能导入） | 两个包：`bandai1`（默认）和开源动捕做的 `accad_male2`（拳击架势、步法、前后腿回旋踢，10-02 晚）；对比视频 `out\motion_packs_demo.mp4`，用新包的整场对打 `out\fight_cpu_match_accad.mp4` |
 | 能玩的格斗：移动、侧步、四个攻击键、防御、受击、倒地、三个技能（含超必杀）、能量槽、回合、计时、HUD、电脑对手、场地自带的战斗音乐 | 能玩：`out\ROEFighter\ROEFighter.exe`（10-05 重新打包：含 Fiona 自己的动作、剑和盾、新镜头），或在编辑器里打开场景按 Play；电脑对电脑的录像 `out\fight_cpu_match_1002b.mp4` |
 | g04 的普通攻击换成不知火舞（DOA6）的四招；扇子缩到 0.7 倍 | 完成（10-03），见"不知火舞的普通攻击"一节；对比视频 `out\g04_mai_strikes.mp4`，扇子 `out\weapon_size\g04_fan_sizes.png` |
-| UFE 2（用户 10-04 下载的 Source v2.7.0a） | 框架没换，格斗逻辑还是自己的；它演示角色的动作做成三个动作包 `ufe_kyle`、`ufe_ethan`、`ufe_bot`（F3），Fiona 的受击、倒地、起身、开场、胜利、三个技能也用它的。见"动作包 > 第三组：UFE 2 的演示角色"；对比视频 `out\ufe_packs_demo.mp4` |
+| UFE 2（用户 10-04 下载的 Source v2.7.0a） | 框架没换，格斗逻辑还是自己的；它演示角色的动作做成三个动作包 `ufe_kyle`、`ufe_ethan`、`ufe_bot`（F3），Fiona 的受击、倒地、起身、开场、胜利、三个技能也用它的。见"动作包 > 第三组：UFE 2 的演示角色"；对比视频 `out\ufe_packs_demo.mp4`。10-05：全部 20 个站立普通攻击放到 a08 身上给你挑，逐招视频 `out\a08_ufe_normals.mp4`，检查图 `out\a08_ufe_moves_sheet.jpg`；出招判定时间改用 UFE 自己的有效帧 |
 | b10（Kart）、g05（Luf 女神）加入战斗：模型、动作、技能和特效、音效，都能爆衣到全身 | 完成（10-03 晚），见"新角色：b10 和 g05"一节；爆衣演示 `out\clothes_burst_demo_b10_g05.mp4`，电脑对电脑整场 `out\fight_cpu_match_b10_g05.mp4`，检查图 `out\clothes_burst\unity\b10_sheet.png`、`g05_sheet.png`。之后（10-03 晚第二轮）：g05 受击、倒地时落到地上，放技能时慢慢升空，飘带在游戏动作里也交给布料，对比 `out\g05_hover_fix.mp4`；a08、g04 的动作按新的肢体重算重转了。10-04 第三轮：g05 的脚和游戏对齐（后脚不再朝后站），对比图 `out\g05_feet_1004.jpg` |
 | 选人界面：四个角色的头像卡片，选中的两人站在场上；两边选同一个角色时复制一份 | 完成（10-03 晚），见"选人界面"一节；演示 `out\select_screen_demo.mp4` |
 | Luffee（g04、g05）的站架也换成不知火舞的（DOA6 00000） | 完成（10-03 晚），对比视频 `out\luffee_mai_stance.mp4`（左：动作包的拳击架势；右：不知火舞的架势和四招） |
@@ -795,6 +795,42 @@ python tools\ufe_package.py extract "E:\Downloads\Universal Fighting Engine 2 So
 - 坑：`RoeMotionPacks.Sheet` 一次编辑器更新里连拍好几张时，蒙皮只算第一次，每张都是第一帧的姿势；现在拍之前打开 `forceMatrixRecalculationPerRender`。
 
 对比视频 `out\ufe_packs_demo.mp4`：Fiona 和 a08 用同一套按键，左起 Bandai（原来的默认）、Robot Kyle、Ethan、Mecanim Bot。
+
+#### 全部站立普通攻击放到 Inase 身上（10-05）
+
+用户问："普通攻击可以用在 inase 的身上看看效果"。上面三个包每个只占 A–D 四个键，这里把 UFE 演示角色的站立普通攻击全放到 a08 身上，供挑选：
+
+- 候选包 `tools/motionpacks/ufe_normals.json`，20 招：
+  - Robot Kyle 6 招：轻拳、轻脚、重拳、重脚，加两个"前 + 键"的指令普通技（踹飞、后空翻踢）；
+  - Ethan 6 招：N1、N2、N2 追加、N3、↘ + 中（挑空）、→ + 重；
+  - Mecanim Bot 6 招：轻、中、重拳和轻、中、重脚；
+  - Mike 2 招：中拳、中脚（他的轻、重攻击和 Kyle 是同一份动作数据）。
+- 没放进来的：
+  - 蹲着和跳起来的普通攻击、投技、必杀技：格斗逻辑没有蹲、跳、投；
+  - Ellen：她是 2D 精灵动画，没有骨骼动作。
+- 每招的速度、段位、浮空都照 UFE 的招式表。
+- "能打中的时间"也照 UFE 的帧数据，写在 JSON 的 `hit` 里：
+  - UFE 的帧是每秒 60 帧、已经算上播放速度的，所以第 f 帧 = 片段的 f × 速度 / 60 秒；
+  - 原来按"手脚往前伸到最远的 85%"去量，碰到往上踢的招就错了：Kyle 的后空翻踢量到的是起跳前的那一下；
+  - 有了 `hit`，导入器（`RoeMotionPacks.Measure`）只在这段时间里找伸得最远的手或脚。
+  - Mecanim Bot 的轻脚例外：UFE 表里的帧数和动作长度对不上，数据本身就这样。
+- JSON 里的 `who` / `zh` / `ufe` / `ufeFrames` 是给人和视频看的备注，导入器不读。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/ufe_normals.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','ufe_normals','-roeChars','a08'
+python tools\strike_sheet.py out\motion_sheets\ufe_normals out\a08_ufe_moves_sheet.jpg --pack tools\motionpacks\ufe_normals.json --tile 180
+# 逐招录像：真实的格斗逻辑里，她用场景当前动作包的站架，这一招临时放在 A 键上，按一次
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','ufe_normals','-roeChars','a08'
+python tools\strike_demo_video.py _work\strike_takes out\a08_ufe_normals.mp4
+```
+
+- 检查图 `out\a08_ufe_moves_sheet.jpg`：每招一行 8 帧，左边写着谁的招、用哪只手或脚、够多远、什么时候能打中。
+- 视频 `out\a08_ufe_normals.mp4`（72 秒）：
+  - 每招先按实际速度放一遍，再半速慢放一遍；
+  - 能打中的那几帧右下角亮红色"能打中"。
+- `StrikeTakes` 每一帧都拍（每秒 60 帧，慢放才不卡），镜头比别的演示远一点（4.6 米），高踢的脚不出画。
+- 挑中的招可以做成她自己的招式（`strikesOnly` 的包，像 g04 的不知火舞）。
 
 ### 爆衣：衣服按件掉，掉完是全身（10-03）
 

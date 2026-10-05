@@ -27,7 +27,8 @@ namespace RoeFighter.EditorTools
     ///   Also: "bvh" (motion capture to convert first, RoeMocap.Source), "strikesOnly" (a character's own strikes - no
     ///   stance or walks, not in the F3 list; FighterRig.strikePack), "measureOn" (the fighter the strikes are measured
     ///   on, default a08), and per strike "inPlace" (its step forward is taken out of the clip and the fight moves the
-    ///   fighter along: Move.travel).  Example: tools/motionpacks/doa6_mai.json (g04's strikes from DOA6's Mai).
+    ///   fighter along: Move.travel) and "hit" (clip seconds it can hit in, from the source's own frame data: UFE's active
+    ///   frames).  Example: tools/motionpacks/doa6_mai.json (g04's strikes from DOA6's Mai).
     ///   Clips are found by name (case does not matter; "file.fbx:clip" picks one file).  Locomotion
     ///   clips are copied as loops with their travel taken out (the fight moves the body); every strike
     ///   is measured on a fighter model: which hand or foot hits, how far it reaches, when (the frames
@@ -167,6 +168,10 @@ namespace RoeFighter.EditorTools
                                                 // holding a blade (RoeBlade, Fiona's sword) is measured by the blade's tip
             public float from, to;              // seconds of the clip to keep (to 0: to its end) - a game's attack with its long
                                                 // way back to idle (Vindictus: the swing is the first second of 2.6)
+            public float[] hit;                 // seconds of the (kept) clip, at speed 1, in which it can hit - the source's own
+                                                // frame data (UFE's active frames); the hand or foot is the one farthest out in
+                                                // them.  Empty: measured (85% of the farthest reach - wrong for a kick that
+                                                // goes up: Kyle's flip kick measured its wind-up)
             public float speed = 1f, hitstun, blockstun, push, radius, meter;
             public bool inPlace;                // the clip's travel is taken out and the fight moves the fighter along instead
                                                 // (strikes that step in: DOA's lunge 0.6-0.7 m, which would jump back at the end)
@@ -270,7 +275,7 @@ namespace RoeFighter.EditorTools
                 // the part asked for; measured as it is (reach and timing with its own step), then copied - in place if asked
                 if (s.from > 0f || s.to > 0f)
                     src = Trim(src, s.from, s.to);
-                var info = Measure(src, model, name, s.bone);
+                var info = Measure(src, model, name, s.bone, s.hit != null && s.hit.Length == 2 ? new Vector2(s.hit[0], s.hit[1]) : (Vector2?)null);
                 var clip = Copy(src, $"{outDir}/{name}.anim", loop: false, inPlace: s.inPlace);
                 Add(pack, name, clip, false);
                 var d = ButtonDefaults.TryGetValue(s.button, out var v) ? v : ButtonDefaults["B"];
@@ -545,15 +550,16 @@ namespace RoeFighter.EditorTools
             return clip;
         }
 
-        /// <summary>
-        /// A strike measured on a fighter model, the way RoeMocap measures the motion capture: the hand or
-        /// foot that gets farthest in front of where the hips started, how far, how high, and the frames
-        /// it is within 85% of that.
-        /// </summary>
         /// <summary>Metres per second at which a blade's tip cuts (Measure: a sword strike's active frames).</summary>
         public static float BladeSpeed = 5f;
 
-        public static RoeMocap.StrikeInfo Measure(AnimationClip clip, GameObject model, string name, string bone = null)
+        /// <summary>
+        /// A strike measured on a fighter model, the way RoeMocap measures the motion capture: the hand or
+        /// foot that gets farthest in front of where the hips started, how far, how high, and the frames
+        /// it is within 85% of that.  window (clip seconds): the source's own active frames - the hand or foot
+        /// farthest out within them, and they are when it can hit.
+        /// </summary>
+        public static RoeMocap.StrikeInfo Measure(AnimationClip clip, GameObject model, string name, string bone = null, Vector2? window = null)
         {
             var go = (GameObject)PrefabUtility.InstantiatePrefab(model);
             go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
@@ -587,9 +593,16 @@ namespace RoeFighter.EditorTools
             }
             RoeCapture.EndPosing();
             UnityEngine.Object.DestroyImmediate(go);
-            int best = 0, peak = 0;
+            // the frames searched: all, or the source's active ones
+            int lo = 0, hi = frames - 1;
+            if (window.HasValue)
+            {
+                lo = Mathf.Clamp(Mathf.FloorToInt(window.Value.x * 60f), 0, frames - 1);
+                hi = Mathf.Clamp(Mathf.CeilToInt(window.Value.y * 60f), lo, frames - 1);
+            }
+            int best = 0, peak = lo;
             for (int k = 0; k < bones.Length; k++)
-                for (int f = 0; f < frames; f++)
+                for (int f = lo; f <= hi; f++)
                     if (reach[k, f] > reach[best, peak])
                     {
                         best = k;
@@ -597,13 +610,21 @@ namespace RoeFighter.EditorTools
                     }
             float max = reach[best, peak];
             int a = peak, b = peak;
-            while (a > 0 && reach[best, a - 1] >= 0.85f * max)
-                a--;
-            while (b < frames - 1 && reach[best, b + 1] >= 0.85f * max)
-                b++;
+            if (window.HasValue)
+            {
+                a = lo;
+                b = hi;
+            }
+            else
+            {
+                while (a > 0 && reach[best, a - 1] >= 0.85f * max)
+                    a--;
+                while (b < frames - 1 && reach[best, b + 1] >= 0.85f * max)
+                    b++;
+            }
             // a blade cuts while it swings: from the first to the last frame its tip moves at BladeSpeed or more (the fight
             // tests where the blade is, Fighter.ActiveHit) - a spinning cut is far out only for a moment
-            if (bladeHand == bones[best])
+            if (bladeHand == bones[best] && !window.HasValue)
             {
                 int first = -1, last = -1;
                 for (int f = 1; f < frames; f++)
