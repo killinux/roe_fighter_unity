@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 FFMPEG = r'D:\Program Files\ffmpeg\bin\ffmpeg.exe'
 FONT = r'C:\Windows\Fonts\msyh.ttc'
-STEPS = {'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '侧步'}
+STEPS = {'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '侧步', 'skill 1': '技能 1（游戏动作）', 'skill 2': '技能 2（游戏动作）'}
 MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回旋踢', 'slash': '挥砍', 'hook': '勾拳',
          'uppercut': '上勾拳', 'roundhouse_lead': '前腿回旋踢', 'front_kick': '前踢', 'side_kick': '侧踢', 'roundhouse': '后腿回旋踢', 'low_kick': '低踢',
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
@@ -44,6 +44,8 @@ TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '�
           ('eve37', 'stellar'): '剑星自己的（Kawaii + Control Rig）',
           ('eve37', 'stellar_norig'): '剑星的 Kawaii，不跑 Control Rig',
           ('mai', 'doa6'): 'DOA6 自己的（软体、网格布、骨链）',
+          'keys': '游戏手 K 的裙子（标准答案）', 'mc2_nokeys': 'Magica Cloth 2（不用关键帧）',
+          'ours_nokeys': '我们的骨骼布料（不用关键帧）', 'legs_nokeys': '只跟着腿（不模拟、不用关键帧）',
           'bandai1': 'Bandai 动捕（原来的默认）', 'accad_male2': 'ACCAD 开源动捕',
           'ufe_kyle': 'UFE 2：Robot Kyle', 'ufe_ethan': 'UFE 2：Ethan', 'ufe_bot': 'UFE 2：Mecanim Bot'}
 

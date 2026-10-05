@@ -25,6 +25,8 @@ namespace RoeFighter.EditorTools
     /// A setup may carry Magica mesh settings after a colon ("magica:edge=1;gravity=3", RoeMagicaCloth.MeshSettings): its
     /// take is named after them.  Every take is also measured the same way whatever moves the cloth (Meter): the numbers
     /// per part of the script go to the log and metrics.txt.  -roeNoFrames: numbers only, nothing rendered.
+    /// -roeScript skills and -roeSkirtKeys off as RoeClothDemo has them (her game clips, the skirt left to the solver and
+    /// measured against the keys).
     /// </summary>
     [InitializeOnLoad]
     public static class RoeClothPlayDemo
@@ -33,9 +35,9 @@ namespace RoeFighter.EditorTools
         class Job
         {
             public string[] chars, cloths;
-            public string outDir, view, stage;
+            public string outDir, view, stage, script;
             public int width, height;
-            public bool done, noFrames;
+            public bool done, noFrames, ignoreKeys;
         }
 
         const string Key = "RoeFighter.RoeClothPlayDemo";
@@ -57,6 +59,8 @@ namespace RoeFighter.EditorTools
                 stage = RoeCapture.Arg("-roeStage", "e23_steel_s02"),
                 width = int.Parse(size[0]), height = int.Parse(size[1]),
                 noFrames = Environment.GetCommandLineArgs().Contains("-roeNoFrames"),
+                script = RoeCapture.Arg("-roeScript", "moves"),
+                ignoreKeys = RoeCapture.Arg("-roeSkirtKeys", "on") == "off",
             };
             SessionState.SetString(Key, JsonUtility.ToJson(job));
             ShaderUtil.allowAsyncCompilation = false;
@@ -115,6 +119,7 @@ namespace RoeFighter.EditorTools
             if (game.hud != null)
                 game.hud.gameObject.SetActive(false);
             Time.captureFramerate = 60;
+            FighterRig.IgnoreSkirtKeys = job.ignoreKeys;
             Directory.CreateDirectory(job.outDir);
             take = -1;
             running = true;
@@ -151,7 +156,7 @@ namespace RoeFighter.EditorTools
             int total = current.chars.Length * current.cloths.Length;
             if (take >= total)
             {
-                File.WriteAllText(Path.Combine(current.outDir, "script.txt"), string.Join("\n", RoeClothDemo.Script.Select(x =>
+                File.WriteAllText(Path.Combine(current.outDir, "script.txt"), string.Join("\n", Script.Select(x =>
                     $"{x.from.ToString("F1", CultureInfo.InvariantCulture)} {x.what}")));
                 File.WriteAllText(Path.Combine(current.outDir, "takes.txt"), string.Join("\n", takes));
                 File.WriteAllText(Path.Combine(current.outDir, "metrics.txt"), metrics.ToString());
@@ -189,6 +194,8 @@ namespace RoeFighter.EditorTools
             me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 5.5f;
             me.foe.Place();
             me.rig.ResetCloth();
+            foreach (var rig in game.rigs)
+                rig.ResetSkirtKeyError();
             string about = $"{me.rig.ClothTitle}; {me.rig.ClothReport}";
             takes.Add($"{id}\t{label}\t{about}\t" + string.Join("|", (me.moves ?? game.moves).Select(m => $"{m.button}={m.name}")));
             log.Append($"\n[ROE]   {id} {label}: {about}");
@@ -235,6 +242,7 @@ namespace RoeFighter.EditorTools
         {
             running = false;
             Time.captureFramerate = 0;
+            FighterRig.IgnoreSkirtKeys = false;
             Hook(false);
             if (current != null)
             {
@@ -291,9 +299,10 @@ namespace RoeFighter.EditorTools
                 meter = new Meter(me.rig, meshes);
             }
             float t = step / 60f;
-            if (t > RoeClothDemo.Length)
+            if (t > Length)
             {
-                log.Append($"\n[ROE]   {me.rig.id} {label}: {shot} frames to {dir}; after: {me.rig.ClothReport}");
+                log.Append($"\n[ROE]   {me.rig.id} {label}: {shot} frames to {dir}; after: {me.rig.ClothReport}" +
+                           (FighterRig.IgnoreSkirtKeys ? $"; skirt against the game's keys: {me.rig.SkirtKeyError}" : ""));
                 if (meter != null)
                 {
                     log.Append(meter.Report($"[ROE]     {me.rig.id} {label}"));
@@ -305,9 +314,11 @@ namespace RoeFighter.EditorTools
                 return;
             }
             var input = default(FighterInput);
-            foreach (var (from, to, inp, _) in RoeClothDemo.Script)
+            foreach (var (from, to, inp, _) in Script)
                 if (from == to ? Mathf.Abs(t - from) < 0.5f / 60f : t >= from && t < to)
                     input = inp;
+            if (input.s1 || input.s2 || input.s3)
+                me.meter = 100f;            // a skill whatever the meter
             var cam = game.cam;
             var camRight = cam.transform.right;
             camRight.y = 0f;
@@ -358,10 +369,15 @@ namespace RoeFighter.EditorTools
             shot++;
         }
 
+        static (float from, float to, FighterInput input, string what)[] Script =>
+            current != null && current.script == "skills" ? RoeClothDemo.SkillScript : RoeClothDemo.Script;
+
+        static float Length => current != null && current.script == "skills" ? RoeClothDemo.SkillLength : RoeClothDemo.Length;
+
         static string PartAt(float t)
         {
-            string what = RoeClothDemo.Script[0].what;
-            foreach (var x in RoeClothDemo.Script)
+            string what = Script[0].what;
+            foreach (var x in Script)
                 if (t >= x.from - 0.5f / 60f)
                     what = x.what;
             return what;

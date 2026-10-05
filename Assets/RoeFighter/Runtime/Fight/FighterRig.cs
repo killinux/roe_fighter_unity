@@ -586,6 +586,11 @@ namespace RoeFighter.Fight
                     w.localScale *= weaponScale;
             StepLinger(dt);
             float mocap = 1f - gameWeight;
+            // (IgnoreSkirtKeys: the skirt as under motion capture in the game's own clips too, its keys kept to measure against)
+            float skirtMocap = IgnoreSkirtKeys ? 1f : mocap;
+            bool measureKeys = IgnoreSkirtKeys && gameWeight > 0.99f && skirtRig != null && skirtRig.Ready && hips != null;
+            if (measureKeys)
+                KeepSkirtKeys();
             // the ankle as stiff as her shoe (bindFeet): the foot and toes at their bind rotations against the shin, before
             // the feet are stood on the floor
             if (bindFeet && grounded && bindFoot.Length == 2 && bindToe.Length == 2)
@@ -683,12 +688,12 @@ namespace RoeFighter.Fight
             // the panels' roots then sit where the skinned skirt expects them.
             // (not under a solver that hangs the skirt as its own game does: Stellar Blade's Eve 37 - her skirt rig reads the
             // panels' roots where the animation has them)
-            if (hipCloth != null && mocap > 0f && !NoHipCloth && !(backend != null && backend.ownSkirt))
+            if (hipCloth != null && skirtMocap > 0f && !NoHipCloth && !(backend != null && backend.ownSkirt))
             {
                 var heading = HipHeading();
                 var turn = Quaternion.Inverse(heading) * hips.rotation * Quaternion.Inverse(pelvisRef);
                 for (int k = 0; k < hipCloth.Length; k++)
-                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * turn * hipClothRest[k], mocap);
+                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * turn * hipClothRest[k], skirtMocap);
             }
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
@@ -710,8 +715,8 @@ namespace RoeFighter.Fight
             // cloth swings from there.  On the legs' final pose.
             if (capturingGuard)
                 skirtRig.AddGuard(hips.position, HipHeading());
-            else if (skirtRig != null && skirtRig.Ready && mocap > 0f && !NoHipCloth)
-                skirtRig.Apply(hips.position, HipHeading(), mocap, dt);
+            else if (skirtRig != null && skirtRig.Ready && skirtMocap > 0f && !NoHipCloth)
+                skirtRig.Apply(hips.position, HipHeading(), skirtMocap, dt);
             else
                 skirtRig?.Idle();
             // the cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
@@ -722,9 +727,11 @@ namespace RoeFighter.Fight
                     boneCloth.skirtOnSkin = skirtRig != null && skirtRig.Ready && RoeSkirtRig.Drape > 0f;
                     boneCloth.alwaysWeight = clothWeight;     // sashes: over the game's clips too (RoeBoneCloth.AlwaysKinds)
                 }
-                cloth.Weight = (clothOverGameClips ? 1f : mocap) * clothWeight;
+                cloth.Weight = (clothOverGameClips || IgnoreSkirtKeys ? 1f : mocap) * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
+            if (measureKeys)
+                MeasureSkirtKeys();
             // a DOA6 character's visible cloth (skirt, sleeves): rebuilt from its control points, whichever solver moved them
             if (doaRig != null)
                 doaRig.RebuildSurfaces();
@@ -746,6 +753,56 @@ namespace RoeFighter.Fight
         public void ResetCloth() => cloth?.Reset();
 
         public static bool NoHipCloth;      // for checks (RoeFightProbe.SkirtSwing -roeVariant nohip)
+
+        /// <summary>
+        /// For checks (RoeClothDemo -roeSkirtKeys off): the game's own clips leave their hand-keyed skirt to the solver as
+        /// motion capture does (the skirt follows the legs, RoeSkirtRig, the cloth over every clip), and how far the skirt
+        /// ends up from the keys is measured: each skirt bone's direction in the pelvis frame against the keyed one
+        /// (SkirtKeyError, over the frames of the game's clips).
+        /// </summary>
+        public static bool IgnoreSkirtKeys;
+        double skirtKeySum;
+        int skirtKeyCount;
+        float skirtKeyMax;
+        Quaternion[] keyedSkirt = new Quaternion[0];
+        Quaternion keyedPelvis;
+
+        public string SkirtKeyError => skirtKeyCount == 0 ? "no frames of the game's clips"
+            : $"{Math.Sqrt(skirtKeySum / skirtKeyCount):F1} deg RMS (worst {skirtKeyMax:F0}) over {skirtKeyCount} bone-frames";
+
+        public void ResetSkirtKeyError()
+        {
+            skirtKeySum = 0;
+            skirtKeyCount = 0;
+            skirtKeyMax = 0f;
+        }
+
+        void KeepSkirtKeys()
+        {
+            var joints = skirtRig.joints;
+            if (keyedSkirt.Length != joints.Count)
+                keyedSkirt = new Quaternion[joints.Count];
+            for (int k = 0; k < joints.Count; k++)
+                keyedSkirt[k] = joints[k].bone.rotation;
+            keyedPelvis = hips.rotation;
+        }
+
+        void MeasureSkirtKeys()
+        {
+            var joints = skirtRig.joints;
+            var nowPelvis = Quaternion.Inverse(hips.rotation);
+            var keyPelvis = Quaternion.Inverse(keyedPelvis);
+            for (int k = 0; k < joints.Count && k < keyedSkirt.Length; k++)
+            {
+                var j = joints[k];
+                var keyed = keyPelvis * (keyedSkirt[k] * j.tailLocal);
+                var now = nowPelvis * (j.bone.rotation * j.tailLocal);
+                float a = Vector3.Angle(keyed, now);
+                skirtKeySum += a * a;
+                skirtKeyCount++;
+                skirtKeyMax = Mathf.Max(skirtKeyMax, a);
+            }
+        }
 
         /// <summary>The bone cloth, for checks (null when off or another backend).</summary>
         public RoeBoneCloth Cloth => cloth as RoeBoneCloth ?? (cloth as RoeClothRouter)?.PartFor<RoeBoneCloth>("skirt");

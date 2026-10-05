@@ -43,19 +43,49 @@ namespace RoeFighter.EditorTools
         };
         internal const float Length = 11.6f;
 
+        /// <summary>
+        /// "skills" (-roeScript skills): the fighter's own game clips, where her game keyed the skirt by hand - skill 1, then
+        /// skill 2 (the meter filled for each); with -roeSkirtKeys off the solvers move the skirt there instead of the keys,
+        /// and the log says how far from the keys it ends up (FighterRig.IgnoreSkirtKeys).
+        /// </summary>
+        internal static readonly (float from, float to, FighterInput input, string what)[] SkillScript =
+        {
+            (0.0f, 1.0f, default, "guard"),
+            (1.0f, 1.0f, new FighterInput { s1 = true }, "skill 1"),
+            (7.0f, 7.0f, new FighterInput { s2 = true }, "skill 2"),
+        };
+        internal const float SkillLength = 12.6f;
+
+        /// <summary>The demo script named by -roeScript (moves: the default; skills: SkillScript).</summary>
+        internal static ((float from, float to, FighterInput input, string what)[] script, float length) Chosen() =>
+            RoeCapture.Arg("-roeScript", "moves") == "skills" ? (SkillScript, SkillLength) : (Script, Length);
+
         [MenuItem("ROE Fighter/Fight/Bone cloth demo")]
         public static void Run()
         {
             string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "cloth_demo"));
-            // "stellar_norig": Stellar Blade's own without the outfit's control rigs (what the skirt's rig adds)
+            // "stellar_norig": Stellar Blade's own without the outfit's control rigs (what the skirt's rig adds); "legs": the
+            // skirt's animation pose that follows the legs (RoeSkirtRig) with the bone cloth at weight 0 - no simulation
+            // -roeSkirtKeys off: the game's own clips leave their skirt keys to the solver (with -roeScript skills)
+            FighterRig.IgnoreSkirtKeys = RoeCapture.Arg("-roeSkirtKeys", "on") == "off";
+            var chosen = Chosen();
             Film(outDir, RoeCapture.Arg("-roeCloths", "legacy,magica_style").Split(','), (game, variant) =>
             {
                 RoeSbPhysics.UseControlRigs = variant != "stellar_norig";
-                FighterRig.ClothBackend = variant == "stellar_norig" ? "stellar" : variant;
-                foreach (var rig in game.rigs)
+                FighterRig.ClothBackend = variant == "stellar_norig" ? "stellar" : variant == "legs" ? "magica_style" : variant;
+                foreach (var rig in (game.roster.Length > 0 ? game.roster : game.rigs).Where(r => r != null))
+                {
                     rig.useCloth = true;
-            }, (game, variant, me) => $"{me.rig.ClothTitle}; {me.rig.ClothReport}");
+                    rig.clothWeight = variant == "legs" ? 0f : 1f;
+                    rig.ResetSkirtKeyError();
+                }
+            }, (game, variant, me) => $"{me.rig.ClothTitle}; {me.rig.ClothReport}" +
+                                      (FighterRig.IgnoreSkirtKeys ? $"; skirt against the game's keys: {me.rig.SkirtKeyError}" : ""),
+               chosen.script == Script ? null : (variant, me) => (chosen.script, chosen.length));
             RoeSbPhysics.UseControlRigs = true;
+            FighterRig.IgnoreSkirtKeys = false;
+            foreach (var rig in Object.FindObjectsByType<FighterRig>(FindObjectsSortMode.None))
+                rig.clothWeight = 1f;
         }
 
         [MenuItem("ROE Fighter/Fight/Skirt rest demo")]
@@ -222,6 +252,9 @@ namespace RoeFighter.EditorTools
                     // the other one stands well away
                     me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 5.5f;
                     me.foe.Place();
+                    // the skirt measured against the game's keys from here (the intro is not filmed)
+                    foreach (var rig in game.rigs)
+                        rig.ResetSkirtKeyError();
                     string about = describe(game, variant, me);
                     // the strikes she uses: her own (strikePack) or the motion pack's
                     takes.Add($"{id}\t{variant}\t{about}\t" + string.Join("|", (me.moves ?? game.moves).Select(m => $"{m.button}={m.name}")));
@@ -266,6 +299,8 @@ namespace RoeFighter.EditorTools
                         var camRight = cam.transform.right;
                         camRight.y = 0f;
                         input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
+                        if (input.s1 || input.s2 || input.s3)
+                            me.meter = 100f;            // a skill whatever the meter
                         var inputs = new FighterInput[2];
                         inputs[who] = input;
                         game.Step(inputs);

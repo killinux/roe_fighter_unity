@@ -41,6 +41,7 @@
 | 剑星（Stellar Blade）的 Eve（7 代潜降服，`eve09`）加入战斗；物理全部用剑星自己的：胸、臀、大腿、护腕是 UE4 的 SpringBone，前发、鬓发、马尾根、领带是 KawaiiPhysics，马尾后段和半透明披风是 PhysX 刚体链，参数都从游戏包里读出来（F4 的 `stellar`，`auto` 下她默认用它；没用 Magica Cloth 2） | 完成（10-05），见 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md)；物理对比视频 `out\eve09_physics_front.mp4`、`out\eve09_physics_back.mp4`（左：剑星自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08）。动作暂时是动作包加 UFE 2 的受击和技能；她游戏里自己的动作、手肘膝盖的修正骨还没做 |
 | DOA6 的不知火舞（`mai`，默认红衣 `MAI_COS_004`）加入战斗；物理用 DOA6 自己的：胸和臀是软体，衣服的 5 块垂布和马尾是网格布，身后的长穗和肩上的绳是骨链 | 完成（10-05），见下面"不知火舞（DOA6）"一节和 [`docs/doa-physics.md`](docs/doa-physics.md) 第 12 节；物理对比视频 `out\mai_physics_front.mp4`、`out\mai_physics_back.mp4`（左：DOA6 自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_mai.mp4`（对霞）。站架和四个攻击就是 g04 用的那套 |
 | Eve 的百褶裙（Office Style，`eve37`）：裙子除了剑星的 KawaiiPhysics，还跑游戏自己的裙子 Control Rig——直接执行它的 UE 4.26 RigVM 字节码，按大腿抬起多少把各裙片转开 | 完成（10-05），见下面"Eve 的百褶裙（eve37）和裙子的 Control Rig"一节和 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md) 第 6 节；对比视频 `out\eve37_skirt_hips.mp4`（胯部特写）、`out\eve37_skirt_back.mp4`（左：剑星自己的，中：不跑 Control Rig，右：我们的骨骼布料），踢腿放大 `out\eve37_skirt_kick.jpg` |
+| Inase 的裙子调研：游戏里逐帧手 K、没有物理；拿她自己的技能当标准答案，我们的骨骼布料、Magica Cloth 2、只跟着腿都差 61–63°，游戏里长裙片大幅飘开，三种方案都贴着腿垂 | 调研完成（10-05），见下面"Inase 的裙子：游戏里怎么动的"一节和 [`docs/inase-skirt.md`](docs/inase-skirt.md)；对比视频 `out\a08_skirt_vs_keys.mp4`；改法等你定 |
 
 ## 目录
 
@@ -1600,4 +1601,26 @@ python tools\sb_physics.py Assets\SB\eve37 --outfit CH_P_EVE_37          # 连�
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve37'   # 日志里有重放和轴向检查
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','eve37','-roeCloths','stellar,stellar_norig,magica_style','-roeView','frontright','-roeOut','E:\code\othercode\roe_fighter_unity\_work\eve37_rig_frontright'
 python tools\cloth_demo_video.py _work\eve37_rig_frontright out\eve37_skirt_hips.mp4 --chars eve37 --variants stellar,stellar_norig,magica_style
+```
+
+### Inase 的裙子：游戏里怎么动的（10-05）
+
+用户 10-05："inase的裙子再看一下，先看游戏里的物理是怎么控制的，是否有比magic cloth处理更好的方式"。细节见 [`docs/inase-skirt.md`](docs/inase-skirt.md)。
+
+- **游戏里没有物理**：a08 的战斗、展示包里只有动画组件；裙子 34 根骨在她 10 个游戏动作里都是逐帧手 K（技能里后片翻起 111°）。
+  Magica Cloth 2 只在大厅里甩头发、挂件和裙子上的链子。
+- **手 K 的裙子是甩出来的**：
+  - 拿腿的姿势去预测裙子（线性、剑星式"抬腿才推"、最近邻），站着的动作能预测（5–11°），技能里都预测不了（44–58°，和不动一样）；
+  - 工具 `tools/skirt_key_models.py`。
+- **拿她自己的技能当标准答案比**：
+  - 新的检查开关 `FighterRig.IgnoreSkirtKeys`：游戏动作里也不用裙子关键帧，并量和关键帧差多少；演示用 `-roeScript skills -roeSkirtKeys off`，新对比列 `legs`；
+  - 结果：我们的骨骼布料 62.6°、Magica Cloth 2 61.4°、只跟着腿 61.3°；
+  - 视频 `out\a08_skirt_vs_keys.mp4`（左到右：游戏手 K / Magica / 我们的 / 只跟着腿）：游戏里长裙片大幅飘开，三种方案都贴着腿垂。
+  - 差在目标（我们是照"自然下垂、踢腿不甩飞"调的），不在用哪个插件。
+- **建议（等你定）**：拿游戏关键帧当目标自动调物理参数，可以和现在的"自然下垂"做成两套切换；逐个动作离线烘成关键帧可以放在后面。
+  游戏自己的动作（技能、受击、出场、胜利）一直是直接用游戏的裙子关键帧。
+
+```powershell
+python tools\skirt_key_models.py a08
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','a08','-roeCloths','magica_style,legs','-roeScript','skills','-roeSkirtKeys','off','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_skills_nokeys'
 ```
