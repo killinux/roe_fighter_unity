@@ -39,6 +39,7 @@
 | Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg`。10-05：剑和盾跟着游戏的动作转（举盾反击时盾朝前，胜利时反手握剑），前后对比 `out\fio005_props.jpg`；扭转骨、肩肘髋膝的修正骨、手指半关节照游戏自己的程序化骨骼驱动（从包里的 ControlRig 字节码解出来的），对比 `out\fio005_rig.jpg` |
 | 对战镜头不跑到场地外面：建场景时量出镜头能站的地方，镜头只站在空处、看两人的视线不被挡（F8 切回旧镜头） | 完成（10-05），见 [`docs/fight-camera.md`](docs/fight-camera.md)；新旧镜头并排 `out\fight_camera_compare.mp4`，同一场电脑对电脑重录 `out\fight_cpu_match_fio005_cam.mp4`，地图 `_work\camera_room\e23_steel_s02.png` |
 | 剑星（Stellar Blade）的 Eve（7 代潜降服，`eve09`）加入战斗；物理全部用剑星自己的：胸、臀、大腿、护腕是 UE4 的 SpringBone，前发、鬓发、马尾根、领带是 KawaiiPhysics，马尾后段和半透明披风是 PhysX 刚体链，参数都从游戏包里读出来（F4 的 `stellar`，`auto` 下她默认用它；没用 Magica Cloth 2） | 完成（10-05），见 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md)；物理对比视频 `out\eve09_physics_front.mp4`、`out\eve09_physics_back.mp4`（左：剑星自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08）。动作暂时是动作包加 UFE 2 的受击和技能；她游戏里自己的动作、手肘膝盖的修正骨还没做 |
+| DOA6 的不知火舞（`mai`，默认红衣 `MAI_COS_004`）加入战斗；物理用 DOA6 自己的：胸和臀是软体，衣服的 5 块垂布和马尾是网格布，身后的长穗和肩上的绳是骨链 | 完成（10-05），见下面"不知火舞（DOA6）"一节和 [`docs/doa-physics.md`](docs/doa-physics.md) 第 12 节；物理对比视频 `out\mai_physics_front.mp4`、`out\mai_physics_back.mp4`（左：DOA6 自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_mai.mp4`（对霞）。站架和四个攻击就是 g04 用的那套 |
 
 ## 目录
 
@@ -1410,6 +1411,50 @@ python tools\cloth_demo_video.py _work\eve_cloth_back out\eve09_physics_back.mp4
 python tools\make_video.py _work\fight_eve09 out\fight_cpu_match_eve09.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.Feet -Graphics -Extra '-roeChar','eve09','-roePacks','bandai1'   # 脚贴地拍 + 量
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFootProbe.FootFrames -Extra '-roeChar','eve09'                       # 脚的朝向分三步量
+```
+
+### 不知火舞（DOA6）（10-05）
+
+用户 10-05："把不知火舞也加入进角色来"。和霞同一条路（`docs/doa-physics.md` 第 5 节），细节见第 12 节。
+
+- **模型**：ripper_tpose 早就导好的 `MAI_MaiShiranui.blend`（默认红衣 `MAI_COS_004` + 脸 + 马尾头发）→ `tools/doa6_fbx.py` → `Assets/DOA/mai`（不入库）：
+  三副骨架合成一副（1196 根骨），48 个网格、14 个材质。
+- **物理**：她游戏里的物理数据（ripper_tpose `g1m_physics.py` 读她的服装和头发 G1M）→ `tools/doa6_physics.py` → `physics.json`，
+  `DoaPhysicsBuilder` 挂到预制体上，F4 的 `doa6`（`auto` 下她默认用它）：
+  - 胸、臀：4 块格子软体（胸每边约 227 个格点，臀每边约 565 个），网格顶点全部对上游戏（误差 0.00 毫米）；
+  - 衣服的垂布：5 块网格布（挂在胯上 1 块 5 × 11、腰上 2 块 5 × 8、胸背 2 块 5 × 6）；马尾也是网格布（3 × 13）；
+  - 身后的长穗（白布条加红球，1.2 米）和肩上两条绳：骨链；头发另有 6 根摆动骨。
+- **改了一处游戏参数**：长穗那条链的第 8 项（我们读作"每帧往动画姿势拉回多少"，游戏值 0.15）改成 0。
+  照游戏值，她一弯腰长穗就横着支出去，和关掉物理一样；DOA6 里它是垂着甩的。改动写在 `tools/doa/mai.json` 的 `tune` 里（游戏值仍是默认，每项写明为什么），
+  `DoaPhysicsBuilder` 建物理时套用并写进日志。其余参数都是游戏的。
+- **动作**：站架和四个攻击就是 g04 用的那套 `doa6_mai`（A 冲步刺拳、B 中段肘击、C 扑身冲拳、D 高踢）。
+  游戏动作用 ripper_tpose `g2a_bvh.py` 新转到她骨架上：受击、倒地、躺地用和霞相同的共用片段；开场 `07110`、胜利 `07020`；
+  技能 1 空翻突进（`01004`），技能 2 腾空翻身（`01370`），超必杀是长连段 `02002` 最后往前冲的那一下（第 196 帧起，1.6 秒）。
+  - 开场原来用 `07010`，整段要移动 4 米多，开打时她离站位 3.5 米，换成只走 1.2 米的 `07110`。
+  - 超必杀先用的是整段 `02002`（4.9 秒）：先后退 1.5 米、站一会儿、再往前冲 4.5 米。技能动作"原地化"只减掉从头到尾的直线位移，
+    中段她的身体落在站位后面 3–3.75 米，对打录像里有 4 秒拍不到她。现在只用最后冲的那一段，路线基本是直线。
+- **头像**：她的站架低身前倾，脸看不见；角色定义加了 `portrait`（`mai_07020_win@1.3`：胜利动作 1.3 秒，站直举手）。
+  给了头像姿势时，镜头对着她的脸（头相对绑定姿势转了多少），不再按脚尖的方向：这个姿势里脚尖朝侧面，第一次拍到的是她的后脑。
+- 定义在 `tools/doa/mai.json`，名单默认加上 `mai`。
+
+```powershell
+# 1. 模型；物理数据（ripper_tpose）；转给 Unity
+& 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup E:\game_export\DOA6\MaiShiranui\blend\MAI_MaiShiranui\MAI_MaiShiranui.blend --python tools\doa6_fbx.py -- E:/code/othercode/roe_fighter_unity/Assets/DOA/mai mai
+python E:\code\othercode\ripper_tpose\scripts\doa6\g1m_physics.py -o E:\game_export\DOA6\MaiShiranui\physics E:\game_export\DOA6\MaiShiranui\g1m_src\MAI_COS_004.g1m E:\game_export\DOA6\MaiShiranui\g1m_src\MAI_HAIR_001.g1m
+python tools\doa6_physics.py Assets\DOA\mai\physics.json E:\game_export\DOA6\MaiShiranui\physics\MAI_COS_004.json E:\game_export\DOA6\MaiShiranui\physics\MAI_HAIR_001.json
+# 2. 游戏动作转 BVH（受击、倒地、躺地、开场、胜利、技能），导进她的动作包
+python E:\code\othercode\ripper_tpose\scripts\doa6\g2a_bvh.py --check --g1m E:\game_export\DOA6\MaiShiranui\g1m_src\MAI_COS_004.g1m --out _work\mocap\doa6_mai `
+    E:\game_export\DOA6\_common\g1a\CMN00130_CMN.g1a E:\game_export\DOA6\_common\g1a\CMN00081_CMN.g1a E:\game_export\DOA6\_common\g1a\CMN00102_CMN.g1a `
+    E:\game_export\DOA6\MaiShiranui\g1a\MAI07110_ENT.g1a E:\game_export\DOA6\MaiShiranui\g1a\MAI07020_WIN.g1a `
+    E:\game_export\DOA6\MaiShiranui\g1a\MAI01004_MAI.g1a E:\game_export\DOA6\MaiShiranui\g1a\MAI01370_MAI.g1a E:\game_export\DOA6\MaiShiranui\g1a\MAI02002_MAI.g1a
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/doa6_mai.json'
+# 3. 预制体 + 物理（日志里有 tuned 一行），场景，录像
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.DoaFighter.Build -Graphics -Extra '-roeDoa','mai'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','mai','-roeCloths','doa6,magica_style,off','-roeView','back','-roeOut','E:\code\othercode\roe_fighter_unity\_work\mai_cloth_back'
+python tools\cloth_demo_video.py _work\mai_cloth_back out\mai_physics_back.mp4 --chars mai --variants doa6,magica_style,off
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','mai','-roeP2','kas','-roeSeconds','150','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_mai'
+python tools\make_video.py _work\fight_mai out\fight_cpu_match_mai.mp4
 ```
 
 ## 已知问题和待定的事

@@ -219,6 +219,21 @@ namespace RoeFighter.EditorTools
                         param = ch.@params, groups = Groups(ch.groups),
                     });
                 }
+                // her game's words changed for the fight (tools/doa/<id>.json "tune"; the game's stay the default)
+                var def = File.Exists(DoaFighter.DefinitionPath(id)) ? DoaFighter.Load(id) : null;
+                foreach (var t in def?.tune ?? new List<DoaFighter.Tune>())
+                {
+                    var c = rig.chains.FirstOrDefault(x => x.name == t.chain);
+                    if (c == null || c.param == null || t.word < 0 || t.word >= c.param.Length)
+                    {
+                        notes.Add($"tune {t.chain} word {t.word}: no such chain word - left as the game has it");
+                        continue;
+                    }
+                    float was = c.param[t.word];
+                    c.param = c.param.ToArray();
+                    c.param[t.word] = t.value;
+                    notes.Add($"tuned {t.chain} word {t.word}: {was} -> {t.value} ({t.why})");
+                }
                 // swing bones
                 foreach (var s in data.swings)
                     if (Bone(s.bone) is Transform b)

@@ -47,6 +47,20 @@ namespace RoeFighter.EditorTools
             public List<Pair> game = new List<Pair>();
             /// <summary>Her three specials: when the blows land (s from the start; found from her limbs if empty), how far she slides in.</summary>
             public List<SkillSpec> skills = new List<SkillSpec>();
+            /// <summary>Her game's physics words changed for the fight (DoaPhysicsBuilder): the game's are the default, each change says why.</summary>
+            public List<Tune> tune = new List<Tune>();
+            /// <summary>The pose of her select-screen picture, "&lt;segment of her pack&gt;@&lt;seconds&gt;" (empty: her stance; Mai's low stance hid
+            /// her face: "mai_07020_win@1.3").</summary>
+            public string portrait;
+        }
+
+        /// <summary>One parameter word of one of her DOA6 chains set to another value (Mai's 1.2 m tail: word 8, the pull back to the pose).</summary>
+        [System.Serializable]
+        public class Tune
+        {
+            public string chain, why;
+            public int word;
+            public float value;
         }
 
         [System.Serializable]

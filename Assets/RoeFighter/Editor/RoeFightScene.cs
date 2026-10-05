@@ -48,8 +48,9 @@ namespace RoeFighter.EditorTools
         /// kas comes in when her DOA6 files are there, DoaFighter.IsDoa; kas011 is her pirate dress, COS_011, whose skirt and
         /// sleeves are the game's grid cloth; "再加入一个角色吧，vindictus里的fiona，用 PCF_005 这个版本" - fio005, VdfFighter, with
         /// her game's KawaiiPhysics and UFE 2's reactions and specials; 10-05 "另外把剑星里的eve的也加个角色进来，物理能用剑星自己的就用
-        /// 自己的" - eve09, SbFighter, Stellar Blade's Eve in her Planet Diving Suit (7th) on her game's own physics).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005,eve09";
+        /// 自己的" - eve09, SbFighter, Stellar Blade's Eve in her Planet Diving Suit (7th) on her game's own physics; "把不知火舞也加入进角色来" -
+        /// mai, Mai Shiranui from DOA6 like Kasumi: her stance and strikes are g04's, her game clips and physics her own).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005,eve09,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -295,17 +296,38 @@ namespace RoeFighter.EditorTools
                 var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
                 if (prefab == null)
                     continue;
-                // a DOA6 character stands in her own stance (the guard of her strike pack)
-                var stance = DoaFighter.IsDoa(id) ? DoaStance(DoaFighter.Load(id)) : RoeHumanoidClips.Standing(id, out _);
+                // a DOA6 character stands in her own stance (the guard of her strike pack), or the pose her definition names
+                var def = DoaFighter.IsDoa(id) ? DoaFighter.Load(id) : null;
+                var stance = def != null ? DoaStance(def) : RoeHumanoidClips.Standing(id, out _);
+                float at = 0f;
+                if (!string.IsNullOrEmpty(def?.portrait))
+                {
+                    var parts = def.portrait.Split('@');
+                    var clip = DoaFighter.PackClip(def.pack, parts[0]);
+                    if (clip != null)
+                    {
+                        stance = clip;
+                        at = parts.Length > 1 ? float.Parse(parts[1], CultureInfo.InvariantCulture) : 0f;
+                    }
+                }
                 var go = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
+                var bones = RoeHumanoid.MapBones(go);
+                var head = bones.TryGetValue("Head", out var hb) ? hb : null;
+                // the bind pose's facing and head, for a portrait pose: the camera faces her face, wherever her toes point
+                var bindForward = RoeShowcase.Forward(go);
+                var bindHead = head != null ? head.rotation : Quaternion.identity;
                 if (stance != null)
-                    RoeCapture.Pose(go, stance, 0f);
+                    RoeCapture.Pose(go, stance, at);
                 go.GetComponent<RoeDoaRig>()?.RebuildSurfaces();     // a DOA6 skirt on the pose
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 var forward = RoeShowcase.Forward(go);
-                var bones = RoeHumanoid.MapBones(go);
-                var head = bones.TryGetValue("Head", out var hb) ? hb : null;
+                if (!string.IsNullOrEmpty(def?.portrait) && head != null)
+                {
+                    var face = Vector3.ProjectOnPlane(head.rotation * Quaternion.Inverse(bindHead) * bindForward, Vector3.up);
+                    if (face.sqrMagnitude > 1e-6f)
+                        forward = face.normalized;
+                }
                 var chest = bones.TryGetValue("UpperChest", out var cb) ? cb : bones.TryGetValue("Chest", out cb) ? cb : null;
                 var target = head != null && chest != null ? Vector3.Lerp(chest.position, head.position, 0.75f) : RoeShowcase.WorldBounds(go).center;
                 studio.LightFrom(forward);
