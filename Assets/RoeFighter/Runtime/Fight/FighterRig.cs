@@ -198,6 +198,10 @@ namespace RoeFighter.Fight
                 sheet = RoeSkillSheet.FromJson(skillSheetJson.text);
             if (weaponRoots == null)
                 FindWeaponRoots();
+            // the last match's solver puts the bones it moved back to their rest first: the next one takes its rest from
+            // the bones as they are now (10-05: after F4 the bone cloth held Eve's ponytail up where her game's physics had
+            // left it, and in a demo every take after the first started from the take before's last frame)
+            cloth?.Rest();
             // The Animator takes its default values from the bones as they are now: put the model in
             // its battle stance first, so bones no clip animates rest there (closed fan, not the bind pose).
             if (stance != null)
