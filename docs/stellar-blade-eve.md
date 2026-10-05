@@ -11,6 +11,7 @@
   - 马尾后段、背后的半透明披风：**PhysX 刚体链**（UE 的物理资产），Unity 也是 PhysX，直接照搬质量、阻尼、关节角度限制和碰撞体。
 - F4 多了一个方案 `stellar`（剑星自己的物理）；`auto` 时 Eve 自动用它。
 - 动作暂时用现有的动作包和 UFE 2 的受击、技能（和 Fiona 第一版一样）；她游戏里自己的动作（约 4100 段，含剑技连招）是下一步。
+- 后加的百褶裙 Office Style（`eve37`，第 6 节）：裙子除了 KawaiiPhysics 还有游戏自己的 **Control Rig**，直接跑它的字节码（`RoeRigVM`）。
 
 ## 1. 模型从哪来
 
@@ -132,7 +133,7 @@ E:\tools\cue4parse_cli_ff7\cue4parse.exe -i $G -g GAME_StellarBlade -m $M -f jso
 
 | 东西 | 是什么 | 为什么没搬 |
 |---|---|---|
-| `BtoB_CtrlRig` | 衣服蓝图里的 Control Rig（RigVM，12 个函数：取骨骼变换、向量长度、浮点重映射、累加插值、设变换） | 量手臂到胸的距离，手臂压到胸时把胸骨挤开。CUE4Parse 能把字节码和内存都读出来，以后可以像 Fiona 的程序化骨骼那样解；格斗里影响小 |
+| `BtoB_CtrlRig` | 衣服蓝图里的 Control Rig（RigVM，12 个函数：取骨骼变换、向量长度、浮点重映射、累加插值、设变换），每套衣服都有 | 量上臂、前臂、手到胸的距离，手臂压到胸时把胸骨挤开（`tools/sb_controlrig.py` 反汇编到 `_work\sb\research\btob_ctlrig.txt`）。它推的是衣服自己的胸骨，这里衣服和身体共用一套骨，推了连身体一起动；三个距离阈值是蓝图引脚给的变量，还没读。第 6 节的虚拟机能跑它，要做时补上累加插值和三个向量单元 |
 | 衣服上的 NvCloth 布料 `CH_P_EVE_09_skin_Eve01_AX1_L_Clothing_0` | 网格布料（APEX 那一套） | 只是领口附近很小的一片 |
 | 马尾组件 `Root` 上的形状 | 马尾网格的根骨（挂在头的插槽上）上一个头部胶囊、衣服碰撞集里一块 7.5 cm 厚的大平板 | 这个根骨不是身体的骨骼，位置要从马尾骨架换算；头部已有衣服碰撞集里的头球和头胶囊。那块平板看起来是挡马尾甩到身前的，后面要是看到马尾穿到身前再加 |
 | `PhysTransformStabilizationLerpValue 0.2` | 剑星自己加的组件参数 | 源码在 exe 里 |
@@ -210,3 +211,106 @@ python tools\make_video.py _work\fight_eve09 out\fight_cpu_match_eve09.mp4
 - 素材在 `Assets/SB/eve09/`（不入库），格斗定义 `tools/sb/eve09.json`。
 - 游戏包里读的东西只缓存在 `_work\sb\`。
 - 换别的衣服：`sb_fbx.py` 换 `.blend`，`sb_physics.py --outfit CH_P_EVE_xx`，`sb_textures.py --mi-dir Art/Character/PC/CH_P_EVE_xx/Materials`。
+
+## 6. 百褶裙（eve37）和裙子的 Control Rig（10-05）
+
+用户 10-05："eve有穿jk的衣服么，换成这个角色我看下裙子的物理效果"。
+
+- 她没有真正的 JK 制服：Daily Sailor（`CH_P_EVE_05`）是水手领上衣配牛仔裤。带百褶裙的是 **Office Style**（`CH_P_EVE_37`）：
+  白衬衫、黑领带、灰色百褶短裙（前面两排扣子）、丝袜、白色厚底高跟鞋。做成了新角色 `eve37`，选人界面里有，默认名单也加上了。
+- 建法和 eve09 一样（第 5 节的命令），换成 37 的 .blend、材质目录和 `--outfit CH_P_EVE_37`；脚同样是 `"feet": "bind"`（鞋里的脚也绷到 77°）。
+
+### 6.1 游戏里这条裙子怎么动
+
+衣服的动画蓝图 `CH_P_EVE_37_AnimBP`，按节点之间的姿势连线（`LinkID`）排出的执行顺序：
+
+1. `BtoB_CtrlRig`（每套衣服都有，手臂压胸）——没搬，见 2.6；
+2. **`CH_P_EVE_37_Skirt_CtlRig`**：裙子的 Control Rig，按大腿抬起多少把各裙片的根骨转开；
+3. 10 个 KawaiiPhysics 节点：裙片 D、O、E、Q、S 左右各一，每个节点的根骨是该片的第 2 节（`Ab-L-SkirtE-02` 等），带腿上的碰撞胶囊；
+4. 领带、左右两根绳（`Ab-L/R-StringC-01`）的 KawaiiPhysics。
+
+以前 `sb_physics.py` 照类里列出节点的顺序写 kawaii.json，那不是执行顺序。现在照连线排（`graph_order`）：
+eve09 的顺序没变，eve37 变成上面这样，rig 在所有裙片的 Kawaii 之前。
+
+**rig 做的事**（字节码解出来的，`tools/sb_controlrig.py` 反汇编，16 种单元、305 步、没有分支）：
+
+- 先量两条腿"抬了多少"：`Dm-L-Thigh-point`（挂在骨盆上、和大腿根同一个点的辅助骨）相对大腿扭转骨 `Ab-L-Thigh-Tw0` 的变换，
+  旋转换成 UE 的 Rotator（俯仰 Pitch、偏航 Yaw、滚转 Roll，单位度）；D 片用的是相对大腿 `Bip001-L-Thigh` 的。
+  下表里"左偏航""左滚转"指左腿这个相对旋转的分量，"左平移 Z"指相对平移的 Z（厘米）。扭转骨是弹簧骨，所以腿动得快时平移不是 0。
+- 再在各片根骨（`-01`，Kawaii 链根骨的上一节）自己的局部空间里加上去（右侧把左右对调；"取正"= 小于 0 时取 0）：
+
+| 裙片 | 角度 | 位置 |
+|---|---|---|
+| E | 滚转 + 取正(0.6 × 左偏航)（右片用 −右偏航） | 不变 |
+| Q | 滚转 + 取正(左滚转) + 0.5 × 取正(右滚转) | 局部 Z 取两侧中较小的（本片 Z + min(−本侧平移 Z, 0)），左右两片同一个值 |
+| S | 俯仰 − 取正(0.8 × 左滚转)（右片 +）；滚转 + 取正(0.7 × 左偏航) + 取正(0.8 × 左滚转) | 同 Q 的算法再乘 1.1 |
+| O | 偏航 − 0.3 × 左滚转；滚转 − 0.3 × 左滚转（右片的滚转是 +），不取正 | 不变 |
+| D | 偏航 + 重映射(左腿滚转 0..95 → 0..−7) + 重映射(右腿滚转 0..95 → 0..7)，即 7/95 ×（右腿滚转 − 左腿滚转）：两腿差 95° 时 7° | 不变 |
+| 左绳 StringC | 不变 | 局部 Z = 0.5 × min(本节 Z + min(−左平移 Z, 0), 0) |
+| 骨盆 | 不变 | 局部 Y + 1.2 × 两侧 −min(−平移 Z, 0) 之和，不带子骨 |
+
+D 片的第二个重映射有没有钳制，接的是"左腿滚转 ≥ −0.4406 且 右腿滚转 ≤ −0.4406"这样一个比较（右片反过来），像是调试时留下的，照搬。
+
+### 6.2 怎么搬过来的：直接跑它的字节码
+
+不是照着上表手写一遍，而是写了一个小虚拟机把 rig 原样跑起来：
+
+- `tools/sb_controlrig.py --json`（`sb_physics.py` 调它，结果写进 `sbphysics.json` 的 `rigs`）：把 RigVM 的三块内存（运算、字面量、变量）
+  展开成一列浮点数（变换 10 个：旋转 xyzw、平移 xyz、缩放 xyz；四元数 4；Rotator 3；向量 3；浮点、布尔 1），
+  每条指令写成"单元名 + 每个引脚的（寄存器、从第几个数、几个数）"；成员路径（`Rotation`、`Translation.Z`、`Roll`……）换成偏移。
+- `RoeRigVM`（C#）照顺序执行：`Copy` 拷一段数，其余是 UE 4.26 同名单元的实现（`FTransform` 的乘法和求逆、`FQuat::Rotator`、
+  `FRotator::Quaternion`、`FloatRemap` 等）。不认识的单元直接拒绝加载，不会悄悄算错。
+- 骨骼按 UE 的样子给它看（`RoeRigVM.UnityBones`）：骨骼局部轴是她的绕 z 转半圈（x、y 取反）；组件空间是格斗者自己的坐标系
+  （UE 的 x、y、z 是我们的 z、x、y）；米换厘米。rig 写回局部变换，Unity 的子骨自然跟着走（和 UE 输出局部姿势的结果一样）。
+- 在 `RoeSbPhysics` 里的位置和游戏一样：弹簧骨之后、Kawaii 之前。rig 是"读当前值再加"，所以它设的骨每帧先放回绑定姿势
+  （和其他物理骨一起在 `Rest` 里），否则会一帧帧累加。
+- 骨盆不让它动：游戏里衣服是单独的网格，有自己的骨盆，挪的只是衣服；这里衣服和身体共用一根骨盆，挪了整个人都会动。
+  它想挪多少记在报告里（`asked Bip001 Pelvis ... for x cm`）：录像的 11.6 秒里最多 2.2 厘米（扭转骨是弹簧骨，腿动得快时落在大腿根后面）。
+- 格斗逻辑里有一条给 ROE 角色用的规则：动捕时把挂在骨盆上的裙片按"站架时相对胯部朝向的角度"重新摆，因为 ROE 的裙子是逐帧手 K 的、
+  站架的骨盆是歪的（`FighterRig.hipCloth`）。以前它也作用在 Eve 身上：eve37 的 Q、S 片和两根绳的根骨，eve09 的大腿辅助点
+  （只挂着不蒙皮的辅助骨，看不出来）。剑星的裙子不是手 K 的，rig 要读的正是动画给的位置，所以 `stellar` 方案现在不用这条规则
+  （`RoeClothSolvers.Solver.ownSkirt`）。
+
+**两项检查**（建角色时 `SbFighter.AttachSb` 跑，结果在日志里）：
+
+1. **重放**：游戏包里存着编辑器最后一次运行 rig 后整块运算内存的值（每个寄存器都是它的单元用别的寄存器算出来的）。
+   把这些值当输入，除了读写骨骼以外的 305 步全部重算一遍，和存的值比：最大差 0.000125（存的是 6 位小数的文本）。
+2. **轴向**：rig 资源里带着它自己那份骨架的参考姿势。拿她的绑定姿势换算过去比：18 根相关骨骼的全局变换全部 0.00 厘米、0.00°；
+   rig 按局部读写的骨骼，局部变换也是 0。
+
+### 6.3 效果
+
+物理对比录像，每段 11.6 秒，动作和 eve09 那组一样（站架、前进、后退、两次侧步，再按 A、C、D、B：刺拳、直拳、回旋踢、挥砍）；
+左：剑星自己的（Kawaii + Control Rig），中：剑星的 Kawaii 但不跑 Control Rig（演示工具的 `stellar_norig`），右：我们的骨骼布料（`magica_style`）。
+
+- `out\eve37_skirt_back.mp4`：背后全身；
+- `out\eve37_skirt_hips.mp4`：侧前方的胯部特写（新加的 `-roeView frontright`；从背后拍的特写被马尾挡住）；
+- `out\eve37_skirt_kick.jpg`：回旋踢抬腿那几帧放大（8.9–9.2 秒；每行左 rig、中不跑 rig、右我们的）。
+
+看到的：
+
+- 剑星自己的两列大部分时间几乎一样：胯部特写逐帧比，平均只有 1.7% 的像素不同，多数是马尾（PhysX 刚体链每次跑都不完全一样）。
+  差别集中在踢腿抬大腿的时候：rig 把那条腿上方的几片裙子跟着大腿转开（这一段里最多 37°），整片掀起来；
+  不跑 rig 时，裙片压在抬起的大腿上，只靠 Kawaii 的碰撞胶囊往外推。
+- 剑星的裙子摆得开：站架时下摆就往外张，出拳、转身时下摆甩成一圈（重力、阻尼、腿上的碰撞胶囊都是游戏的值）。
+- 我们的骨骼布料：裙子贴着腿往下垂，甩得少；踢腿时被大腿顶起来，盖在大腿上。
+- rig 想挪衣服的骨盆，这一段里最多 2.2 厘米，这里跳过了。
+
+### 6.4 用法
+
+```powershell
+& 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup `
+    'E:\game_export\StellarBlade\Eve\blend\CH_P_EVE_37\Eve_CH_P_EVE_37.blend' --python tools\sb_fbx.py -- Assets\SB\eve37 eve37
+python tools\sb_textures.py Assets\SB\eve37 --mi-dir Art/Character/PC/CH_P_EVE_37/Materials
+python tools\sb_physics.py Assets\SB\eve37 --outfit CH_P_EVE_37          # 连同裙子的 Control Rig 程序
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve37'   # 日志里有重放和轴向检查
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+# 对比录像：剑星自己的 | 不跑 rig | 我们的骨骼布料（另一组 -roeView back）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','eve37','-roeCloths','stellar,stellar_norig,magica_style','-roeView','frontright','-roeOut','E:\code\othercode\roe_fighter_unity\_work\eve37_rig_frontright'
+python tools\cloth_demo_video.py _work\eve37_rig_frontright out\eve37_skirt_hips.mp4 --chars eve37 --variants stellar,stellar_norig,magica_style
+# 看 rig 的指令
+python tools\sb_controlrig.py _work\sb\research\json\SB\Content\Art\Character\PC\CH_P_EVE_37\CH_P_EVE_37_Skirt_CtlRig.json _work\sb\research\skirt_ctlrig.txt
+```
+
+- 素材在 `Assets/SB/eve37/`（不入库），格斗定义 `tools/sb/eve37.json`；rig 的程序在 `sbphysics.json` 的 `rigs` 里（`RoeSbRig.Data.rigs`）。
+- 想关掉 rig 看区别：演示用 `stellar_norig`；代码里是 `RoeSbPhysics.UseControlRigs`。

@@ -81,6 +81,12 @@ namespace RoeFighter
         {
             public string name, title;
             public bool skinnedSkirt;           // RoeSkirtRig turns the skirt to follow the legs first
+            /// <summary>
+            /// The solver hangs the skirt as its game does (Stellar Blade's rig and KawaiiPhysics): FighterRig leaves the
+            /// panels hung on the hips where the animation puts them, instead of turning them to the stance against the
+            /// hips' heading (that is for the hand-keyed skirts of ROE under motion capture).
+            /// </summary>
+            public bool ownSkirt;
             public Func<RoeClothScope, IRoeCloth> make;
             /// <summary>Whether it can take this kind on this fighter (null: any kind, any fighter).</summary>
             public Func<RoeClothScope, string, bool> covers;
@@ -103,7 +109,7 @@ namespace RoeFighter
             },
             new Solver
             {
-                name = "stellar", title = "Stellar Blade's own (spring bones, KawaiiPhysics, PhysX bodies)", make = s => new RoeSbPhysics(s),
+                name = "stellar", title = "Stellar Blade's own (spring bones, KawaiiPhysics, PhysX bodies)", make = s => new RoeSbPhysics(s), ownSkirt = true,
                 covers = (s, kind) => RoeSbPhysics.Covers(s, kind),
             },
 #if MAGICACLOTH2
@@ -148,6 +154,9 @@ namespace RoeFighter
 
             /// <summary>The skirt follows the legs first (RoeSkirtRig) when its solver wants it.</summary>
             public bool skinnedSkirt => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.skinnedSkirt ?? false;
+
+            /// <summary>The skirt hangs as its game has it (RoeClothSolvers.Solver.ownSkirt).</summary>
+            public bool ownSkirt => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.ownSkirt ?? false;
 
             /// <summary>The solvers on one fighter, one per solver used, each with its kinds; null when nothing is simulated.</summary>
             public IRoeCloth Make(RoeClothScope scope)

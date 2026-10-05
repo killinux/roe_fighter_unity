@@ -18,9 +18,12 @@ namespace RoeFighter
     ///      velocity) dt (the damping's safety scale over 1 / dt), clamped to ErrorResetThresh per step, moved, kept within
     ///      MaxDisplacement of the target; the bone moves there (its rotation is the animation's, turned by the
     ///      parent-to-bone swing on the axes the node allows);
-    ///   2. KawaiiPhysics nodes (RoeKawaiiPhysics with her game's settings): the hair's locks, the ponytail's first two
-    ///      bones, the tie;
-    ///   3. rigid bodies - PhysX, as the game's physics assets have them (Unity runs PhysX too): the ponytail from
+    ///   2. the control rigs of her outfit's blueprint, run from their own byte code (RoeRigVM): the pleated skirt's
+    ///      (Eve 37) turns each panel's root by how far the thigh under it is lifted, before the panels' KawaiiPhysics
+    ///      nodes swing what hangs from it;
+    ///   3. KawaiiPhysics nodes (RoeKawaiiPhysics with her game's settings): the hair's locks, the ponytail's first two
+    ///      bones, the tie, the skirt's panels;
+    ///   4. rigid bodies - PhysX, as the game's physics assets have them (Unity runs PhysX too): the ponytail from
     ///      Ab-TL-HairB03 down and the back panels, each body with the game's mass, linear and angular damping and
     ///      collision shapes, each joint with its cone and twist limits (a ConfigurableJoint: twist about the joint's
     ///      primary axis, swing 2 about the secondary, swing 1 about the third), against the game's kinematic bodies on
@@ -42,6 +45,9 @@ namespace RoeFighter
             var kw = a.GetComponent<RoeKawaiiRig>();
             return sb.Kinds().Contains(kind) || (kw != null && kw.Kinds().Contains(kind));
         }
+
+        /// <summary>Whether the outfit's control rigs run (false: to film what they add - RoeClothDemo's "stellar_norig").</summary>
+        public static bool UseControlRigs = true;
 
         /// <summary>UE's spring bones step at a fixed 120 Hz (AnimNode_SpringBone).</summary>
         public const float SpringStep = 1f / 120f;
@@ -65,9 +71,15 @@ namespace RoeFighter
         readonly RoeSbRig rig;
         readonly RoeKawaiiPhysics kawaii;
         readonly List<Spring> springs = new List<Spring>();
+        readonly List<(RoeRigVM vm, RoeRigVM.UnityBones bones)> rigs = new List<(RoeRigVM, RoeRigVM.UnityBones)>();
         readonly Rigid rigid;
         float weight = 1f;
-        public string Report { get; }
+        readonly string report;
+
+        /// <summary>What it runs; with a control rig, how far the rig has turned the bones it sets since the last Reset.</summary>
+        public string Report => report + string.Concat(rigs.Select(r =>
+            $"; {r.vm.program.name} turned its bones up to {r.bones.turned:F0} deg" +
+            (r.vm.program.skip.Count > 0 ? $", asked {string.Join(" ", r.vm.program.skip)} (left alone) for {r.bones.skippedMove:F1} cm {r.bones.skippedTurn:F1} deg" : "")));
 
         public float Weight
         {
@@ -99,10 +111,24 @@ namespace RoeFighter
                 var (p, r) = rig.RestOf(bone);
                 springs.Add(new Spring { d = s, bone = bone, restPosition = p, restRotation = r });
             }
+            foreach (var p in data.rigs.Where(r => UseControlRigs && scope.Takes(r.kind)))
+            {
+                try
+                {
+                    var vm = new RoeRigVM(p);
+                    rigs.Add((vm, new RoeRigVM.UnityBones(vm, space, byName, rig.RestOf)));
+                }
+                catch (Exception e) when (e is NotSupportedException || e is ArgumentException)
+                {
+                    Debug.LogWarning($"[ROE] Stellar Blade physics: control rig {p.name} left out - {e.Message}");
+                }
+            }
             var chains = data.bodies.Where(b => b.simulate && scope.Takes(RoeSbRig.KindOf(b.chain))).Select(b => b.chain).Distinct().ToList();
             if (chains.Count > 0)
                 rigid = new Rigid(this, data, chains, byName);
-            Report = $"Stellar Blade's own: {springs.Count} spring bones ({string.Join(" ", springs.Select(s => s.bone.name))}); " +
+            report = $"Stellar Blade's own: {springs.Count} spring bones ({string.Join(" ", springs.Select(s => s.bone.name))}); " +
+                     (rigs.Count > 0 ? string.Join("; ", rigs.Select(r => $"control rig {r.vm.program.name} ({r.vm.program.code.Count} steps, sets " +
+                                                                        $"{string.Join(" ", r.bones.Moved.Select(b => b.name))})")) + "; " : "") +
                      $"{(kawaii != null ? kawaii.Report : "no KawaiiPhysics")}; {(rigid != null ? rigid.Report : "no rigid bodies")}";
         }
 
@@ -110,6 +136,8 @@ namespace RoeFighter
         {
             foreach (var s in springs)
                 s.bone.SetLocalPositionAndRotation(s.restPosition, s.restRotation);
+            foreach (var r in rigs)
+                r.bones.Rest();
             kawaii?.Rest();
             rigid?.Rest();
         }
@@ -118,6 +146,8 @@ namespace RoeFighter
         {
             foreach (var s in springs)
                 s.started = false;
+            foreach (var r in rigs)
+                r.bones.turned = r.bones.skippedMove = r.bones.skippedTurn = 0f;
             kawaii?.Reset();
             rigid?.Reset();
         }
@@ -128,6 +158,9 @@ namespace RoeFighter
                 return;
             foreach (var s in springs)
                 StepSpring(s, dt);
+            // the rigs set their bones from the pose as it is (they add to what they read: Rest put the bones back)
+            foreach (var r in rigs)
+                r.vm.Run(r.bones, Mathf.Clamp01(weight * r.vm.program.alpha));
             kawaii?.Step(dt, floor);
             rigid?.Step(dt);
         }

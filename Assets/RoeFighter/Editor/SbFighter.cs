@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -80,16 +81,38 @@ namespace RoeFighter.EditorTools
                 var wantRot = parent.rotation * rel.rotation;
                 notes.Add($"{j.child}->{j.parent}: {100f * Vector3.Distance(wantPos, child.position):F1} cm, {Quaternion.Angle(wantRot, child.rotation):F0} deg");
             }
-            // a solver on the instance: what it builds (and that the physics scene steps)
+            // the control rigs: their units run again on the editor's last run (as the package keeps it), and her bind pose
+            // against the rig's own skeleton (both zero when the port and the axes are right)
+            var rigNotes = new List<string>();
+            foreach (var p in data.rigs)
+            {
+                try
+                {
+                    var vm = new RoeRigVM(p);
+                    var (worst, where) = vm.Replay();
+                    var bones = new RoeRigVM.UnityBones(vm, go.transform, byName, t => (t.localPosition, t.localRotation));
+                    rigNotes.Add($"{p.name}: {p.code.Count} steps replayed, worst difference {worst:G3} ({where}); {bones.Check(vm)}");
+                }
+                catch (Exception e) when (e is NotSupportedException || e is ArgumentException)
+                {
+                    rigNotes.Add($"{p.name}: {e.Message}");
+                }
+            }
+            // a solver on the instance: what it builds (and that the physics scene steps); each frame from the rest pose, as
+            // FighterRig does it
             var cloth = new RoeSbPhysics(new RoeClothScope { animator = animator, world = go.transform });
             for (int i = 0; i < 30; i++)
+            {
+                cloth.Rest();
                 cloth.Step(1f / 60f, 0f);
+            }
             var ponytailTip = byName.TryGetValue("Ab-TL-HairB09", out var tip) ? tip.position : Vector3.zero;
             string report = cloth.Report;
             cloth.Dispose();
             Object.DestroyImmediate(go);
             Debug.Log($"[ROE] {id}: Stellar Blade physics - {report}; after 0.5 s standing the ponytail's tip is at {ponytailTip}; " +
-                      $"joint rests (game frames vs her bones): {string.Join("; ", notes)}");
+                      $"joint rests (game frames vs her bones): {string.Join("; ", notes)}" +
+                      (rigNotes.Count > 0 ? $"; control rigs: {string.Join("; ", rigNotes)}" : ""));
         }
 
         /// <summary>For checks: how the FBX itself stands (its top nodes' rotations, which way the feet point), before any prefab work.</summary>

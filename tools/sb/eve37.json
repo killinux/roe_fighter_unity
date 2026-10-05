@@ -1,0 +1,68 @@
+{
+ "id": "eve37",
+ "name": "EVE",
+ "outfit": "Office Style (school look, CH_P_EVE_37)",
+ "source": "Stellar Blade",
+ "pack": "",
+ "stance": "bandai1:guard",
+ "feet": "bind",
+ "game": [
+  {
+   "name": "hurt",
+   "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Robot_Kyle/Animations/HitStandingHeavy.anim"
+  },
+  {
+   "name": "die",
+   "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Mecanim_Bot/Animations/Hit/get_hit_high_knockdown.anim"
+  },
+  {
+   "name": "rip",
+   "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Mecanim_Bot/Animations/Unused/ko_back.fbx"
+  },
+  {
+   "name": "getup",
+   "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Robot_Kyle/Animations/StandUp_Default.anim"
+  },
+  {
+   "name": "react_02",
+   "clip": "Assets/RoeFighter/Generated/motionpacks/ufe_mike/humanoid/intro.anim"
+  },
+  {
+   "name": "idle_02",
+   "clip": "Assets/RoeFighter/Generated/motionpacks/ufe_mike/humanoid/outro.anim"
+  },
+  {
+   "name": "skill_01",
+   "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Ethan/Animations/E_Stand_DF1DF1DF1.anim"
+  },
+  {
+   "name": "skill_02",
+   "clip": "Assets/RoeFighter/Generated/motionpacks/ufe_mike/humanoid/shoryuken.anim"
+  },
+  {
+   "name": "skill_03",
+   "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Mecanim_Bot/Animations/Moves/houyoku_sen.fbx"
+  }
+ ],
+ "skills": [
+  {
+   "action": "skill1",
+   "clip": "skill_01",
+   "radius": 0.7
+  },
+  {
+   "action": "skill2",
+   "clip": "skill_02",
+   "hits": [
+    0.1,
+    0.25
+   ],
+   "radius": 0.6
+  },
+  {
+   "action": "skill3",
+   "clip": "skill_03",
+   "radius": 0.7
+  }
+ ]
+}

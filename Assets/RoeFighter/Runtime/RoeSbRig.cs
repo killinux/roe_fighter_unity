@@ -8,7 +8,8 @@ namespace RoeFighter
     /// <summary>
     /// Stellar Blade's own physics for a character, as her game has it (tools/sb_physics.py reads it out of the cooked
     /// packages): the spring bones of her main anim blueprint (UE's AnimNode_SpringBone) and the rigid bodies of her
-    /// physics assets (the ponytail from Ab-TL-HairB03 down, the back panels) - Assets/SB/&lt;id&gt;/sbphysics.json on her
+    /// physics assets (the ponytail from Ab-TL-HairB03 down, the back panels) and the control rigs of her outfit's blueprint
+    /// (the pleated skirt's) - Assets/SB/&lt;id&gt;/sbphysics.json on her
     /// fighter prefab, for RoeSbPhysics.  Her KawaiiPhysics nodes are in RoeKawaiiRig (kawaii.json) as Fiona's are.
     /// Units as the game's: centimetres, kilograms, degrees, UE bone space.
     /// </summary>
@@ -23,6 +24,8 @@ namespace RoeFighter
             public List<Spring> springs = new List<Spring>();
             public List<Body> bodies = new List<Body>();
             public List<Joint> joints = new List<Joint>();
+            /// <summary>The outfit blueprint's control rigs, as programs for RoeRigVM (tools/sb_controlrig.py).</summary>
+            public List<RoeRigVM.Program> rigs = new List<RoeRigVM.Program>();
         }
 
         [Serializable]
@@ -77,6 +80,7 @@ namespace RoeFighter
         }
 
         public IEnumerable<string> Kinds() =>
-            Get().springs.Select(s => s.kind).Concat(Get().bodies.Where(b => b.simulate).Select(b => KindOf(b.chain))).Distinct();
+            Get().springs.Select(s => s.kind).Concat(Get().bodies.Where(b => b.simulate).Select(b => KindOf(b.chain)))
+                .Concat(Get().rigs.Select(r => r.kind)).Distinct();
     }
 }

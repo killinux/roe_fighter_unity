@@ -17,17 +17,25 @@ _work/sb/research/json; exported here when missing).  What the game runs on her 
     (CH_P_EVE_09_PonytailPhysicsAsset on the body bones SB's AdditiveMasterBoneArray names), and the back panels
     Ab_CapeL/R01-07 (CH_P_EVE_09_Physics: 20 kg each, damping 5 / 10, limits 10 degrees) colliding with the body's own
     kinematic bodies.
+  - Control Rigs in the outfit's anim blueprint (UE 4.26 RigVM, tools/sb_controlrig.py): the pleated skirt's
+    (CH_P_EVE_37_Skirt_CtlRig) turns each panel's root bone by how far the thigh under it is lifted - RoeRigVM runs the
+    rig's own byte code.  BtoB_CtrlRig (every outfit: pushes the outfit's breast bones away from the arms) is left out.
+Order: a blueprint's nodes run along their pose links (LinkID: an index into the class's anim nodes, in the order the
+class default object lists them) from its input pose to its root - the Kawaii nodes and the rigs are written in that
+order (Eve 37's outfit: BtoB, the skirt rig, then the skirt panels' Kawaii nodes D, O, E, Q, S, the tie, the strings).
 Bone names: the Biped's hyphens become spaces (tools/sb_fbx.py renames her bones so); the hair blueprint's "Root" is the
 hair mesh's root (Hair_Root in the merged armature).  Units stay the game's (cm, degrees, UE bone space): RoeSbPhysics
 and RoeKawaiiPhysics turn them into Unity's.
 
 Writes <dir>/kawaii.json (RoeKawaiiRig: one entry per Kawaii node, as tools/vdf_kawaii.py) and <dir>/sbphysics.json
-(RoeSbRig: springs, bodies, joints).
+(RoeSbRig: springs, bodies, joints, control rigs).
 """
 import argparse
 import json
 import os
 import subprocess
+
+import sb_controlrig
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
@@ -100,10 +108,35 @@ def capsules_of(node, root_alias):
     return out
 
 
+def graph_order(props):
+    """The anim nodes' names in the order the blueprint runs them: from the input pose along the pose links to the root
+    (each node's ComponentPose / LocalPose / Source / Result link holds its input's index among the class's anim nodes)."""
+    names = [k for k, v in props.items() if k.startswith("AnimGraphNode_") and isinstance(v, dict)]
+    inputs = {}
+    for i, k in enumerate(names):
+        links = [v["LinkID"] for v in props[k].values() if isinstance(v, dict) and "LinkID" in v]
+        inputs[i] = links
+    order, seen = [], set()
+
+    def visit(i):
+        if i in seen or i < 0 or i >= len(names):
+            return
+        seen.add(i)
+        for j in inputs[i]:
+            visit(j)
+        order.append(names[i])
+    roots = [i for i, k in enumerate(names) if k.startswith("AnimGraphNode_Root")]
+    for r in roots:
+        visit(r)
+    # nodes no link reaches (none in Eve's blueprints) keep the listing's order, after the rest
+    return order + [k for k in names if k not in order]
+
+
 def kawaii_nodes(package, abp, kinds, root_alias=None):
     props = cdo(package)
     nodes = []
-    for key, n in props.items():
+    for key in graph_order(props):
+        n = props[key]
         if not key.startswith("AnimGraphNode_KawaiiPhysics") or not isinstance(n, dict) or not n.get("bEnabled", True):
             continue
         root = n["RootBone"]["BoneName"]
@@ -126,6 +159,50 @@ def kawaii_nodes(package, abp, kinds, root_alias=None):
                      "OverrideTargetFramerate": n.get("OverrideTargetFramerate")},
         })
     return nodes
+
+
+# the game's control rigs left out, and why
+RIGS_LEFT_OUT = {"BtoB_CtrlRig": "pushes the outfit's breast bones away from the upper arms, forearms and hands - "
+                                 "not ported: in the merged skeleton the outfit's breasts are the body's"}
+# bones a rig writes that it may not here, and why
+RIG_SKIP = {"Bip001 Pelvis": "the outfit's own pelvis in the game (its outfit is a mesh of its own): moving it here would "
+                             "move her whole body (the skirt rig shifts it along its local Y by 1.2 x how far the thigh "
+                             "points sit below the thigh twist bones)"}
+
+
+def control_rigs(package, abp, have):
+    """The outfit blueprint's Control Rig nodes, in its order, as RoeRigVM programs (tools/sb_controlrig.py)."""
+    props = cdo(package)
+    rigs = []
+    for key in graph_order(props):
+        n = props[key]
+        if not key.startswith("AnimGraphNode_ControlRig") or not isinstance(n, dict) or not n.get("bExecute", True):
+            continue
+        path = n["ControlRigClass"]["ObjectPath"].rsplit(".", 1)[0]                 # /Game/Art/...
+        name = path.rsplit("/", 1)[-1]
+        if name in RIGS_LEFT_OUT:
+            print(f"control rig {name} ({abp}) left out: {RIGS_LEFT_OUT[name]}")
+            continue
+        package_path = "SB/Content/" + path[len("/Game/"):]
+        game_json(package_path)                                                     # exported when missing
+        src = os.path.join(JSON_DIR, package_path.replace("/", os.sep) + ".json")
+        variables = dict(zip(n.get("DestPropertyNames") or [], [None] * len(n.get("DestPropertyNames") or [])))
+        if variables:
+            raise SystemExit(f"control rig {name}: its variables come from the blueprint's pins - not read yet")
+        p = sb_controlrig.program(src, bone_name=bone_name)
+        bones = {r["bone"] for r in p["registers"] if r["kind"] == "key"}
+        missing = sorted(b for b in bones if b not in have)
+        if missing:
+            print(f"control rig {name} ({abp}) left out: bones not on her rig {missing}")
+            continue
+        written = sorted({p["registers"][c["args"][0]]["bone"] for c in p["code"] if c["unit"] == "SetTransform"})
+        skip = [b for b in written if b in RIG_SKIP]
+        p.update({"abp": abp, "node": key, "alpha": float(n.get("Alpha", 1.0)),
+                  "kind": "skirt" if any("Skirt" in b for b in written) else "chain",
+                  "skip": skip, "skipWhy": [RIG_SKIP[b] for b in skip]})
+        rigs.append(p)
+        print(f"control rig {name} ({abp}, {key}): {len(p['code'])} steps, writes {written}; skips {skip}")
+    return rigs
 
 
 def springs(package, have):
@@ -228,7 +305,7 @@ def main():
                           lambda r: "hair" if "Hair" in r else "ribbon")
     nodes += kawaii_nodes(f"{PC}/00_HR/{a.hair}/{a.hair}_AnimBP", f"{a.hair}_AnimBP", hair_kind, root_alias="Hair_Root")
     nodes += kawaii_nodes(f"{PC}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP",
-                          lambda r: "ribbon" if "Neck" in r or "Tie" in r else "chain")
+                          lambda r: "skirt" if "Skirt" in r else "ribbon" if "Neck" in r or "Tie" in r else "chain")
     missing = [n["root"] for n in nodes if n["root"] not in have]
     nodes = [n for n in nodes if n["root"] in have]
     kawaii = {"source": "Stellar Blade (1.4.1) KawaiiPhysics nodes read from the cooked anim blueprints (tools/sb_physics.py). "
@@ -267,6 +344,7 @@ def main():
         "springs": sp,
         "bodies": tail_bodies + tail_coll + cape_bodies,
         "joints": tail_joints + cape_joints,
+        "rigs": control_rigs(f"{PC}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP", have),
     }
     json.dump(data, open(os.path.join(a.folder, "sbphysics.json"), "w", encoding="utf-8"), indent=1)
     print(f"kawaii: {len(nodes)} nodes ({', '.join(f'{n['root']} [{n['kind']}]' for n in nodes)}); not on her rig: {missing}")

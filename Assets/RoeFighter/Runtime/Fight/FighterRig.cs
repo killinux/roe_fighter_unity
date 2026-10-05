@@ -681,7 +681,9 @@ namespace RoeFighter.Fight
             // cloth swings it from there.  Under the skirt that follows the legs (RoeSkirtRig) the bones
             // below are aimed anew, and with its rest in the stance the reference is the stance's pelvis:
             // the panels' roots then sit where the skinned skirt expects them.
-            if (hipCloth != null && mocap > 0f && !NoHipCloth)
+            // (not under a solver that hangs the skirt as its own game does: Stellar Blade's Eve 37 - her skirt rig reads the
+            // panels' roots where the animation has them)
+            if (hipCloth != null && mocap > 0f && !NoHipCloth && !(backend != null && backend.ownSkirt))
             {
                 var heading = HipHeading();
                 var turn = Quaternion.Inverse(heading) * hips.rotation * Quaternion.Inverse(pelvisRef);

@@ -40,6 +40,7 @@
 | 对战镜头不跑到场地外面：建场景时量出镜头能站的地方，镜头只站在空处、看两人的视线不被挡（F8 切回旧镜头） | 完成（10-05），见 [`docs/fight-camera.md`](docs/fight-camera.md)；新旧镜头并排 `out\fight_camera_compare.mp4`，同一场电脑对电脑重录 `out\fight_cpu_match_fio005_cam.mp4`，地图 `_work\camera_room\e23_steel_s02.png` |
 | 剑星（Stellar Blade）的 Eve（7 代潜降服，`eve09`）加入战斗；物理全部用剑星自己的：胸、臀、大腿、护腕是 UE4 的 SpringBone，前发、鬓发、马尾根、领带是 KawaiiPhysics，马尾后段和半透明披风是 PhysX 刚体链，参数都从游戏包里读出来（F4 的 `stellar`，`auto` 下她默认用它；没用 Magica Cloth 2） | 完成（10-05），见 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md)；物理对比视频 `out\eve09_physics_front.mp4`、`out\eve09_physics_back.mp4`（左：剑星自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08）。动作暂时是动作包加 UFE 2 的受击和技能；她游戏里自己的动作、手肘膝盖的修正骨还没做 |
 | DOA6 的不知火舞（`mai`，默认红衣 `MAI_COS_004`）加入战斗；物理用 DOA6 自己的：胸和臀是软体，衣服的 5 块垂布和马尾是网格布，身后的长穗和肩上的绳是骨链 | 完成（10-05），见下面"不知火舞（DOA6）"一节和 [`docs/doa-physics.md`](docs/doa-physics.md) 第 12 节；物理对比视频 `out\mai_physics_front.mp4`、`out\mai_physics_back.mp4`（左：DOA6 自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_mai.mp4`（对霞）。站架和四个攻击就是 g04 用的那套 |
+| Eve 的百褶裙（Office Style，`eve37`）：裙子除了剑星的 KawaiiPhysics，还跑游戏自己的裙子 Control Rig——直接执行它的 UE 4.26 RigVM 字节码，按大腿抬起多少把各裙片转开 | 完成（10-05），见下面"Eve 的百褶裙（eve37）和裙子的 Control Rig"一节和 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md) 第 6 节；对比视频 `out\eve37_skirt_hips.mp4`（胯部特写）、`out\eve37_skirt_back.mp4`（左：剑星自己的，中：不跑 Control Rig，右：我们的骨骼布料），踢腿放大 `out\eve37_skirt_kick.jpg` |
 
 ## 目录
 
@@ -1555,3 +1556,48 @@ python tools\make_video.py _work\fight_mai out\fight_cpu_match_mai.mp4
 - Unity 6000.4.12f1，装在 `E:\tools\Unity\Hub\Editor\6000.4.12f1`；Unity Hub 3.22（winget 装的）。选 6000.4 是因为 UFE 2.7.3 在 Asset Store 上要求不低于 6000.4.1。
 - 这台电脑直连 Unity 的下载服务器会被转到中国站（国际版安装包 404），只能走环境变量里的代理，而代理单连接只有约 30 KB/s。`tools\fetch_parallel.py` 用 64 个连接分段下载（约 1.8 MB/s），`fetch_fill.py` 补最后几个慢块。
 - Git Bash 里的 curl 访问 127.0.0.1 也会走代理而失败，本机服务用 Python（`ar.py` 里关掉了代理）或 PowerShell 访问。
+
+### Eve 的百褶裙（eve37）和裙子的 Control Rig（10-05）
+
+用户 10-05："eve有穿jk的衣服么，换成这个角色我看下裙子的物理效果"。全部细节见 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md) 第 6 节。
+
+- **衣服**：她没有真正的 JK 制服（Daily Sailor 是水手领上衣配牛仔裤）。带百褶裙的是 **Office Style**（`CH_P_EVE_37`）：白衬衫、黑领带、
+  灰色百褶短裙、丝袜、白色厚底高跟鞋。做成新角色 `eve37`，选人界面里有，默认名单也加上了；建法和 eve09 一样，换成 37 的文件。
+- **游戏里裙子怎么动**：衣服的动画蓝图先跑一个裙子专用的 **Control Rig**（`CH_P_EVE_37_Skirt_CtlRig`），再跑 10 个裙片的 KawaiiPhysics。
+  - Control Rig 量两条大腿相对骨盆转了多少，按比例把每片裙子的根骨转开：
+    - 侧片 0.6 倍；
+    - 后片 1 倍，再加另一条腿的一半；
+    - 后侧片 0.7–0.8 倍；
+    - 前侧片反向 0.3 倍；
+    - 前片按两腿之差，差 95° 时转 7°。
+  - 然后由 Kawaii 甩下面的部分，腿上有碰撞胶囊。完整的表在文档 6.1。
+  - 以前导出 Kawaii 节点用的是蓝图里列出的顺序，不是执行顺序；现在照节点之间的连线排（eve09 不受影响）。
+- **怎么搬的**：没有照着表手写，而是**直接跑它的字节码**。
+  - `tools/sb_controlrig.py` 把 UE 4.26 RigVM 的内存和指令转成一个程序（写进 `sbphysics.json`）；
+  - `RoeRigVM`（C#）照游戏的单元逐条执行 305 步；
+  - 骨骼换算成 UE 的坐标给它读写；
+  - 跑在弹簧骨之后、Kawaii 之前，和游戏同一个位置。
+- **核对**：
+  - 游戏资源里存着编辑器上一次运行时每个寄存器的值，拿来重放 305 步，最大差 0.000125；
+  - rig 自带的参考骨架和她的绑定姿势换算后对比，全部 0.00 厘米、0.00°。
+- **效果**（左：剑星自己的，中：同样的 Kawaii 但不跑 Control Rig，右：我们的骨骼布料）：
+  - 视频：`out\eve37_skirt_hips.mp4` 是侧前方的胯部特写，`out\eve37_skirt_back.mp4` 是背后全身；
+  - 踢腿放大图：`out\eve37_skirt_kick.jpg`。
+  - Control Rig 的作用集中在抬腿：踢腿时大腿上方那几片裙子跟着大腿整片掀开（这一段里最多转 37°）；不跑它时，裙片压在抬起的大腿上。
+    平时两列几乎一样。
+  - 剑星的裙子摆得开：站架时下摆就往外张，出拳、转身时甩成一圈。我们的骨骼布料贴着腿垂，甩得少。
+- **没搬的**：
+  - rig 还会挪衣服自己的骨盆（游戏里衣服是单独的网格）。这里衣服和身体共用一根骨盆，挪了整个人都会动，所以跳过；它想挪多少记在日志里（这一段最多 2.2 厘米）。
+  - 手臂压胸的 `BtoB_CtrlRig` 也没搬，现在能反汇编了，以后可以用同一个虚拟机跑。
+- **顺带改的**：格斗逻辑里给 ROE 角色用的"挂在骨盆上的裙片按站架重新摆"那条规则，以前也作用在 Eve 身上（eve37 的后片、后侧片和绳子）。
+  剑星的裙子不是手 K 的，`stellar` 方案现在不用这条规则。
+- 演示工具：
+  - 新的对比列 `stellar_norig`（剑星自己的，但不跑 Control Rig）；
+  - 新机位 `-roeView frontright` / `frontleft`（从前面拍胯部特写）。
+
+```powershell
+python tools\sb_physics.py Assets\SB\eve37 --outfit CH_P_EVE_37          # 连同裙子的 Control Rig 程序
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve37'   # 日志里有重放和轴向检查
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','eve37','-roeCloths','stellar,stellar_norig,magica_style','-roeView','frontright','-roeOut','E:\code\othercode\roe_fighter_unity\_work\eve37_rig_frontright'
+python tools\cloth_demo_video.py _work\eve37_rig_frontright out\eve37_skirt_hips.mp4 --chars eve37 --variants stellar,stellar_norig,magica_style
+```
