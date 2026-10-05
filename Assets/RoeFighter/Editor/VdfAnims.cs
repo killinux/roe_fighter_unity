@@ -374,6 +374,7 @@ namespace RoeFighter.EditorTools
             "upperarm_r", "lowerarm_r", "hand_r", "upperarm_l", "lowerarm_l", "hand_l", "thigh_r", "calf_r", "foot_r",
             "upperarm_twist_01_r", "upperarm_twist_02_r", "lowerarm_twist_01_r", "lowerarm_twist_02_r", "thigh_twist_01_r", "calf_twist_01_r",
             "spine_02", "spine_03", "spine_04", "spine_05", "neck_02", "head", "weapon_r", "shield_l",
+            "upperarm_correctiveRoot_r", "lowerarm_correctiveRoot_r", "thigh_correctiveRoot_r", "calf_correctiveRoot_r", "index_02_half_r",
         };
 
         static readonly (string, string)[] Segments =
@@ -399,9 +400,19 @@ namespace RoeFighter.EditorTools
             var segSum = new double[Segments.Length];
             var segWorst = new float[Segments.Length];
             int count = 0;
+            // the game runs its procedural rig on every pose (twist bones, corrective roots, finger half joints:
+            // RoeUeRig's game rig), whatever the clip baked into those bones - the game's pose is the clip plus that
+            var gameRig = rig.go.GetComponent<RoeUeRig>();
+            if (gameRig != null)
+            {
+                gameRig.Build();
+                gameRig.twistRig = RoeUeRig.TwistRig.Game;
+                gameRig.twist = 1f;
+            }
             for (int f = 0; f < psa.frames; f += 6)
             {
                 Pose(rig, psa, f, reading, holdRoot);
+                gameRig?.DriveTwists();
                 var game = srcIndex.Select(b => b >= 0 && rig.target[b] != null ? rig.target[b].position : Vector3.zero).ToArray();
                         RoeCapture.Pose(player, clip, Mathf.Min(clip.length, f / Mathf.Max(1f, psa.rate)));
                 var mine = Checked.Select(c => byName.TryGetValue(c, out var t) ? t.position : Vector3.zero).ToArray();
@@ -509,6 +520,104 @@ namespace RoeFighter.EditorTools
             RoeCapture.EndPosing();
             Object.DestroyImmediate(go);
             Debug.Log($"[ROE] {id}: twist stills of {clipName} to {outDir}: {string.Join(", ", notes)}");
+        }
+
+        /// <summary>
+        /// Close-ups of her joints in moments of her clips with each twist rig (RoeUeRig.TwistRig: Off, ByPosition, Game):
+        /// an elbow or knee seen square to the plane of its two bones (the bend's profile: the crease and the point), a
+        /// forearm from the side.  Stills to &lt;out&gt;/rig_&lt;n&gt;_&lt;mode&gt;.png and shots.tsv for tools/vdf_rig_sheet.py.
+        ///   -executeMethod RoeFighter.EditorTools.VdfAnims.RigStills -Graphics [-roeVdf fio005] [-roeModes Off,ByPosition,Game]
+        ///   [-roeShots clip@seconds@joint,...]  (joint: elbow_l elbow_r knee_l knee_r forearm_l forearm_r shoulder_l shoulder_r)
+        /// </summary>
+        public static void RigStills()
+        {
+            string id = RoeCapture.Arg("-roeVdf", "fio005");
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "vdf", "rig"));
+            var modes = RoeCapture.Arg("-roeModes", "Off,ByPosition,Game").Split(',').Select(m => (RoeUeRig.TwistRig)Enum.Parse(typeof(RoeUeRig.TwistRig), m.Trim(), true)).ToArray();
+            // (her left elbow is behind the shield in every clip; the right arm's are in the open)
+            var shots = RoeCapture.Arg("-roeShots", "AS_PC_Fiona_Battle_Attack_Strong03@0.25@elbow_r,AS_PC_Fiona_Battle_Attack01@0.3@elbow_r," +
+                                                    "AS_PC_Fiona_Battle_Attack01@0.3@forearm_r,AS_PC_Fiona_Battle_HeavyStander_During@0.5@knee_l," +
+                                                    "AS_PC_Fiona_Battle_HeavyStander_During@0.5@knee_r,AS_PC_Fiona_Test_Emo_Cheering_Evy@0.8@shoulder_r").Split(',');
+            Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            var studio = RoeStudio.Build();
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                smr.forceMatrixRecalculationPerRender = true;
+            var ue = go.GetComponent<RoeUeRig>();
+            ue?.Build();
+            var bones = go.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).ToDictionary(g => g.Key, g => g.First());
+            studio.LightFrom(Vector3.forward);
+            studio.SetFocus(0f, 0f, 0f);
+            bool warmed = false;
+            var table = new StringBuilder("n\tclip\ttime\tjoint\n");
+            for (int n = 0; n < shots.Length; n++)
+            {
+                var parts = shots[n].Split('@');
+                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>($"{ClipDir(id)}/{parts[0]}.anim");
+                if (clip == null || parts.Length < 3)
+                    continue;
+                float time = float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
+                string joint = parts[2];
+                string s = joint.EndsWith("_l") ? "l" : "r";
+                // the three bones of the view: above the joint, the joint, below it
+                var (a, b, c) = joint.StartsWith("elbow") ? ($"upperarm_{s}", $"lowerarm_{s}", $"hand_{s}")
+                              : joint.StartsWith("knee") ? ($"thigh_{s}", $"calf_{s}", $"foot_{s}")
+                              : joint.StartsWith("shoulder") ? ($"clavicle_{s}", $"upperarm_{s}", $"lowerarm_{s}")
+                              : ($"lowerarm_{s}", $"lowerarm_{s}", $"hand_{s}");
+                foreach (var mode in modes)
+                {
+                    if (ue != null)
+                        ue.twistRig = mode;
+                    RoeCapture.Pose(go, clip, Mathf.Min(clip.length, time));
+                    Vector3 pa = bones[a].position, pb = bones[b].position, pc = bones[c].position;
+                    Vector3 centre, look;
+                    float distance;
+                    if (joint.StartsWith("forearm"))
+                    {
+                        centre = Vector3.Lerp(pb, pc, 0.45f);
+                        var side = Vector3.Cross((pc - pb).normalized, Vector3.up);
+                        look = Vector3.Cross(Vector3.up, side.sqrMagnitude > 1e-4f ? side.normalized : Vector3.right);
+                        distance = 0.75f;
+                    }
+                    else if (joint.StartsWith("shoulder"))
+                    {
+                        // from her front (the armpit and the top of the shoulder with the arm raised)
+                        var animator = go.GetComponent<Animator>();
+                        var right = animator.GetBoneTransform(HumanBodyBones.RightUpperLeg).position - animator.GetBoneTransform(HumanBodyBones.LeftUpperLeg).position;
+                        centre = pb;
+                        look = Vector3.Cross(right, Vector3.up);
+                        distance = 0.8f;
+                    }
+                    else
+                    {
+                        centre = pb;
+                        look = Vector3.Cross(pa - pb, pc - pb);
+                        if (look.sqrMagnitude < 1e-6f)
+                            look = Vector3.Cross(pa - pb, Vector3.up);
+                        // from the side the body is not on (the outer side of the joint)
+                        var hips = go.GetComponent<Animator>().GetBoneTransform(HumanBodyBones.Hips).position;
+                        if (Vector3.Dot(look, pb - hips) < 0f)
+                            look = -look;
+                        distance = joint.StartsWith("knee") ? 0.9f : 0.7f;
+                    }
+                    studio.Aim(centre, look.normalized, 0f, 0f, distance, 32f);
+                    string file = Path.Combine(outDir, $"rig_{n}_{mode}.png");
+                    if (!warmed)
+                    {
+                        RoeCapture.Render(studio.camera, 320, 320, file);
+                        RoeCapture.Render(studio.camera, 320, 320, file);
+                        warmed = true;
+                    }
+                    RoeCapture.Render(studio.camera, 700, 700, file);
+                }
+                table.Append($"{n}\t{parts[0]}\t{time:F2}\t{joint}\n");
+            }
+            File.WriteAllText(Path.Combine(outDir, "shots.tsv"), table.ToString());
+            RoeCapture.EndPosing();
+            Object.DestroyImmediate(go);
+            Debug.Log($"[ROE] {id}: rig stills ({string.Join(", ", modes)}) to {outDir}; game rig: {ue?.GameLimbCount} limbs, {ue?.HalfJointCount} finger half joints");
         }
 
         /// <summary>
@@ -625,6 +734,13 @@ namespace RoeFighter.EditorTools
             var player = (GameObject)PrefabUtility.InstantiatePrefab(prefab);
             player.transform.SetPositionAndRotation(new Vector3(0f, 0f, 0f), Quaternion.identity);
             player.GetComponent<RoeUeRig>()?.Build();      // (no Awake in edit mode) bind rotations before any posing
+            // -roeTwistRig Off|ByPosition|Game: which rig her fighter plays the clips back with, for the check (default: the prefab's)
+            string twistRigArg = RoeCapture.Arg("-roeTwistRig", "");
+            if (twistRigArg.Length > 0 && player.GetComponent<RoeUeRig>() != null)
+            {
+                player.GetComponent<RoeUeRig>().twistRig = (RoeUeRig.TwistRig)Enum.Parse(typeof(RoeUeRig.TwistRig), twistRigArg, true);
+                log.AppendLine($"played back with the twist rig {twistRigArg}");
+            }
             Avatar playerAvatar = null;
             if (twist != null)
             {

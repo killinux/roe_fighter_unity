@@ -36,7 +36,7 @@
 | 霞的海盗裙（DOA6 `COS_011`，角色 `kas011`）：裙子、袖子、胸前片是 DOA6 的网格布，看得见的布每帧照游戏的公式从控制点重建 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 10 节；静止时重建和导入的模型逐顶点一致（≤ 0.01 毫米、法线 ≤ 0.2°）；对比视频 `out\kas011_grid_cloth_front.mp4`、`out\kas011_grid_cloth_back.mp4`（左：骨骼布料，中：DOA6 的网格布，右：关）。顺带：软体格子的静止形状改成跟着目标，胸站着更贴、甩完回得更快 |
 | DOA5LR 式弹簧网（F4 的 `doa5lr_style`）：同样的骨链，约束换成 DOA5LR 网格布的横向、斜拉、隔一个、远程弹簧；霞的网格布在骨骼方案里也连成一片 | 完成（10-04 晚），见 [`docs/doa-physics.md`](docs/doa-physics.md) 第 11 节；对比视频 `out\doa5lr_style_compare.mp4`（g04、a08、霞的海盗裙；左：骨骼布料，中：DOA5LR 式，右：关）。比骨骼布料更贴动画、晃得少 |
 | Magica Cloth 2 插件（用户 10-04 下载）：F4 的 `magica`；a08 的长裙片、g04 的裙片用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth，霞的网格布模拟控制点 | 完成（10-04 晚），见 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节；插件不进仓库，只在播放模式里跑（另写了播放模式录像）。对比视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（a08：左 Magica、中骨骼布料、右关；霞的海盗裙：左 Magica、中 DOA6 的、右关）。a08 的裙片有了褶皱、踢腿时搭在腿上；不是默认方案 |
-| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg`。10-05：剑和盾跟着游戏的动作转（举盾反击时盾朝前，胜利时反手握剑），前后对比 `out\fio005_props.jpg` |
+| Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg`。10-05：剑和盾跟着游戏的动作转（举盾反击时盾朝前，胜利时反手握剑），前后对比 `out\fio005_props.jpg`；扭转骨、肩肘髋膝的修正骨、手指半关节照游戏自己的程序化骨骼驱动（从包里的 ControlRig 字节码解出来的），对比 `out\fio005_rig.jpg` |
 | 对战镜头不跑到场地外面：建场景时量出镜头能站的地方，镜头只站在空处、看两人的视线不被挡（F8 切回旧镜头） | 完成（10-05），见 [`docs/fight-camera.md`](docs/fight-camera.md)；新旧镜头并排 `out\fight_camera_compare.mp4`，同一场电脑对电脑重录 `out\fight_cpu_match_fio005_cam.mp4`，地图 `_work\camera_room\e23_steel_s02.png` |
 
 ## 目录
@@ -1239,6 +1239,25 @@ python tools\vdf_weapons.py --export                                            
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.Import                                            # 重转动作（带剑和盾的曲线）
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.PropStills -Graphics -Extra '-roeTag','after'
 python tools\vdf_prop_sheet.py _work\vdf\props out\fio005_props.jpg
+```
+
+#### 游戏自己的程序化骨骼：扭转骨、修正骨、手指半关节（10-05）
+
+用户："继续"（上一轮留下的第二件事：肘、膝的修正骨）。细节见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md) 第 4 节"游戏自己的程序化骨骼"。
+
+- 动作文件里没有修正骨的关键帧；摆它们的是包里的 `Rig_proc_ControlRig`（一个 ControlRig，逻辑编译成 RigVM 字节码）。
+- `tools/vdf_research/controlrig_decode.py` 把它解了出来：常量（450 个属性定义、370 个值）和 460 条指令，反汇编后逻辑和参数都清楚。
+- 游戏每帧：先把 257 根手指和修正骨复位到绑定姿势；再按 8 次"算扭转"摆上臂、前臂、大腿、小腿的扭转骨和修正根骨；最后摆 28 个手指半关节。
+  - 修正根骨不带扭转，只跟一半（大腿 0.6）的摆动，下面的 `lowerarm_in/out/fwd/bck` 这些就停在关节弯到一半的位置；
+  - 扭转骨按各自的比例取手（脚）的扭转，或抵消上臂（大腿）自己的扭转。
+- `RoeUeRig` 照这个实现（`TwistRig.Game`，默认；参数都在组件上，默认是游戏的值；上一版按位置分的留作 `ByPosition`）。
+- 和游戏比，修正根骨的误差从 19–31° 降到 0–11°，手指半关节 34° → 14°。深蹲、跪地时膝窝的折痕变柔和。对比 `out\fio005_rig.jpg`（左：不驱动，中：上一版，右：游戏的规则）。
+
+```powershell
+python tools\vdf_research\zen_dump.py --out _work\vdf\research\raw\controlrig "BaseBody_PCF/Model/Rig_proc_ControlRig"
+python tools\vdf_research\controlrig_decode.py _work\vdf\research\raw\controlrig\VindictusRoot\Character\Player\BaseBody_PCF\Model --code > _work\vdf\research\controlrig_code.txt
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.RigStills -Graphics
+python tools\vdf_rig_sheet.py _work\vdf\rig out\fio005_rig.jpg
 ```
 
 ### 选人界面（10-03 晚）

@@ -17,6 +17,8 @@ PCF_005 是白色短裙礼服，裙摆一圈荷叶边；头冠、领口、两边
   - 站架、走跑、四个攻击、三个技能、受击、击倒、躺地、起身、开场、胜利全换成她的。
   - 剑和盾也从游戏里拿来挂在手上，攻击按剑身判定命中。
   - 10-05：剑和盾跟着游戏的动作转（举盾反击时盾朝前，胜利时反手握剑），和游戏比盾的朝向误差从平均 26° 降到 5.5°。
+  - 10-05：扭转骨、肩肘髋膝的修正根骨、手指半关节照游戏自己的程序化骨骼（`Rig_proc_ControlRig`，从包里解出来的）驱动；
+    修正根骨和游戏的差从 19–31° 降到 0–11°，深蹲时膝窝的折痕变柔和。
   - MetaHuman 骨架比 Unity 人形骨架多出的脊柱节和扭转骨，在运行时补回去（`RoeUeRig`）。
 - **高跟鞋**：MetaHuman 身体的绑定姿势是平脚站，鞋跟比前掌低 5.3 厘米。
   - 建人形骨架时把脚尖往下压 32°，鞋跟和前掌一样高，脚趾再抬回平的。
@@ -209,10 +211,71 @@ python tools\strike_sheet.py out\motion_sheets\vdf_candidates out\fio005_own_mov
   - 她剑手的第一刀里手腕翻了 160°，原来前臂皮肤拧成麻花。
   - 上臂那几根和游戏一致（游戏 −0.71，规则 −0.67）。
   - 前臂那几根和游戏动作里烘的值差得多（平均 30°）。游戏运行时还有 `ABP_PCF_Corrective`、`Rig_proc_ControlRig` 重新摆这些骨骼，烘进动作的值不一定是游戏里看到的样子。对比特写见 `VdfAnims.TwistStills`。
+  - 10-05 起换成游戏自己的规则，见下一节；这一版留作 `TwistRig.ByPosition`。
 - **运行顺序**：
   - FighterRig 每帧评估动画前把中间节复位，评估后分回弯曲；
   - 脚的 IK 之后驱动扭转骨；
   - 编辑器里的截图、量招（`RoeCapture.Pose`）也按这个顺序做。
+
+### 游戏自己的程序化骨骼：扭转骨、修正根骨、手指半关节（10-05）
+
+用户 10-05："继续"（上一轮留下的第二件事：肘、膝的修正骨）。
+
+- **找到驱动它们的东西**：
+  - 修正骨（`lowerarm_in/out/fwd/bck`、`*_correctiveRoot`、手指的 `*_bulge`、`*_half` 等）在她的 184 段动作里几乎都没有关键帧，
+    只有脚踝前后两根和几根手指的在 1–9 段里有值。这些也在下面第 1 步的复位名单里，游戏里本来就看不到。
+  - `ABP_PCF_Corrective` 以前解过，里面只有两个胸的 KawaiiPhysics 节点。
+  - 包里也没有姿势资产（PoseAsset）。名字以 `PA_` 开头的 `PA_female_base` 等是物理资产，不是姿势资产。
+  - 剩下的就是 `BaseBody_PCF/Model/Rig_proc_ControlRig`：一个 ControlRig，逻辑编译成了 RigVM 字节码。
+- **解出来**（`tools/vdf_research/controlrig_decode.py`，只读，密钥只从文件读、不打印）：
+  - `RigVMMemory_Literal` 是一个生成的类：450 个属性定义（名字、类型、大小）。它的默认对象里是常量的值，按 UE 的无版本属性格式存，5274 字节正好读完，370 个值。
+  - `VM` 里先是 20 个函数名（`GetTransform`、`MathQuaternionSwingTwist`、`MathQuaternionSlerp`……），然后是 460 条指令。
+    每条 `Execute` 是函数号、参数个数，每个参数是"哪块内存 + 第几个寄存器 + 成员偏移"；成员偏移查工作内存类末尾的属性路径表（Rotation、Translation、Pitch、Yaw、Roll）。
+  - 反汇编出来对上属性名，逻辑一目了然（`_work/vdf/research/controlrig_code.txt`）。
+- **游戏每帧做的事**（动画之后）：
+  1. 把约 257 根手指和修正骨复位到绑定姿势（`Clear Keyframes`），动作里烘的值不算。所以以前拿烘的值去比没有意义。
+  2. 8 次 `Compute Twist`（上臂、大腿、前臂、小腿，左右各一）。起点骨骼 S、终点骨骼 E：
+     - S 相对绑定姿势的转动，绕骨骼方向（X 轴）分成摆动和扭转；
+     - 修正根骨的局部旋转 = 扭转的逆 × slerp(摆动的逆, 不转, 摆动比例)。它不带扭转，只跟 S 的一部分摆动，下面的修正骨就停在关节弯到一半的位置；
+     - 每根扭转骨的局部旋转 = slerp(q, 不转, 它的扭转比例)。前臂、小腿的 q 是 E（手、脚）的扭转，上臂、大腿的 q 是 S 自己扭转的逆。
+  3. 28 个手指半关节：取指节转动的逆的一半；偏航（指节弯曲的方向）在指节自己偏航 0–20° 之间从一半过渡到全部。
+- **参数**（按值去重存的，左右共用一个常量）：
+
+| 肢体 | 起点 → 终点 | 修正根骨跟的摆动 | 两根扭转骨的扭转比例 | 扭转取自 |
+|---|---|---|---|---|
+| 上臂 | upperarm → lowerarm | 0.5 | 0.2 / 0.8 | 上臂自己（取逆） |
+| 大腿 | thigh → calf | 0.6 | 0.0 / 0.6 | 大腿自己（取逆） |
+| 前臂 | lowerarm → hand | 0.5 | 0.4 / 0.8 | 手 |
+| 小腿 | calf → foot | 0.5 | 0.5 / 0.5 | 脚 |
+
+  扭转骨得到 q 的 (1 − 比例)：上臂 twist_01 抵消 80% 的扭转（靠肩的皮肤不跟着拧），前臂 twist_01 跟手转 60%。
+- **在 Unity 里**（`RoeUeRig.TwistRig.Game`，默认）：她的骨骼局部坐标是 Unreal 的绕 z 转半圈，骨骼仍沿 x 轴，所以同样的四元数运算直接搬过来。
+  手指半关节要用 Unreal 的欧拉角（俯仰绕 y、偏航绕 z、横滚绕 x），先换回 Unreal 的坐标再算，`FQuat::Rotator`、`FRotator::Quaternion` 照源码写。
+  参数都在组件上，默认就是游戏的值（`RoeUeRig.limbs`、`halfJoint`、`halfJointYawRange`）。
+- **蒙皮**：修正根骨下面 32 根修正骨蒙了 15452 个顶点（肩、肘、髋、膝），手指半关节下面 56 根蒙了 3084 个，扭转骨下面的 twistCor、二头肌、三头肌蒙了 22984 个。
+- **和游戏比**（`VdfAnims.Import` 自检：游戏的姿势也先跑一遍这套规则，再和她回放出来的比，87 段平均的转角误差）：
+
+| 骨骼 | 上一版（修正根骨跟着父骨骼） | 游戏的规则 |
+|---|---|---|
+| 上臂修正根骨 | 31.4° | 10.7° |
+| 前臂修正根骨 | 18.6° | 4.9° |
+| 大腿修正根骨 | 22.6° | 0.0° |
+| 小腿修正根骨 | 29.5° | 8.1°（就是小腿那个固定的 8° 滚转） |
+| 手指半关节（右食指第二节） | 34.1° | 13.8° |
+| 扭转骨 | 2–8° | 0–8° |
+
+  剩下的误差来自上游：人形重定向后上臂、前臂本身就差 5° 左右。
+- **看得出的地方**：膝盖。深蹲、跪地时膝窝那道折痕变柔和，膝盖更圆；前臂护甲的花纹不再拧着。对比图 `out\fio005_rig.jpg`
+  （`VdfAnims.RigStills` 拍，`tools\vdf_rig_sheet.py` 拼；左：不驱动，中：上一版，右：游戏的规则）。
+
+```powershell
+python tools\vdf_research\zen_dump.py --out _work\vdf\research\raw\controlrig "BaseBody_PCF/Model/Rig_proc_ControlRig"
+python tools\vdf_research\controlrig_decode.py _work\vdf\research\raw\controlrig\VindictusRoot\Character\Player\BaseBody_PCF\Model _work\vdf\research\controlrig_literal.json
+python tools\vdf_research\controlrig_decode.py _work\vdf\research\raw\controlrig\VindictusRoot\Character\Player\BaseBody_PCF\Model --code > _work\vdf\research\controlrig_code.txt
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.Import -Extra '-roeTwistRig','ByPosition','-roeReport','_bypos'   # 上一版的误差
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.RigStills -Graphics
+python tools\vdf_rig_sheet.py _work\vdf\rig out\fio005_rig.jpg
+```
 
 ### 剑和盾
 
@@ -279,12 +342,9 @@ python tools\strike_sheet.py out\motion_sheets\vdf_candidates out\fio005_own_mov
 
 ## 5. 已知问题和下一步
 
-- **肘、膝的修正骨还没驱动。**
-  - 扭转骨现在由 `RoeUeRig` 驱动了。
-  - `*_correctiveRoot`、`lowerarm_in/out/fwd/bck`、手指的 `*_bulge` 这类修正骨（125 根）在她的动作文件里完全没有关键帧，
-    游戏是运行时摆的。`ABP_PCF_Corrective`（以前解过）里只有两个胸的 KawaiiPhysics 节点，所以摆修正骨的是
-    `BaseBody_PCF/Model/Rig_proc_ControlRig`（一个 ControlRig，逻辑编译成 RigVM 字节码）。包里没有姿势资产（PoseAsset）。
-  - 要照游戏做，得先解这个 ControlRig 的字节码；这里还是跟着父骨骼走，肘、膝大弯时皮肤是普通蒙皮的效果。
+- **肘、膝的修正骨**：10-05 照游戏的 `Rig_proc_ControlRig` 驱动了（第 4 节"游戏自己的程序化骨骼"）。
+  - 游戏的这套只摆修正根骨，下面的 `lowerarm_in/out/fwd/bck` 等跟着根骨走，本身不单独驱动；我们也一样。
+  - 剩下的误差来自人形重定向（上臂、前臂本身差 5° 左右）。
 - **盾相对前臂的转动**：10-05 已经跟上（第 4 节"剑和盾"）。
 - **没用的部分**：58 段表情动画、音效、特效都没用。
 - **手臂的残差**：人形重定向的损耗，平均 2–3 cm，最差 10 cm。
