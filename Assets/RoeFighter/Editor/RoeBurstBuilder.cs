@@ -85,6 +85,7 @@ namespace RoeFighter.EditorTools
             public string name, title;     // title: shown to people (captions, the check picture); the name if empty
             public int stage;
             public bool cloth, together;
+            public bool followBody;        // worn tight on the body: its pieces take the weights of the nude body under them (FollowBody)
             public string renderer, bone, anyBone;
             public float anyShare;
             public int minTriangles, maxTriangles;
@@ -337,7 +338,9 @@ namespace RoeFighter.EditorTools
                     return list;
                 }).ToArray();
                 string piecePath = $"{dir}/{Safe(r.name)}__{Safe(name)}.asset";
-                var mesh = Commit(Subset(src, lists, MeshAsset(piecePath)), piecePath);
+                var sub = Subset(src, lists, MeshAsset(piecePath));
+                string followed = u.Key.group.followBody && nude != null ? "; " + FollowBody(sub, r, nude, model.transform) : "";
+                var mesh = Commit(sub, piecePath);
                 var mats = r.sharedMaterials;
                 var smr = AddRenderer(r, "burst " + name, mesh, subs.Select(s => mats[Mathf.Min(s, mats.Length - 1)]).ToArray());
                 int count = lists.Sum(l => l.Count) / 3;
@@ -350,7 +353,7 @@ namespace RoeFighter.EditorTools
                     taken[r] = list_ = new List<Part>();
                 list_.AddRange(u);
                 log.Append($"\n[ROE]   stage {u.Key.group.stage} {(u.Key.group.cloth ? "cloth " : "armour")} {name,-22} {u.Count(),4} pieces {count,6} triangles  " +
-                           $"bones {string.Join(" ", u.Select(p => p.bone).Distinct().Take(6))}");
+                           $"bones {string.Join(" ", u.Select(p => p.bone).Distinct().Take(6))}{followed}");
             }
             // what stays on each renderer (the suit's skin the nude body replaces goes as well)
             foreach (var r in replaced.Keys)
@@ -400,6 +403,124 @@ namespace RoeFighter.EditorTools
         }
 
         internal static string Safe(string s) => Regex.Replace(s, @"[^A-Za-z0-9_\-]+", "_");
+
+        /// <summary>
+        /// A piece worn tight on the body takes the weights of the nude body under it (a group's "followBody"), so that it
+        /// moves exactly as the skin it lies on, whatever moves the bones: a breast spring moving the end of the chain alone
+        /// pushed the skin up to 12 mm out through a08's bra armour, which the game weighted for its own hand-keyed bounce
+        /// (RoeBodyCheck, 10-05).  Within near of the body all of the body's weights, from near to far blended back to the
+        /// piece's own, further out its own; bones the piece's renderer does not have are left out.  The body's weights at a
+        /// point: its 6 nearest vertices, by inverse square distance (a breast's weights change fast across it: one nearest
+        /// vertex left the cup up to 2 cm off the skin under it when the end of the chain moved 3 cm).
+        /// </summary>
+        static string FollowBody(Mesh piece, SkinnedMeshRenderer source, SkinnedMeshRenderer nude, Transform root, float near = 0.02f, float far = 0.04f)
+        {
+            var body = nude.sharedMesh;
+            var toBody = ToModel(nude, root);
+            var bv = body.vertices;
+            var bodyAt = new Vector3[bv.Length];
+            for (int i = 0; i < bv.Length; i++)
+                bodyAt[i] = toBody.MultiplyPoint3x4(bv[i]);
+            var bodyCounts = body.GetBonesPerVertex();
+            var bodyWeights = body.GetAllBoneWeights();
+            var bodyStart = new int[bv.Length + 1];
+            for (int i = 0; i < bv.Length; i++)
+                bodyStart[i + 1] = bodyStart[i] + bodyCounts[i];
+            var bodyBones = nude.bones;
+            var grid = new Dictionary<Vector3Int, List<int>>();
+            for (int i = 0; i < bodyAt.Length; i++)
+            {
+                var key = Vector3Int.FloorToInt(bodyAt[i] / far);
+                if (!grid.TryGetValue(key, out var list))
+                    grid[key] = list = new List<int>();
+                list.Add(i);
+            }
+            var index = new Dictionary<Transform, int>();
+            var bones = source.bones;
+            for (int k = 0; k < bones.Length; k++)
+                if (bones[k] != null && !index.ContainsKey(bones[k]))
+                    index[bones[k]] = k;
+            var toPiece = ToModel(source, root);
+            var pv = piece.vertices;
+            var counts = piece.GetBonesPerVertex();
+            var weights = piece.GetAllBoneWeights();
+            var newCounts = new NativeArray<byte>(pv.Length, Allocator.Temp);
+            var flat = new List<BoneWeight1>();
+            int whole = 0, blended = 0, own = 0;
+            float lost = 0f;
+            int at = 0;
+            var sum = new Dictionary<int, float>();
+            var nearest = new List<(int j, float d2)>();
+            for (int i = 0; i < pv.Length; i++)
+            {
+                var p = toPiece.MultiplyPoint3x4(pv[i]);
+                var c = Vector3Int.FloorToInt(p / far);
+                nearest.Clear();
+                for (int x = -1; x <= 1; x++)
+                    for (int y = -1; y <= 1; y++)
+                        for (int z = -1; z <= 1; z++)
+                            if (grid.TryGetValue(new Vector3Int(c.x + x, c.y + y, c.z + z), out var list))
+                                foreach (int j in list)
+                                {
+                                    float d2 = (bodyAt[j] - p).sqrMagnitude;
+                                    if (d2 < far * far)
+                                        nearest.Add((j, d2));
+                                }
+                nearest.Sort((a, b) => a.d2.CompareTo(b.d2));
+                if (nearest.Count > 6)
+                    nearest.RemoveRange(6, nearest.Count - 6);
+                int best = nearest.Count > 0 ? nearest[0].j : -1;
+                float bestD = nearest.Count > 0 ? nearest[0].d2 : far * far;
+                sum.Clear();
+                float t = best < 0 ? 1f : Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(near, far, Mathf.Sqrt(bestD)));
+                for (int k = 0; k < counts[i]; k++)
+                {
+                    var w = weights[at + k];
+                    sum.TryGetValue(w.boneIndex, out float v);
+                    sum[w.boneIndex] = v + w.weight * t;
+                }
+                at += counts[i];
+                if (best >= 0 && t < 1f)
+                {
+                    float idw = 0f;
+                    foreach (var (j, d2) in nearest)
+                        idw += 1f / Mathf.Max(d2, 1e-8f);
+                    foreach (var (j, d2) in nearest)
+                    {
+                        float share = (1f - t) / Mathf.Max(d2, 1e-8f) / idw;
+                        for (int k = bodyStart[j]; k < bodyStart[j + 1]; k++)
+                        {
+                            var w = bodyWeights[k];
+                            var bone = w.boneIndex >= 0 && w.boneIndex < bodyBones.Length ? bodyBones[w.boneIndex] : null;
+                            if (bone == null || !index.TryGetValue(bone, out int bi))
+                            {
+                                lost += w.weight * share;
+                                continue;
+                            }
+                            sum.TryGetValue(bi, out float v);
+                            sum[bi] = v + w.weight * share;
+                        }
+                    }
+                    if (t <= 0f)
+                        whole++;
+                    else
+                        blended++;
+                }
+                else
+                    own++;
+                var top = sum.Where(kv => kv.Value > 1e-4f).OrderByDescending(kv => kv.Value).Take(4).ToList();
+                float total = top.Sum(kv => kv.Value);
+                newCounts[i] = (byte)top.Count;
+                foreach (var kv in top)
+                    flat.Add(new BoneWeight1 { boneIndex = kv.Key, weight = kv.Value / Mathf.Max(total, 1e-6f) });
+            }
+            var na = new NativeArray<BoneWeight1>(flat.ToArray(), Allocator.Temp);
+            piece.SetBoneWeights(newCounts, na);
+            newCounts.Dispose();
+            na.Dispose();
+            return $"follows the body: {whole} vertices take its weights, {blended} blended, {own} keep their own" +
+                   (lost > 0f ? $" ({lost:F1} vertex-weights on bones its renderer lacks left out)" : "");
+        }
 
         /// <summary>
         /// Some triangles of a mesh as a mesh of their own: only the vertices they use, every vertex

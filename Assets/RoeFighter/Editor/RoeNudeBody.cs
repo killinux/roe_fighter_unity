@@ -149,9 +149,11 @@ namespace RoeFighter.EditorTools
             var skin = new List<bool>();
             var permanent = new List<bool>();
             var tight = new List<bool>();             // outfit points of pieces that lie on the body
+            var follow = new List<bool>();            // ... of a group that follows the body (followBody): not a source of weights
             var influence = new List<(Transform bone, float weight)[]>();
             var bindpose = new Dictionary<Transform, Matrix4x4>();
-            void Add(SkinnedMeshRenderer r, IEnumerable<int> vertices, bool isSkin, Func<int, bool> stays, Func<int, bool> lies = null)
+            void Add(SkinnedMeshRenderer r, IEnumerable<int> vertices, bool isSkin, Func<int, bool> stays, Func<int, bool> lies = null,
+                     Func<int, bool> follows = null)
             {
                 var m = r.sharedMesh;
                 var v = m.vertices;
@@ -181,6 +183,7 @@ namespace RoeFighter.EditorTools
                     skin.Add(isSkin);
                     permanent.Add(stays(i));
                     tight.Add(lies != null && lies(i));
+                    follow.Add(follows != null && follows(i));
                     influence.Add(list.ToArray());
                 }
             }
@@ -279,6 +282,7 @@ namespace RoeFighter.EditorTools
                 var r = g.Key;
                 var stays = new Dictionary<int, bool>();
                 var onBody = new Dictionary<int, bool>();
+                var follows = new Dictionary<int, bool>();
                 var toModel = ToModel(r.transform);
                 var rv = r.sharedMesh.vertices;
                 foreach (var part in g)
@@ -302,14 +306,17 @@ namespace RoeFighter.EditorTools
                     {
                         stays[v] = forever;
                         onBody[v] = lies;
+                        follows[v] = part.group != null && part.group.followBody;
                     }
                 }
-                Add(r, stays.Keys, false, i => stays[i], i => onBody[i]);
+                Add(r, stays.Keys, false, i => stays[i], i => onBody[i], i => follows[i]);
             }
             int skinCount = skin.Count(x => x);
             var all = Enumerable.Range(0, points.Count).ToList();
             var skinGrid = new Grid(points, all.Where(i => skin[i]));
-            var tightGrid = new Grid(points, all.Where(i => !skin[i] && tight[i]));
+            var tightGrid = new Grid(points, all.Where(i => !skin[i] && tight[i] && !follow[i]));
+            var followGrid = new Grid(points, all.Where(i => !skin[i] && follow[i]));
+            int fromRound = 0;
             var foreverGrid = new Grid(points, all.Where(i => !skin[i] && permanent[i]));
             var allGrid = new Grid(points, all);
 
@@ -341,7 +348,17 @@ namespace RoeFighter.EditorTools
                 else
                 {
                     var (dt, onTight) = Nearest(tightGrid, p, 0.08f, 0.01f);
-                    if (onTight != null && dt < ds - 0.005f)
+                    followGrid.Near(p, 0.025f, near);
+                    bool underFollower = near.Count > 0 && near.Min(x => x.d) < dt;
+                    if (underFollower && onSkin != null)
+                    {
+                        // under a piece that follows the body: the skin round the hole it covers, from all sides
+                        skinGrid.Near(p, 0.12f, near);
+                        float d0 = near.Min(x => x.d);
+                        pick = near.Where(x => x.d <= d0 + 0.04f).OrderBy(x => x.d).Take(16).ToList();
+                        fromRound++;
+                    }
+                    else if (onTight != null && dt < ds - 0.005f)
                     {
                         pick = onTight;
                         fromOutfit++;
@@ -507,6 +524,7 @@ namespace RoeFighter.EditorTools
             float Pct(float q) => skinGap.Count > 0 ? skinGap[Mathf.Clamp(Mathf.RoundToInt(q * (skinGap.Count - 1)), 0, skinGap.Count - 1)] * 1000f : -1f;
             log.Append($"\n[ROE]   nude body from {Path.GetFileName(n.prefab)} {n.renderer}[{n.submesh}]: {used.Count} vertices, " +
                        $"{fromSkin} take the suit's skin (gap median {Pct(0.5f):F2} mm, p95 {Pct(0.95f):F2} mm), {fromOutfit} the outfit over them, " +
+                       (fromRound > 0 ? $"{fromRound} the skin round a piece that follows the body, " : "") +
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
                        $"outfit pieces on the body {tightParts}, hanging away {looseParts}; " +
                        $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material {material.name} ({material.shader.name})" +

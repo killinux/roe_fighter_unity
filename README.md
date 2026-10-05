@@ -44,6 +44,7 @@
 | Inase 的裙子调研：游戏里逐帧手 K、没有物理；拿她自己的技能当标准答案，我们的骨骼布料、Magica Cloth 2、只跟着腿都差 61–63°，游戏里长裙片大幅飘开，三种方案都贴着腿垂 | 调研完成（10-05），见下面"Inase 的裙子：游戏里怎么动的"一节和 [`docs/inase-skirt.md`](docs/inase-skirt.md)；对比视频 `out\a08_skirt_vs_keys.mp4`；改法等你定 |
 | ROE 战斗里有没有物理：战斗角色、敌人、技能都没有物理组件，舞台只有不会动的碰撞体和少量会碰撞的粒子；真正的物理（Magica Cloth 2）只在大厅 | 调研完成（10-05），见下面"ROE 战斗里有没有物理"一节和 [`docs/roe-battle-physics.md`](docs/roe-battle-physics.md)；工具 `tools/roe_physics_scan.py` |
 | Inase 完全用 Magica Cloth 2（`magica_full`）：所有部件用插件自带的预设，技能里也由它来动；装了插件时她在游戏里默认就用它（F4 可切换） | 完成（10-05），见 [`docs/inase-skirt.md`](docs/inase-skirt.md) 第 6 节；对比视频 `out\a08_magica_full_front.mp4`、`out\a08_magica_full_backright.mp4` |
+| 身体检查：10 个角色的爆衣、乳摇、身体权重，Inase 的头发和衣服（`RoeBodyCheck`、`RoeClothPlayDemo` 的胸 / 头发视角和读数）；修了 Inase 的胸（Magica 弹簧太软，胸甲滑开） | 完成（10-05），见 [`docs/body-check.md`](docs/body-check.md)；视频 `out\body_check_roe_jiggle.mp4`、`out\body_check_others_jiggle.mp4`、`out\a08_breast_springs.mp4`、`out\a08_hair_check.mp4` |
 
 ## 目录
 
@@ -1656,3 +1657,19 @@ python tools\roe_physics_scan.py --report
 - **效果**（左 Magica 全接管，右原来的）：`out\a08_magica_full_front.mp4`（正面）、`out\a08_magica_full_backright.mp4`（背后特写）。
   - 走路、侧步时长裙片往身后飘，回旋踢时大幅甩开；后片在屁股上折出褶子，踢腿时折着让开大腿。原来的方案几乎一直垂着，后片像板，踢腿时腿会穿过去。
   - 代价：穿进身体的布料多一点（1.1% 对 0.4%），抖动大一点；技能 1 开头人被动作一下子带走时，裙子有一处很大的跳动。
+
+### 身体检查：爆衣、乳摇、权重、Inase 的头发和衣服（10-05）
+
+用户 10-05："继续，爆衣效果目前这几个角色都有么"，"爆衣，乳摇，都身体权重，inase的头发也衣服，这些都检查一下"。细节见 [`docs/body-check.md`](docs/body-check.md)。
+
+- **爆衣**：4 个 ROE 角色（a08、g04、b10、g05）有；霞两套、不知火舞（DOA6）、Fiona（Vindictus）、Eve 两套（剑星）还没有。
+- **乳摇**：10 个都有胸部物理（ROE 是骨骼布料、Inase 在游戏里是 Magica，DOA6 是软体，Fiona 是 KawaiiPhysics，Eve 是剑星的弹簧骨）。
+- **权重**：转胸骨时动的都只有胸，没有漏到胳膊、脖子、肚子、背上；衣服和下面的身体基本一起动。
+- **修了 Inase 的两处**：
+  - Magica 自带的弹簧预设（MiddleSpring）太软：胸平均离开动画 4 cm、最大 12 cm，站着也有 2.6 cm，胸被顶得变形。
+    现在默认 HardSpring、力 0.3、最多 2 cm、惯性 0.6：站着 0.7 cm，技能里平均 1.9 cm、最大 6.5 cm（游戏手 K 的是 1.5 / 4.9）。
+  - 胸甲和下面裸体的权重对不上，胸一动胸甲就滑开。爆衣规则加了 `followBody`：胸甲下面的身体从周围皮肤补权重，胸甲再抄身体的。
+- 工具：
+  - `RoeBodyCheck`（菜单 `ROE Fighter/Checks/Body check`）：转胸骨、烘网格，看什么跟着动，出报告、胸部特写和热度图（`tools/body_check_sheet.py`）；
+  - `RoeClothPlayDemo` 加了 `-roeView chest|hair`、`auto:nude`（衣服全掉）、胸的读数（`breasts.txt`）和头发穿模读数（`hair.txt`）；
+  - `tools/takes_grid_video.py`：几段录像拼成网格视频。

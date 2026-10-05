@@ -27,6 +27,11 @@ namespace RoeFighter.EditorTools
     /// per part of the script go to the log and metrics.txt.  -roeNoFrames: numbers only, nothing rendered.
     /// -roeScript skills and -roeSkirtKeys off as RoeClothDemo has them (her game clips, the skirt left to the solver and
     /// measured against the keys).
+    /// Body checks (user 10-05: "爆衣，乳摇，都身体权重，inase的头发也衣服，这些都检查一下"): -roeView chest (close in front of
+    /// her chest) or hair (behind her head and shoulders); the setup word "nude" ("auto:nude") takes every outfit piece that
+    /// can come off away before the take (RoeClothesBurst); every take also measures the breasts (BreastMeter: how far each
+    /// one moves against the chest, whatever moves it - breasts.txt) and, in the hair view or with -roeHairMeter, the hair
+    /// that hangs (HairMeter: inside the body or what she wears - hair.txt).
     /// </summary>
     [InitializeOnLoad]
     public static class RoeClothPlayDemo
@@ -98,6 +103,12 @@ namespace RoeFighter.EditorTools
         static Vector3 look;
         static string dir, label;
         static Meter meter;
+        static BreastMeter breastMeter;
+        static HairMeter hairMeter;
+        static bool nude, hairMeterOn;
+        static List<List<Transform>> chestMarks = new List<List<Transform>>();   // the breasts' bones (soft-body nodes): the chest view's aim
+        static readonly System.Text.StringBuilder breastTable = new System.Text.StringBuilder();
+        static readonly System.Text.StringBuilder hairTable = new System.Text.StringBuilder();
         static readonly Dictionary<SkinnedMeshRenderer, Mesh> meshes = new Dictionary<SkinnedMeshRenderer, Mesh>();
         static readonly List<string> takes = new List<string>();
         static readonly System.Text.StringBuilder log = new System.Text.StringBuilder();
@@ -126,6 +137,9 @@ namespace RoeFighter.EditorTools
             takes.Clear();
             log.Clear().Append("[ROE] play demo:");
             metrics.Clear().Append("char\tsetup\tpart\tframes\tinside %\tdeepest cm\tjerk mm\tworst jerk mm\tstretch %\tworst stretch %\taway cm\tworst away cm\tturned %\n");
+            breastTable.Clear().Append("char\tsetup\tpart\tframes\tmean cm\tmax cm\tspeed cm/s\n");
+            hairTable.Clear().Append("char\tsetup\tpart\tframes\thanging hair verts\tinside %\tdeepest cm\n");
+            hairMeterOn = job.view == "hair" || Environment.GetCommandLineArgs().Contains("-roeHairMeter");
             Hook(true);
             NextTake();
         }
@@ -160,6 +174,9 @@ namespace RoeFighter.EditorTools
                     $"{x.from.ToString("F1", CultureInfo.InvariantCulture)} {x.what}")));
                 File.WriteAllText(Path.Combine(current.outDir, "takes.txt"), string.Join("\n", takes));
                 File.WriteAllText(Path.Combine(current.outDir, "metrics.txt"), metrics.ToString());
+                File.WriteAllText(Path.Combine(current.outDir, "breasts.txt"), breastTable.ToString());
+                if (hairMeterOn)
+                    File.WriteAllText(Path.Combine(current.outDir, "hair.txt"), hairTable.ToString());
                 Debug.Log(log.ToString());
                 Finish();
                 return;
@@ -172,6 +189,8 @@ namespace RoeFighter.EditorTools
             // "nohip": the skirt does not follow the legs or the pelvis's turn (FighterRig.NoHipCloth), the rest is for Magica
             var words = tuning.Split(';').ToList();
             FighterRig.NoHipCloth = words.Remove("nohip");
+            // "nude": every outfit piece that can come off is off for the take (the body under them, burst or not)
+            nude = words.Remove("nude");
             tuning = string.Join(";", words);
 #if MAGICACLOTH2
             RoeMagicaCloth.Tuning = tuning;
@@ -191,8 +210,13 @@ namespace RoeFighter.EditorTools
                 game.Step(new FighterInput[2]);
             who = game.f[0].rig.id == id ? 0 : 1;
             me = game.f[who];
+            chestMarks = RoeBodyCheck.Breasts(me.rig.animator, out _).Select(b => b.moved).ToList();
             me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 5.5f;
             me.foe.Place();
+            if (nude && me.rig.burst != null)
+                foreach (var p in me.rig.burst.pieces)
+                    if (p.renderer != null)
+                        p.renderer.enabled = false;
             me.rig.ResetCloth();
             foreach (var rig in game.rigs)
                 rig.ResetSkirtKeyError();
@@ -212,6 +236,9 @@ namespace RoeFighter.EditorTools
             warm = 0;
             meter?.Dispose();
             meter = null;
+            breastMeter = null;
+            hairMeter?.Dispose();
+            hairMeter = null;
             meshes.Clear();
             if (me.rig.burst != null)
                 foreach (var p in me.rig.burst.pieces.Where(p => p.cloth && p.renderer != null && p.renderer.sharedMesh != null))
@@ -253,10 +280,32 @@ namespace RoeFighter.EditorTools
         }
 
         static bool Close => current.view.StartsWith("back");
+        static bool ChestView => current.view == "chest";
+        static bool HairView => current.view == "hair";
 
         static Vector3 Aim()
         {
-            var hips = me.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
+            var animator = me.rig.animator;
+            var hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+            if (ChestView)
+            {
+                // the breasts' roots (a ROE rig's humanoid Chest is Spine1, at the belly)
+                if (chestMarks.Count > 0)
+                {
+                    var mid = Vector3.zero;
+                    foreach (var mark in chestMarks)
+                        mid += mark.Aggregate(Vector3.zero, (a, t) => a + t.position) / Mathf.Max(1, mark.Count);
+                    return mid / chestMarks.Count + me.Forward * 0.04f + Vector3.up * 0.03f;
+                }
+                var chest = animator.GetBoneTransform(HumanBodyBones.UpperChest) ?? animator.GetBoneTransform(HumanBodyBones.Chest) ?? hips;
+                return chest.position + me.Forward * 0.08f;
+            }
+            if (HairView)
+            {
+                var head = animator.GetBoneTransform(HumanBodyBones.Head);
+                var neck = animator.GetBoneTransform(HumanBodyBones.Neck) ?? head;
+                return (head.position + neck.position) * 0.5f - Vector3.up * 0.12f;
+            }
             return Close ? new Vector3(me.pos.x, hips.position.y - 0.12f, me.pos.z) : me.pos + Vector3.up * 0.95f;
         }
 
@@ -297,6 +346,9 @@ namespace RoeFighter.EditorTools
                 string failed = ClothFailures();
                 log.Append($"\n[ROE]   {me.rig.id} {label}: cloth ready after {warm} frames{(failed.Length > 0 ? $"; FAILED: {failed}" : "")}");
                 meter = new Meter(me.rig, meshes);
+                breastMeter = new BreastMeter(me.rig);
+                if (hairMeterOn)
+                    hairMeter = new HairMeter(me.rig);
             }
             float t = step / 60f;
             if (t > Length)
@@ -309,6 +361,19 @@ namespace RoeFighter.EditorTools
                     metrics.Append(meter.Table(me.rig.id, label));
                     meter.Dispose();
                     meter = null;
+                }
+                if (breastMeter != null)
+                {
+                    log.Append(breastMeter.Report($"[ROE]     {me.rig.id} {label}"));
+                    breastTable.Append(breastMeter.Table(me.rig.id, label));
+                    breastMeter = null;
+                }
+                if (hairMeter != null)
+                {
+                    log.Append(hairMeter.Report($"[ROE]     {me.rig.id} {label}"));
+                    hairTable.Append(hairMeter.Table(me.rig.id, label));
+                    hairMeter.Dispose();
+                    hairMeter = null;
                 }
                 NextTake();
                 return;
@@ -329,10 +394,12 @@ namespace RoeFighter.EditorTools
             float sideways = current.view == "backleft" ? -1f : 1f;
             var fwd = me.Forward;
             var side = Vector3.Cross(Vector3.up, fwd).normalized;
-            look = Vector3.Lerp(look, Aim(), step == 0 ? 1f : 0.08f);
-            cam.fieldOfView = Close ? 28f : 30f;
+            look = Vector3.Lerp(look, Aim(), step == 0 ? 1f : ChestView || HairView ? 0.15f : 0.08f);
+            cam.fieldOfView = Close ? 28f : ChestView ? 26f : 30f;
             cam.transform.position = Close
                 ? look + (-fwd * 0.8f + side * (0.6f * sideways)).normalized * 1.9f + Vector3.up * 0.1f
+                : ChestView ? look + (fwd * 0.9f - side * 0.35f).normalized * 1.45f + Vector3.up * 0.06f
+                : HairView ? look + (-fwd * 0.85f + side * 0.45f).normalized * 1.7f + Vector3.up * 0.3f
                 : look + (fwd * 0.8f - side * 0.6f).normalized * 3.6f + Vector3.up * 0.2f;
             cam.transform.LookAt(look, Vector3.up);
             captureNow = step % 2 == 0;
@@ -356,6 +423,22 @@ namespace RoeFighter.EditorTools
                     Debug.LogException(e);
                     meter.Dispose();
                     meter = null;
+                }
+            }
+            if (step > 0)
+            {
+                try
+                {
+                    breastMeter?.Sample(PartAt((step - 1) / 60f));
+                    if (hairMeter != null && step % 2 == 0)
+                        hairMeter.Sample(PartAt((step - 1) / 60f));
+                }
+                catch (Exception e)
+                {
+                    Debug.LogException(e);
+                    breastMeter = null;
+                    hairMeter?.Dispose();
+                    hairMeter = null;
                 }
             }
             if (!captureNow)
@@ -383,6 +466,257 @@ namespace RoeFighter.EditorTools
         }
 
 
+        /// <summary>A part of the script and what was measured in it (the two side steps as one part, then all of it).</summary>
+        class Tally
+        {
+            public string name;
+            public int frames, count;
+            public double sum, sum2;
+            public float max;
+            public long extra;
+
+            public static List<Tally> Merged(List<Tally> parts)
+            {
+                Tally Sum(string name, IEnumerable<Tally> of)
+                {
+                    var list = of.ToList();
+                    return new Tally
+                    {
+                        name = name, frames = list.Sum(p => p.frames), count = list.Sum(p => p.count), sum = list.Sum(p => p.sum),
+                        sum2 = list.Sum(p => p.sum2), max = list.Count > 0 ? list.Max(p => p.max) : 0f, extra = list.Sum(p => p.extra),
+                    };
+                }
+                var merged = parts.GroupBy(p => p.name).Select(g => Sum(g.Key, g)).ToList();
+                if (parts.Count > 0)
+                    merged.Add(Sum("all", parts));
+                return merged;
+            }
+        }
+
+        /// <summary>
+        /// The breasts against the chest, whatever moves them (the solver, the game clip's keys): a point 8 cm in front of each
+        /// breast's root, carried by its bone (a DOA6 soft body: the middle of its nodes), in the chest bone's frame; per part of
+        /// the script how far it is from where it was at the start of the take (mean and most, cm) and how fast it moves
+        /// against the chest (RMS, cm/s).  The breasts' bones: RoeBodyCheck.Breasts.
+        /// </summary>
+        class BreastMeter
+        {
+            readonly Transform chest;
+            readonly List<(RoeBodyCheck.Breast b, Vector3 local)> breasts = new List<(RoeBodyCheck.Breast, Vector3)>();
+            readonly Vector3[] rest, prev;
+            readonly List<Tally> parts = new List<Tally>();
+            bool first = true;
+
+            public BreastMeter(FighterRig rig)
+            {
+                var animator = rig.animator;
+                chest = animator.GetBoneTransform(HumanBodyBones.UpperChest) ?? animator.GetBoneTransform(HumanBodyBones.Chest) ?? animator.GetBoneTransform(HumanBodyBones.Spine);
+                Vector3 Bone(HumanBodyBones h) => (animator.GetBoneTransform(h) ?? animator.GetBoneTransform(HumanBodyBones.Head)).position;
+                var right = (Bone(HumanBodyBones.RightUpperArm) - Bone(HumanBodyBones.LeftUpperArm)).normalized;
+                var up = (Bone(HumanBodyBones.Neck) - Bone(HumanBodyBones.Spine)).normalized;
+                var forward = Vector3.Cross(right, up).normalized;
+                foreach (var b in RoeBodyCheck.Breasts(animator, out _))
+                    breasts.Add((b, b.moved.Count == 1 ? b.moved[0].InverseTransformPoint(b.pivot + forward * 0.08f) : Vector3.zero));
+                rest = new Vector3[breasts.Count];
+                prev = new Vector3[breasts.Count];
+            }
+
+            Vector3 Tip(int k)
+            {
+                var (b, local) = breasts[k];
+                Vector3 world;
+                if (b.moved.Count == 1)
+                    world = b.moved[0].TransformPoint(local);
+                else
+                {
+                    world = Vector3.zero;
+                    foreach (var t in b.moved)
+                        world += t.position;
+                    world /= b.moved.Count;
+                }
+                return Quaternion.Inverse(chest.rotation) * (world - chest.position);
+            }
+
+            public void Sample(string partName)
+            {
+                if (breasts.Count == 0 || chest == null)
+                    return;
+                var part = parts.LastOrDefault();
+                if (part == null || part.name != partName)
+                    parts.Add(part = new Tally { name = partName });
+                for (int k = 0; k < breasts.Count; k++)
+                {
+                    var p = Tip(k);
+                    if (first)
+                        rest[k] = prev[k] = p;
+                    float d = (p - rest[k]).magnitude * 100f;
+                    float v = (p - prev[k]).magnitude * 100f * 60f;
+                    part.sum += d;
+                    part.max = Mathf.Max(part.max, d);
+                    part.sum2 += v * v;
+                    part.count++;
+                    prev[k] = p;
+                }
+                part.frames++;
+                first = false;
+            }
+
+            public string Report(string prefix)
+            {
+                var sb = new System.Text.StringBuilder($"\n{prefix}: breasts ({breasts.Count}: {string.Join(", ", breasts.Select(x => x.b.name))}) against the chest - mean cm (most) / speed cm/s:");
+                foreach (var p in Tally.Merged(parts))
+                {
+                    int n = Mathf.Max(1, p.count);
+                    sb.Append($"\n{prefix}   {p.name,-9} {p.sum / n,5:F2} ({p.max,5:F2})  {Math.Sqrt(p.sum2 / n),6:F1}");
+                }
+                return sb.ToString();
+            }
+
+            public string Table(string id, string setup)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var p in Tally.Merged(parts))
+                {
+                    int n = Mathf.Max(1, p.count);
+                    sb.Append(string.Join("\t", id, setup, p.name, p.frames.ToString(), (p.sum / n).ToString("F3", CultureInfo.InvariantCulture),
+                        p.max.ToString("F2", CultureInfo.InvariantCulture), Math.Sqrt(p.sum2 / n).ToString("F2", CultureInfo.InvariantCulture))).Append('\n');
+                }
+                return sb.ToString();
+            }
+        }
+
+        /// <summary>
+        /// The hair that hangs (vertices of the hair meshes more than 12 cm from the head bone) against the body and what she
+        /// wears (every other skinned mesh but the head's, as drawn - pieces taken off do not count): a hair vertex is inside when
+        /// the nearest body or clothes vertex within 3 cm has it more than 1 cm behind its surface (along its normal).  Per part
+        /// of the script: the share of hanging hair vertices inside, and the deepest (cm).
+        /// </summary>
+        class HairMeter : IDisposable
+        {
+            static readonly System.Text.RegularExpressions.Regex HairName = new System.Text.RegularExpressions.Regex(@"hair|ponytail|bangs",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            static readonly System.Text.RegularExpressions.Regex HeadName = new System.Text.RegularExpressions.Regex(@"head|face",
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            readonly List<SkinnedMeshRenderer> hair = new List<SkinnedMeshRenderer>(), body = new List<SkinnedMeshRenderer>();
+            readonly Transform head;
+            readonly Mesh baked = new Mesh();
+            readonly List<Vector3> points = new List<Vector3>(), normals = new List<Vector3>();
+            readonly Dictionary<Vector3Int, List<int>> grid = new Dictionary<Vector3Int, List<int>>();
+            readonly List<Tally> parts = new List<Tally>();
+            const float Cell = 0.03f;
+
+            public HairMeter(FighterRig rig)
+            {
+                head = rig.animator.GetBoneTransform(HumanBodyBones.Head);
+                foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(false).Where(x => x.sharedMesh != null))
+                {
+                    if (HairName.IsMatch(smr.name))
+                        hair.Add(smr);
+                    else if (!HeadName.IsMatch(smr.name))
+                        body.Add(smr);
+                }
+            }
+
+            public void Dispose() => Object.DestroyImmediate(baked);
+
+            public void Sample(string partName)
+            {
+                if (head == null || hair.Count == 0)
+                    return;
+                points.Clear();
+                normals.Clear();
+                foreach (var list in grid.Values)
+                    list.Clear();
+                foreach (var smr in body)
+                {
+                    if (!smr.enabled || !smr.gameObject.activeInHierarchy)
+                        continue;
+                    smr.BakeMesh(baked, true);
+                    var m = smr.transform.localToWorldMatrix;
+                    var v = baked.vertices;
+                    var n = baked.normals;
+                    for (int i = 0; i < v.Length && i < n.Length; i++)
+                    {
+                        var p = m.MultiplyPoint3x4(v[i]);
+                        var key = Vector3Int.FloorToInt(p / Cell);
+                        if (!grid.TryGetValue(key, out var cell))
+                            grid[key] = cell = new List<int>();
+                        cell.Add(points.Count);
+                        points.Add(p);
+                        normals.Add(m.MultiplyVector(n[i]).normalized);
+                    }
+                }
+                var part = parts.LastOrDefault();
+                if (part == null || part.name != partName)
+                    parts.Add(part = new Tally { name = partName });
+                int hanging = 0, inside = 0;
+                float deepest = 0f;
+                var h0 = head.position;
+                foreach (var smr in hair)
+                {
+                    if (!smr.enabled || !smr.gameObject.activeInHierarchy)
+                        continue;
+                    smr.BakeMesh(baked, true);
+                    var m = smr.transform.localToWorldMatrix;
+                    var v = baked.vertices;
+                    for (int i = 0; i < v.Length; i++)
+                    {
+                        var p = m.MultiplyPoint3x4(v[i]);
+                        if ((p - h0).sqrMagnitude < 0.12f * 0.12f)
+                            continue;
+                        hanging++;
+                        var c = Vector3Int.FloorToInt(p / Cell);
+                        int best = -1;
+                        float bestD = Cell * Cell;
+                        for (int x = -1; x <= 1; x++)
+                            for (int y = -1; y <= 1; y++)
+                                for (int z = -1; z <= 1; z++)
+                                    if (grid.TryGetValue(new Vector3Int(c.x + x, c.y + y, c.z + z), out var cell))
+                                        foreach (int k in cell)
+                                        {
+                                            float d2 = (points[k] - p).sqrMagnitude;
+                                            if (d2 < bestD)
+                                            {
+                                                bestD = d2;
+                                                best = k;
+                                            }
+                                        }
+                        if (best < 0)
+                            continue;
+                        float signed = Vector3.Dot(p - points[best], normals[best]);
+                        if (signed < -0.01f)
+                        {
+                            inside++;
+                            deepest = Mathf.Max(deepest, -signed);
+                        }
+                    }
+                }
+                part.frames++;
+                part.count += hanging;
+                part.extra += inside;
+                part.sum += hanging > 0 ? (double)inside / hanging : 0.0;
+                part.max = Mathf.Max(part.max, deepest * 100f);
+            }
+
+            public string Report(string prefix)
+            {
+                var sb = new System.Text.StringBuilder($"\n{prefix}: hanging hair ({string.Join(", ", hair.Select(h => h.name))}) inside the body or clothes - % (deepest cm):");
+                foreach (var p in Tally.Merged(parts))
+                    sb.Append($"\n{prefix}   {p.name,-9} {100.0 * p.sum / Mathf.Max(1, p.frames),5:F2} ({p.max,4:F1})  of {p.count / Mathf.Max(1, p.frames)} hanging verts a frame");
+                return sb.ToString();
+            }
+
+            public string Table(string id, string setup)
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (var p in Tally.Merged(parts))
+                    sb.Append(string.Join("\t", id, setup, p.name, p.frames.ToString(), (p.count / Mathf.Max(1, p.frames)).ToString(),
+                        (100.0 * p.sum / Mathf.Max(1, p.frames)).ToString("F2", CultureInfo.InvariantCulture),
+                        p.max.ToString("F2", CultureInfo.InvariantCulture))).Append('\n');
+                return sb.ToString();
+            }
+        }
+
         /// <summary>
         /// The cloth measured the same way whatever moves it: its vertices (the outfit's cloth pieces, RoeClothesBurst;
         /// a DOA6 grid cloth's rebuilt surfaces) every step, per part of the script -
@@ -409,6 +743,7 @@ namespace RoeFighter.EditorTools
             readonly float[] rest, strains, edgeStrain;
             int seen, animatedCount, triangleCount;
             float worstSeen;
+            readonly List<(string part, int step, float worst, float jerk)> spikes = new List<(string, int, float, float)>();   // steps whose worst stretch passed 200 %
             string worstAt = "";
             List<string> worstEdges = new List<string>();
             readonly List<(string name, int offset, int count, Transform[] bones, BoneWeight[] weights)> names = new List<(string, int, int, Transform[], BoneWeight[])>();
@@ -587,6 +922,8 @@ namespace RoeFighter.EditorTools
                     Array.Sort(strains, 0, used);
                     worst = strains[(int)(0.99f * (used - 1))];
                 }
+                if (worst > 2f)
+                    spikes.Add((partName, seen, worst, seen >= 2 ? (float)(jerk / world.Length) : 0f));
                 // where: the most stretched edges of the worst step so far
                 if (worst > worstSeen)
                 {
@@ -671,6 +1008,9 @@ namespace RoeFighter.EditorTools
                     sb.Append($"\n{prefix}   {r.name,-9} {r.inside,5:F1} ({r.deepest,4:F1})  {r.jerk,5:F2} ({r.worstJerk,5:F1})  {r.stretch,5:F2} ({r.worstStretch,5:F1})" +
                               $"  {r.away,5:F1} ({r.worstAway,5:F1})  {r.turned,5:F1}");
                 sb.Append($"\n{prefix}   most stretched at {worstAt}: {string.Join(", ", worstEdges)}");
+                if (spikes.Count > 0)
+                    sb.Append($"\n{prefix}   steps with an edge 1 in 100 stretched over 200 %: {spikes.Count} - " +
+                              string.Join(", ", spikes.Take(12).Select(x => $"{x.part} {x.step} ({x.worst * 100f:F0} %, jerk {x.jerk * 1000f:F1} mm)")));
                 return sb.ToString();
             }
 

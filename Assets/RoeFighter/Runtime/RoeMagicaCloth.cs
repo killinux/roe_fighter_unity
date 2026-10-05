@@ -32,7 +32,8 @@ namespace RoeFighter
     /// Magica's own preset for its kind, as the plugin ships them (MC2_Preset_*.json, RoeMagicaPresets; ImportJson keeps
     /// the set-up - renderers, bones, connection, colliders - and imports the parameters): a skirt MC2_Preset_Skirt (the
     /// MeshCloth panels too), hair MC2_Preset_FrontHair / ShortHair / LongHair by where and how long, breasts a BoneSpring
-    /// on MC2_Preset_MiddleSpring (Magica's spring mode, made for them), chains, ribbons and the rest MC2_Preset_Accessory.
+    /// on Magica's spring presets (its spring mode, made for them; SpringSettings: HardSpring, stiffer and held within 2 cm -
+    /// MiddleSpring as shipped threw them about), chains, ribbons and the rest MC2_Preset_Accessory.
     /// The set-up ImportJson leaves alone (clothType, connection, reduction, colliders, animationPoseRatio) is ours:
     /// animationPoseRatio 1 - the cloth restores towards the animation's pose (the preset files say 0, the pose the cloth
     /// was built in, here the bind pose: see InBindPose).
@@ -72,12 +73,21 @@ namespace RoeFighter
             // Magica's clock, for every cloth in the scene (MagicaManager): steps a second (30-150; its default 90) and at
             // most this many a frame (1-5; default 3)
             public float frequency = 90f, stepsPerFrame = 3f;
+            // a jump of the fighter this far in one frame (m) is a teleport: the cloth goes along as it was (Magica's Keep;
+            // 0: off).  a08's first skill dashes her off and back in a few frames: the long panels were left behind,
+            // two vertices on the same bone 30 cm apart (RoeClothPlayDemo's meter, 10-05)
+            public float teleport = 0.15f;
+            // the fastest a particle may move (m/s) for every cloth, the presets' too: below 0 left as set (the presets
+            // and ours: 4), 0 no limit
+            public float speedLimit = -1f;
 
             /// <summary>"key=value;..." over the defaults (any field by name; bools as 0/1).</summary>
             public MeshSettings Tuned(string tuning)
             {
                 foreach (var pair in (tuning ?? "").Split(new[] { ';', ',' }, System.StringSplitOptions.RemoveEmptyEntries))
                 {
+                    if (pair.Trim().StartsWith("spring."))
+                        continue;                                       // SpringSettings'
                     var kv = pair.Split('=');
                     var field = kv.Length == 2 ? typeof(MeshSettings).GetField(kv[0].Trim()) : null;
                     if (field == null || !float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v))
@@ -94,8 +104,80 @@ namespace RoeFighter
             }
         }
 
-        /// <summary>For checks and tuning: "key=value;..." over MeshSettings (RoeClothPlayDemo -roeCloths magica:key=value).</summary>
+        /// <summary>For checks and tuning: "key=value;..." over MeshSettings (RoeClothPlayDemo -roeCloths magica:key=value);
+        /// "spring.key=value" over SpringSettings.</summary>
         public static string Tuning = "";
+
+        /// <summary>
+        /// The breasts (and other soft flesh) under the presets (magica_full): a BoneSpring on one of Magica's spring presets
+        /// (Soft / Middle / Hard: spring power 0.01 / 0.03 / 0.06, all with a 5 cm limit), and how far the spring may take a
+        /// bone from where the animation puts it.  The plugin's MiddleSpring as it ships threw Inase's breasts about: 4 cm
+        /// from the animation on average and 12 at most, 2.6 cm even standing in her guard, the breast pushed up out of its
+        /// shape (RoeClothPlayDemo's breast meter, 10-05: docs/body-check.md) - against 1.5 cm and 4.9 at most in ROE's own
+        /// hand-keyed skills.  So by default HardSpring with five times its spring power (0.3), a 2 cm limit and inertia 0.6:
+        /// 0.7 cm in the guard, 1.9 cm (6.5 at most) in the skills.  Tuned with "spring.preset=Hard;spring.limit=0.02;spring.power=0.06;
+        /// spring.damping=0.3;spring.inertia=0.5" (inertia: world and local; RoeClothPlayDemo -roeCloths
+        /// magica_full:spring.limit=0.02); a value below 0 keeps the preset's.
+        /// </summary>
+        public class SpringSettings
+        {
+            public string preset = "Hard";
+            public float limit = 0.02f, power = 0.3f, damping = -1f, inertia = 0.6f;
+
+            public string PresetName => "MC2_Preset_" + preset + "Spring";
+
+            public SpringSettings Tuned(string tuning)
+            {
+                foreach (var pair in (tuning ?? "").Split(new[] { ';', ',' }, System.StringSplitOptions.RemoveEmptyEntries))
+                {
+                    var kv = pair.Trim().Split('=');
+                    if (kv.Length != 2 || !kv[0].StartsWith("spring."))
+                        continue;
+                    string key = kv[0].Substring("spring.".Length);
+                    if (key == "preset")
+                    {
+                        preset = kv[1].Trim();
+                        continue;
+                    }
+                    if (!float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v))
+                    {
+                        Debug.LogWarning($"[ROE] Magica spring setting not understood: '{pair}'");
+                        continue;
+                    }
+                    if (key == "limit")
+                        limit = v;
+                    else if (key == "power")
+                        power = v;
+                    else if (key == "damping")
+                        damping = v;
+                    else if (key == "inertia")
+                        inertia = v;
+                    else
+                        Debug.LogWarning($"[ROE] Magica spring setting not understood: '{pair}'");
+                }
+                return this;
+            }
+
+            /// <summary>Over the preset's numbers (after ImportJson).</summary>
+            public void Apply(ClothSerializeData sd)
+            {
+                if (limit >= 0f)
+                    sd.springConstraint.limitDistance = limit;
+                if (power >= 0f)
+                    sd.springConstraint.springPower = power;
+                if (damping >= 0f)
+                    sd.damping.SetValue(damping);
+                if (inertia >= 0f)
+                {
+                    sd.inertiaConstraint.worldInertia = inertia;
+                    sd.inertiaConstraint.localInertia = inertia;
+                }
+            }
+
+            public override string ToString() => $"{preset}Spring" + (limit >= 0f ? $", limit {limit * 100f:F0} cm" : "") +
+                                                 (power >= 0f ? $", power {power:F3}" : "") + (damping >= 0f ? $", damping {damping:F2}" : "") +
+                                                 (inertia >= 0f ? $", inertia {inertia:F2}" : "");
+        }
 
         readonly List<MagicaCloth> cloths = new List<MagicaCloth>();
         readonly List<GameObject> made = new List<GameObject>();
@@ -280,12 +362,19 @@ namespace RoeFighter
                         : RenderSetupData.BoneConnectionMode.Line;
                     if (Preset(sd, preset))
                     {
+                        string about = preset;
+                        if (piece.kind == "breast" || piece.kind == "body")
+                        {
+                            var spring = new SpringSettings().Tuned(Tuning);
+                            spring.Apply(sd);
+                            about = spring.ToString();
+                        }
                         foreach (var cap in piece.capsules)
                             if (colliders.TryGetValue(cap, out var pc))
                                 sd.colliderCollisionConstraint.colliderList.Add(pc);
                         cloth.BuildAndRun();
                         cloths.Add(cloth);
-                        parts.Add($"{piece.kind} {string.Join("+", piece.roots.Select(r => r.name))} ({sd.clothType} {sd.connectionMode}, {preset})");
+                        parts.Add($"{piece.kind} {string.Join("+", piece.roots.Select(r => r.name))} ({sd.clothType} {sd.connectionMode}, {about})");
                         continue;
                     }
                     sd.clothType = ClothProcess.ClothType.BoneCloth;
@@ -296,6 +385,7 @@ namespace RoeFighter
                     ? piece.loop ? RenderSetupData.BoneConnectionMode.SequentialLoopMesh : RenderSetupData.BoneConnectionMode.SequentialNonLoopMesh
                     : RenderSetupData.BoneConnectionMode.Line;
                 sd.updateMode = ClothUpdateMode.Normal;
+                Teleport(sd);
                 sd.animationPoseRatio = 1f;           // restore towards the pose the animation (and RoeSkirtRig) made
                 sd.rotationalInterpolation = 1f;
                 sd.rootRotation = 1f;
@@ -397,7 +487,7 @@ namespace RoeFighter
                     return "MC2_Preset_Skirt";
                 case "breast":
                 case "body":
-                    return "MC2_Preset_MiddleSpring";
+                    return new SpringSettings().Tuned(Tuning).PresetName;
                 case "hair":
                 {
                     var names = piece.roots.Select(r => r.name.ToLowerInvariant()).ToList();
@@ -434,13 +524,26 @@ namespace RoeFighter
             }
             sd.animationPoseRatio = 1f;
             sd.updateMode = ClothUpdateMode.Normal;
+            Teleport(sd);
             return true;
+        }
+
+        /// <summary>A jump of the fighter is a teleport to Magica (MeshSettings.teleport): the cloth keeps its shape and goes along.</summary>
+        static void Teleport(ClothSerializeData sd)
+        {
+            var m = new MeshSettings().Tuned(Tuning);
+            float d = m.teleport;
+            sd.inertiaConstraint.teleportMode = d > 0f ? InertiaConstraint.TeleportMode.Keep : InertiaConstraint.TeleportMode.None;
+            sd.inertiaConstraint.teleportDistance = Mathf.Max(d, 0.01f);
+            if (m.speedLimit >= 0f)
+                sd.inertiaConstraint.particleSpeedLimit.SetValue(m.speedLimit > 0f, Mathf.Max(m.speedLimit, 0.1f));
         }
 
         /// <summary>A MeshCloth's parameters (MeshSettings).</summary>
         static void Apply(ClothSerializeData sd, MeshSettings m)
         {
             sd.updateMode = ClothUpdateMode.Normal;
+            Teleport(sd);
             sd.animationPoseRatio = m.poseRatio;
             sd.gravity = m.gravity;
             sd.damping.SetValue(m.damping);
