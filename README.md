@@ -1413,6 +1413,30 @@ python tools\make_video.py _work\fight_eve09 out\fight_cpu_match_eve09.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFootProbe.FootFrames -Extra '-roeChar','eve09'                       # 脚的朝向分三步量
 ```
 
+### 普通攻击的命中特效（10-05）
+
+用户："普通攻击的效果不用luf的特效了，看有没有其他碰撞的特效"。
+
+- 以前每一下普通攻击打中或被挡，都放同一个特效：g04 技能 2 的命中特效（自动挑的"最小的命中特效"），是一团很大的灰黑色拖影。
+- 现在用 UFE 2 自带的格斗命中粒子，按轻重分：
+  - 轻（伤害 55 以下）：`Light`，白色闪光加黄色弧线；
+  - 中（55 以上）：`Medium`，星形爆光；
+  - 重（80 以上或能击倒）：`Heavy`，更大的爆光；
+  - 被挡住：`Block`，蓝色斜线。
+- 大小分别是 0.35 / 0.45 / 0.55 / 0.4 倍（UFE 做的是 1 米左右，原大会把两个人都盖住），分界和大小都在场景里 `Fight` 物体的 `FightGame` 上，可改。
+- 技能自己的特效、爆衣掉甲的火花不变。`RoeFightScene.Build -roeHitFx game` 换回原来的。
+- UFE 的这批特效当初没导进工程：`tools/ufe_extract.py` 从下载的 `.unitypackage` 里只读地取出 `Particles` 文件夹和它用到的材质、贴图、网格（78 个文件，按 GUID 跟着引用走），放进不入库的 `Assets/UFE`。
+  - 它们用旧的内置粒子着色器（Additive、Alpha Blended），URP 照样能画（这类着色器没有光照标记，URP 当无光照画）。
+  - `Heavy`、`Crumple` 里有一层抓屏扭曲（URP 不支持抓屏，它引用的法线贴图也不在包里），会把整个画面画黑一帧：建场景时换成工程自己的 URP 扭曲着色器、强度 0（`RoeHitFx.Prepare`）。
+- 对照表 `out\hit_effects_sheet.jpg`（`RoeHitFx.Sheet` 在擂台上两人之间按 0.02–0.45 秒拍，`tools/hitfx_sheet.py` 拼），电脑对电脑 `out\fight_cpu_match_hitfx.mp4`（60 秒）。
+
+```powershell
+python tools\ufe_extract.py "E:\Downloads\Universal Fighting Engine 2 Source v2.7.0a.unitypackage" . Assets/UFE/Demos/Shared_Assets/Particles/
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHitFx.Sheet -Graphics
+python tools\hitfx_sheet.py _work\hitfx out\hit_effects_sheet.jpg --only ufe_light,ufe_medium,ufe_heavy,ufe_block,ufe_crumple
+```
+
 ### 不知火舞（DOA6）（10-05）
 
 用户 10-05："把不知火舞也加入进角色来"。和霞同一条路（`docs/doa-physics.md` 第 5 节），细节见第 12 节。

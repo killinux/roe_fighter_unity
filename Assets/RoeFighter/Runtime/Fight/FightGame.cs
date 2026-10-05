@@ -30,7 +30,16 @@ namespace RoeFighter.Fight
         public List<Move> moves = new List<Move>();
         public List<Special> specials = new List<Special>();
         public List<NamedPrefab> effects = new List<NamedPrefab>();
-        public string hitEffect;                     // a small hit spark for strikes
+        public string hitEffect;                     // a small hit spark for strikes (and armour coming off)
+        /// <summary>
+        /// The strikes' hit effects by weight (user 10-05: "普通攻击的效果不用luf的特效了，看有没有其他碰撞的特效"): UFE 2's hit
+        /// particles when the project has them (set by the scene build, RoeHitFx), else hitEffect.  Heavy: a knockdown or
+        /// hitHeavyDamage and more; medium: hitMediumDamage and more; light: the rest; block: a blocked strike.  Each at its own
+        /// size (UFE made them about a metre across: at 0.45 / 0.55 / 0.7 the white flash still covered both fighters).
+        /// </summary>
+        public string hitLight, hitMedium, hitHeavy, hitBlock;
+        public float hitLightScale = 0.35f, hitMediumScale = 0.45f, hitHeavyScale = 0.55f, hitBlockScale = 0.4f;
+        public int hitMediumDamage = 55, hitHeavyDamage = 80;
         public Vector3 centre;
         public Vector3 axis = Vector3.right;         // round start: fighters stand along this line
         public float arenaRadius = 7f;
@@ -654,7 +663,7 @@ namespace RoeFighter.Fight
                     vic.BlockHit(m.blockstun, dir * (m.push * 0.5f / 0.12f));
                     atk.meter = Mathf.Min(100f, atk.meter + m.meterGain * 0.5f);
                     PlaySound(vic, "block", 0.8f);
-                    Spark(p.Value, 0.6f);
+                    StrikeSpark(p.Value, m, true);
                     hitStop = 0.05f;
                 }
                 else
@@ -662,7 +671,7 @@ namespace RoeFighter.Fight
                     vic.TakeHit(m.damage, m.hitstun, dir * (m.push / 0.12f), m.knockdown);
                     atk.meter = Mathf.Min(100f, atk.meter + m.meterGain);
                     PlaySound(atk, m.hitSound, 1f);
-                    Spark(p.Value, 1f);
+                    StrikeSpark(p.Value, m, false);
                     hitStop = m.damage >= 80 ? 0.1f : 0.07f;
                     Shake(m.damage >= 80 ? 0.6f : 0.3f, 0.2f);
                 }
@@ -792,14 +801,41 @@ namespace RoeFighter.Fight
 
         // ---- effects (the game's prefabs, stepped like the game's timelines step them)
 
-        void Spark(Vector3 at, float scale)
+        /// <summary>A strike's hit effect: the block one, or by the strike's weight (hitLight ... hitBlock); else the old spark.</summary>
+        void StrikeSpark(Vector3 at, Move m, bool blocked)
         {
-            var prefab = effects.FirstOrDefault(e => e.name == hitEffect)?.prefab;
+            string name;
+            float scale;
+            if (blocked)
+                (name, scale) = (hitBlock, hitBlockScale);
+            else if (m.knockdown || m.damage >= hitHeavyDamage)
+                (name, scale) = (hitHeavy, hitHeavyScale);
+            else if (m.damage >= hitMediumDamage)
+                (name, scale) = (hitMedium, hitMediumScale);
+            else
+                (name, scale) = (hitLight, hitLightScale);
+            if (string.IsNullOrEmpty(name) || effects.All(e => e.name != name))
+                Spark(at, blocked ? 0.6f : 1f);
+            else
+                Spark(at, scale, name);
+        }
+
+        void Spark(Vector3 at, float scale, string name = null)
+        {
+            var prefab = effects.FirstOrDefault(e => e.name == (name ?? hitEffect))?.prefab;
             if (prefab == null)
                 return;
             var e = Spawn(prefab, at, cam != null ? Quaternion.LookRotation(cam.transform.position - at) : Quaternion.identity);
-            if (e != null)
-                e.instance.transform.localScale *= scale;
+            if (e == null)
+                return;
+            e.instance.transform.localScale *= scale;
+            // a named spark is a plain particle effect (UFE's): every system takes the size of the whole
+            if (name != null)
+                foreach (var p in e.instance.GetComponentsInChildren<ParticleSystem>(true))
+                {
+                    var main = p.main;
+                    main.scalingMode = ParticleSystemScalingMode.Hierarchy;
+                }
         }
 
         LiveEffect Spawn(GameObject prefab, Vector3 at, Quaternion rotation)

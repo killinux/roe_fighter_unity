@@ -49,8 +49,9 @@ namespace RoeFighter.EditorTools
         /// sleeves are the game's grid cloth; "再加入一个角色吧，vindictus里的fiona，用 PCF_005 这个版本" - fio005, VdfFighter, with
         /// her game's KawaiiPhysics and UFE 2's reactions and specials; 10-05 "另外把剑星里的eve的也加个角色进来，物理能用剑星自己的就用
         /// 自己的" - eve09, SbFighter, Stellar Blade's Eve in her Planet Diving Suit (7th) on her game's own physics; "把不知火舞也加入进角色来" -
-        /// mai, Mai Shiranui from DOA6 like Kasumi: her stance and strikes are g04's, her game clips and physics her own).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005,eve09,mai";
+        /// mai, Mai Shiranui from DOA6 like Kasumi: her stance and strikes are g04's, her game clips and physics her own; "eve有穿jk的衣服么，
+        /// 换成这个角色我看下裙子的物理效果" - eve37, Eve in her pleated-skirt school look, Office Style).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005,eve09,eve37,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -262,6 +263,20 @@ namespace RoeFighter.EditorTools
                 new Special { name = "skill3", clip = "skill_03", action = "skill3", damage = 360, meterCost = 100f, range = 7f },
             };
             (game.effects, game.hitEffect) = Effects(roster);
+            // the strikes' hit effects (user 10-05: not g04's skill hit for everything): UFE 2's hit particles by weight when the
+            // project has them (RoeHitFx, tools/ufe_extract.py); -roeHitFx game keeps the old spark for every strike
+            game.hitLight = game.hitMedium = game.hitHeavy = game.hitBlock = null;
+            var ufeFx = RoeCapture.Arg("-roeHitFx", "ufe") == "ufe" ? RoeHitFx.UfePrefabs() : new List<FightGame.NamedPrefab>();
+            if (ufeFx.Count > 0)
+            {
+                RoeHitFx.Prepare();
+                game.effects.AddRange(ufeFx);
+                string Has(string n) => ufeFx.Any(x => x.name == n) ? n : null;
+                game.hitLight = Has("ufe_light");
+                game.hitMedium = Has("ufe_medium");
+                game.hitHeavy = Has("ufe_heavy");
+                game.hitBlock = Has("ufe_block");
+            }
             foreach (var m in game.moves)
                 m.hitSound = rigs[0].sounds.Any(s => s.name == "hit") ? "hit" : null;
             // the stage's own battle music
