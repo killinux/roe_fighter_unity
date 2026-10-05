@@ -36,8 +36,8 @@ namespace RoeFighter.EditorTools
         [System.Serializable]
         class Mat
         {
-            public string name, kind, albedo, normal, mask, surface, cull;
-            public float[] color;
+            public string name, kind, albedo, normal, mask, emission, surface, cull;
+            public float[] color, emissionColor;
             public float smoothness, metallic, normalScale = 1f, cutoff = 0.5f;
         }
 
@@ -51,11 +51,25 @@ namespace RoeFighter.EditorTools
 
         public static GameObject Build(string id)
         {
-            string dir = Dir(id);
+            if (BuildModel(id, Dir(id), "Vindictus", heels: true) == null)
+                return null;
+            AttachKawaii(id, Dir(id));
+            AttachUeRig(id);
+            AttachWeapons(id);
+            return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+        }
+
+        /// <summary>
+        /// A character exported from an Unreal game (tools/vdf_fbx.py + vdf_textures.py, tools/sb_fbx.py + sb_textures.py):
+        /// &lt;dir&gt;/unity.json's maps and materials (URP Lit, with emission when it has an emission map) on &lt;dir&gt;/&lt;fbx&gt;, the
+        /// Generic prefab and the humanoid fighter saved (DoaFighter.SavePrefabs).  Returns the fighter prefab (null: failed).
+        /// </summary>
+        public static GameObject BuildModel(string id, string dir, string game, bool heels)
+        {
             string sidecarPath = $"{dir}/unity.json";
             if (!File.Exists(sidecarPath))
             {
-                Debug.LogError($"[ROE] {id}: no {sidecarPath} - run tools/vdf_fbx.py and tools/vdf_textures.py first");
+                Debug.LogError($"[ROE] {id}: no {sidecarPath} - run the game's tools/*_fbx.py and tools/*_textures.py first");
                 return null;
             }
             var side = JsonUtility.FromJson<Sidecar>(File.ReadAllText(sidecarPath));
@@ -63,7 +77,7 @@ namespace RoeFighter.EditorTools
             AssetDatabase.Refresh();
 
             // textures
-            var byFile = side.materials.SelectMany(m => new[] { (m.albedo, m, "albedo"), (m.normal, m, "normal"), (m.mask, m, "mask") })
+            var byFile = side.materials.SelectMany(m => new[] { (m.albedo, m, "albedo"), (m.normal, m, "normal"), (m.mask, m, "mask"), (m.emission, m, "emission") })
                 .Where(x => !string.IsNullOrEmpty(x.Item1)).GroupBy(x => x.Item1).ToDictionary(g => g.Key, g => g.First());
             int changed = 0;
             foreach (var kv in byFile)
@@ -76,7 +90,7 @@ namespace RoeFighter.EditorTools
                     continue;
                 }
                 bool normal = role == "normal";
-                bool linear = role != "albedo";
+                bool linear = role != "albedo" && role != "emission";
                 bool cut = role == "albedo" && m.surface == "cutout";
                 bool alpha = role == "albedo" && m.surface != "opaque";
                 var want = normal ? TextureImporterType.NormalMap : TextureImporterType.Default;
@@ -132,6 +146,13 @@ namespace RoeFighter.EditorTools
                 mat.SetFloat("_AlphaClip", cut ? 1f : 0f);
                 mat.SetFloat("_Cutoff", m.cutoff);
                 mat.SetFloat("_Cull", m.cull == "off" ? 0f : 2f);
+                // glowing lines (Eve's suit): the map in its colour
+                var glow = Tex(m.emission);
+                var glowColor = glow != null && m.emissionColor != null && m.emissionColor.Length >= 3
+                    ? new Color(m.emissionColor[0], m.emissionColor[1], m.emissionColor[2]) : Color.black;
+                mat.SetTexture("_EmissionMap", glow);
+                mat.SetColor("_EmissionColor", glowColor);
+                mat.globalIlluminationFlags = glow != null ? MaterialGlobalIlluminationFlags.RealtimeEmissive : MaterialGlobalIlluminationFlags.EmissiveIsBlack;
                 // the eye's shadow shell and tear film: no shadows of their own
                 mat.SetShaderPassEnabled("ShadowCaster", !transparent);
                 mat.renderQueue = -1;
@@ -163,11 +184,8 @@ namespace RoeFighter.EditorTools
                 .Where(x => x != null && !made.ContainsValue(x)).Select(x => x.name).Distinct().ToList();
             if (missing.Count > 0)
                 Debug.LogWarning($"[ROE] {id}: materials not from unity.json: {string.Join(", ", missing)}");
-            if (!DoaFighter.SavePrefabs(id, model, "Vindictus", $"{made.Count} materials, {changed} texture importers set", heels: true))
+            if (!DoaFighter.SavePrefabs(id, model, game, $"{made.Count} materials, {changed} texture importers set", heels: heels))
                 return null;
-            AttachKawaii(id);
-            AttachUeRig(id);
-            AttachWeapons(id);
             return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
         }
 
@@ -387,12 +405,12 @@ namespace RoeFighter.EditorTools
         /// (RoeKawaiiRig), and a check of where the game's capsules land on her (their offsets are in UE bone space,
         /// RoeKawaiiPhysics.FromUe): for each, how far its centre is from her skin and how much of its bone's skin it holds.
         /// </summary>
-        static void AttachKawaii(string id)
+        public static void AttachKawaii(string id, string dir)
         {
-            var text = AssetDatabase.LoadAssetAtPath<TextAsset>($"{Dir(id)}/kawaii.json");
+            var text = AssetDatabase.LoadAssetAtPath<TextAsset>($"{dir}/kawaii.json");
             if (text == null)
             {
-                Debug.Log($"[ROE] {id}: no kawaii.json - no KawaiiPhysics settings (tools/vdf_kawaii.py)");
+                Debug.Log($"[ROE] {id}: no {dir}/kawaii.json - no KawaiiPhysics settings (tools/vdf_kawaii.py, tools/sb_physics.py)");
                 return;
             }
             string path = RoeHumanoid.FighterPath(id);

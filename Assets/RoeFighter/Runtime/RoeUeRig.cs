@@ -352,7 +352,7 @@ namespace RoeFighter
         }
 
         /// <summary>FQuat::Rotator: (pitch, yaw, roll) in degrees.</summary>
-        static Vector3 UeRotator(Quaternion q)
+        public static Vector3 UeRotator(Quaternion q)
         {
             float x = q.x, y = q.y, z = q.z, w = q.w;
             float test = z * x - w * y;
@@ -368,7 +368,7 @@ namespace RoeFighter
         }
 
         /// <summary>FRotator::Quaternion from (pitch, yaw, roll) in degrees.</summary>
-        static Quaternion UeQuat(Vector3 r)
+        public static Quaternion UeQuat(Vector3 r)
         {
             float half = Mathf.Deg2Rad * 0.5f;
             float sp = Mathf.Sin((r.x % 360f) * half), cp = Mathf.Cos((r.x % 360f) * half);

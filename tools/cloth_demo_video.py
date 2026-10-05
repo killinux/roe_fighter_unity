@@ -24,7 +24,7 @@ MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回�
          'ethan_n1': '刺拳', 'ethan_n2': '前腿踢', 'ethan_n3': '转身后踢', 'ethan_f3': '冲步飞踢',
          'bot_light_punch': '轻拳', 'bot_light_kick': '轻脚', 'bot_heavy_punch': '重拳', 'bot_heavy_kick': '重脚'}
 NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Luf', 'kas': '霞（DOA6）', 'kas011': '霞 海盗裙（DOA6）',
-         'fio005': 'Fiona PCF_005（Vindictus）'}
+         'fio005': 'Fiona PCF_005（Vindictus）', 'eve09': 'Eve 7 代潜降服（剑星）'}
 TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '我们的骨骼布料（照 Magica 的做法）',
           'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）',
           'pack': '原来的普通攻击（Bandai 动捕）', 'own': '不知火舞的普通攻击（DOA6）',
@@ -38,6 +38,9 @@ TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '�
           ('kas011', 'doa6'): 'DOA6 自己的物理（网格布裙和袖）',
           ('kas011', 'magica_style'): '我们的骨骼布料（网格布的每一列当一条链）',
           'kawaii': '她游戏自己的（KawaiiPhysics）',
+          'stellar': '剑星自己的（弹簧骨 + KawaiiPhysics + PhysX 刚体）',
+          ('eve09', 'magica_style'): '我们的骨骼布料（披风没认出来）',
+          ('eve09', 'stellar'): '剑星自己的（弹簧骨+Kawaii+刚体）',
           'bandai1': 'Bandai 动捕（原来的默认）', 'accad_male2': 'ACCAD 开源动捕',
           'ufe_kyle': 'UFE 2：Robot Kyle', 'ufe_ethan': 'UFE 2：Ethan', 'ufe_bot': 'UFE 2：Mecanim Bot'}
 

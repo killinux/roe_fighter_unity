@@ -20,11 +20,14 @@ namespace RoeFighter.EditorTools
     /// </summary>
     public static class DoaFighter
     {
-        /// <summary>Her files: Assets/VDF/&lt;id&gt; for a Vindictus character (VdfFighter), else Assets/DOA/&lt;id&gt;.</summary>
-        public static string Dir(string id) => Directory.Exists($"Assets/VDF/{id}") ? $"Assets/VDF/{id}" : $"Assets/DOA/{id}";
+        /// <summary>Her files: Assets/VDF/&lt;id&gt; for a Vindictus character (VdfFighter), Assets/SB/&lt;id&gt; for Stellar Blade's
+        /// (SbFighter), else Assets/DOA/&lt;id&gt;.</summary>
+        public static string Dir(string id) => Directory.Exists($"Assets/VDF/{id}") ? $"Assets/VDF/{id}"
+                                              : Directory.Exists($"Assets/SB/{id}") ? $"Assets/SB/{id}" : $"Assets/DOA/{id}";
 
         /// <summary>
-        /// A character from another game in the fight: tools/doa/&lt;id&gt;.json (DOA6) or tools/vdf/&lt;id&gt;.json (Vindictus) - name,
+        /// A character from another game in the fight: tools/doa/&lt;id&gt;.json (DOA6), tools/vdf/&lt;id&gt;.json (Vindictus) or
+        /// tools/sb/&lt;id&gt;.json (Stellar Blade) - name,
         /// outfit, her motion pack, which clips are her "game clips".
         /// </summary>
         [System.Serializable]
@@ -60,8 +63,8 @@ namespace RoeFighter.EditorTools
         public static string DefinitionPath(string id)
         {
             string tools = Path.Combine(Path.GetDirectoryName(Application.dataPath), "tools");
-            string vdf = Path.Combine(tools, "vdf", id + ".json");
-            return File.Exists(vdf) ? vdf : Path.Combine(tools, "doa", id + ".json");
+            string vdf = Path.Combine(tools, "vdf", id + ".json"), sb = Path.Combine(tools, "sb", id + ".json");
+            return File.Exists(vdf) ? vdf : File.Exists(sb) ? sb : Path.Combine(tools, "doa", id + ".json");
         }
 
         /// <summary>A character from another game (DOA6, Vindictus) whose fighter prefab is built.</summary>

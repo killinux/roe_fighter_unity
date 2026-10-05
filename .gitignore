@@ -19,6 +19,9 @@
 # ... and from Vindictus: Defying Fate (Nexon: the same rule)
 /Assets/VDF/
 /Assets/VDF.meta
+# ... and from Stellar Blade (Shift Up / Sony: the same rule)
+/Assets/SB/
+/Assets/SB.meta
 # Prefabs and data generated from those assets
 /Assets/RoeFighter/Generated/
 /Assets/RoeFighter/Generated.meta

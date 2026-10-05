@@ -68,6 +68,8 @@ namespace RoeFighter
     ///                 (RoeBoneCloth.Doa5.cs) - any fighter
     ///   kawaii        KawaiiPhysics with a character's own game settings (RoeKawaiiRig: Vindictus' Fiona - skirt, feathers,
     ///                 hair, breasts; RoeKawaiiPhysics) - only for a character that has them
+    ///   stellar       Stellar Blade's own physics on Eve (RoeSbRig + RoeKawaiiRig; RoeSbPhysics): UE's spring bones, her
+    ///                 KawaiiPhysics nodes, PhysX rigid bodies for the ponytail and the back panels - only for her
     ///   magica        Magica Cloth 2 itself, once it is installed in Assets/MagicaCloth2 (RoeMagicaCloth, behind the
     ///                 MAGICACLOTH2 define the package adds to the project when it loads)
     /// A new solver (another engine, another game's system) is one more entry here: a class implementing IRoeCloth
@@ -99,6 +101,11 @@ namespace RoeFighter
                 name = "kawaii", title = "KawaiiPhysics (Vindictus)", make = s => new RoeKawaiiPhysics(s),
                 covers = (s, kind) => RoeKawaiiPhysics.Covers(s, kind),
             },
+            new Solver
+            {
+                name = "stellar", title = "Stellar Blade's own (spring bones, KawaiiPhysics, PhysX bodies)", make = s => new RoeSbPhysics(s),
+                covers = (s, kind) => RoeSbPhysics.Covers(s, kind),
+            },
 #if MAGICACLOTH2
             new Solver
             {
@@ -115,9 +122,10 @@ namespace RoeFighter
     /// The physics setups, in the order F4 goes through them: which solver takes which kind (user 10-04: "最好做成可插拔的设计，
     /// 后续我买到magic cloth也能替换").  A kind not listed goes to the setup's fallback; a kind its solver cannot take on a
     /// fighter (DOA6 data on a ROE character) goes to "bone".
-    ///   auto          each fighter her own game's: a DOA6 character on "doa6", Vindictus' Fiona on "kawaii", the others on
-    ///                 "magica_style" (the default)
+    ///   auto          each fighter her own game's: a DOA6 character on "doa6", Vindictus' Fiona on "kawaii", Stellar Blade's
+    ///                 Eve on "stellar", the others on "magica_style" (the default)
     ///   kawaii        a Vindictus character on her game's KawaiiPhysics settings (other kinds: the bone cloth)
+    ///   stellar       Stellar Blade's Eve on her game's own physics (other kinds: the bone cloth)
     ///   magica_style  everything on the Magica-style bone cloth
     ///   doa6          a DOA6 character on her game's own systems: soft-body breasts, cloth grids, swing hair
     ///   doa6_breasts  DOA6 soft-body breasts, everything else on the bone cloth (to compare one kind at a time)
@@ -169,12 +177,13 @@ namespace RoeFighter
 
         public static readonly List<Backend> All = new List<Backend>
         {
-            All_("auto", "Each her own game's (DOA6, Vindictus' KawaiiPhysics, else bone cloth)", "bone"),
+            All_("auto", "Each her own game's (DOA6, Vindictus' KawaiiPhysics, Stellar Blade's, else bone cloth)", "bone"),
             All_("magica_style", "Magica-style bone cloth", "bone"),
             All_("doa6", "DOA6 physics (soft bodies, cloth grids)", "doa6"),
             new Backend { name = "doa6_breasts", title = "DOA6 soft breasts + bone cloth", fallback = "bone", byKind = { { "breast", "doa6" }, { "body", "doa6" } } },
             new Backend { name = "doa5lr_style", title = "DOA5LR-style spring net (breasts: bone cloth)", fallback = "doa5lr", byKind = { { "breast", "bone" }, { "body", "bone" } } },
             All_("kawaii", "KawaiiPhysics with the game's settings (Vindictus)", "kawaii"),
+            All_("stellar", "Stellar Blade's own physics (Eve)", "stellar"),
             All_("legacy", "Bone cloth (10-02)", "bone_legacy"),
             All_("off", "No cloth", null),
 #if MAGICACLOTH2
@@ -187,6 +196,7 @@ namespace RoeFighter
         /// <summary>The setup a fighter takes for a choice: "auto" picks her own game's.</summary>
         public static string Resolve(string name, Animator animator) =>
             name != "auto" ? name : animator != null && animator.GetComponent<RoeDoaRig>() != null ? "doa6"
+                                  : animator != null && animator.GetComponent<RoeSbRig>() != null ? "stellar"
                                   : animator != null && animator.GetComponent<RoeKawaiiRig>() != null ? "kawaii" : "magica_style";
 
         public static string Next(string name)

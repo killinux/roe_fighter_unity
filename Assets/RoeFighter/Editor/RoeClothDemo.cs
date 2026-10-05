@@ -20,9 +20,9 @@ namespace RoeFighter.EditorTools
     ///   Rests  the skirt's animation pose (RoeSkirtRig): rest_guard (fitted, rest in the guard), rest_stance
     ///          (fitted, rest in the stance), drape (hangs on the body) -> _work/rest_demo/&lt;id&gt;_&lt;variant&gt;
     /// tools/cloth_demo_video.py puts the takes side by side.  -roeView backright (or backleft) films the
-    /// hips up close from behind and to that side instead of the whole fighter from the front; -roeView chest
-    /// the chest up close from the front (breasts).
-    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720] [-roeView front|backright|backleft|chest]
+    /// hips up close from behind and to that side instead of the whole fighter from the front; -roeView back the
+    /// whole fighter from behind (a long ponytail, a cape); -roeView chest the chest up close from the front (breasts).
+    ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Run [-roeCloths legacy,magica_style] [-roeChars g04,a08] [-roeSize 960x720] [-roeView front|back|backright|backleft|chest]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Packs [-roePacks bandai1,cmu1] [-roeChars g04,a08]
     ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Rests [-roeView backright] [-roeChars g04,a08] [-roeRests rest_stance,drape]
     /// </summary>
@@ -230,7 +230,7 @@ namespace RoeFighter.EditorTools
                         Directory.Delete(dir, true);
                     Directory.CreateDirectory(dir);
                     var cam = game.cam;
-                    bool close = view.StartsWith("back"), chest = view == "chest";
+                    bool behind = view == "back", close = view.StartsWith("back") && !behind, chest = view == "chest";
                     float sideways = view == "backleft" ? -1f : 1f;
                     var hips = me.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
                     var neck = me.rig.animator.GetBoneTransform(HumanBodyBones.Neck) ?? me.rig.animator.GetBoneTransform(HumanBodyBones.Head);
@@ -274,7 +274,7 @@ namespace RoeFighter.EditorTools
                         cam.transform.position = close
                             ? look + (-fwd * 0.8f + side * (0.6f * sideways)).normalized * 1.9f + Vector3.up * 0.1f
                             : chest ? look + (fwd * 0.9f - side * 0.35f).normalized * 1.15f + Vector3.up * 0.05f
-                            : look + (fwd * 0.8f - side * 0.6f).normalized * distance + Vector3.up * 0.2f;
+                            : look + ((behind ? -fwd : fwd) * 0.8f - side * 0.6f).normalized * distance + Vector3.up * 0.2f;
                         cam.transform.LookAt(look, Vector3.up);
                         if (s % every != 0)
                             continue;

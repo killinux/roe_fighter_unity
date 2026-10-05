@@ -143,7 +143,7 @@ namespace RoeFighter
                 }
                 nodes.Add(node);
             }
-            Report = $"KawaiiPhysics (Vindictus' settings): {nodes.Count} nodes, {nodes.Sum(x => x.bones.Count)} bones (" +
+            Report = $"KawaiiPhysics (her game's settings): {nodes.Count} nodes, {nodes.Sum(x => x.bones.Count)} bones (" +
                      string.Join(", ", nodes.GroupBy(x => x.kind).Select(gr => $"{gr.Key} {gr.Count()}/{gr.Sum(x => x.bones.Count)}")) +
                      $"), {nodes.Sum(x => x.capsules.Count)} capsules";
         }
@@ -221,18 +221,14 @@ namespace RoeFighter
                 return;
             var spaceRotation = space.rotation;
             var inverse = Quaternion.Inverse(spaceRotation);
-            // the animation's pose of every bone, in the fighter's space
-            foreach (var n in nodes)
-                foreach (var b in n.bones)
-                {
-                    b.pose = space.InverseTransformPoint(b.t.position);
-                    b.poseRotation = inverse * b.t.rotation;
-                }
             if (!started)
             {
                 foreach (var n in nodes)
+                {
+                    ReadPose(n, inverse);
                     foreach (var b in n.bones)
                         b.location = b.previous = b.pose;
+                }
                 lastPosition = space.position;
                 lastRotation = spaceRotation;
                 dtOld = 1f / 60f;
@@ -248,10 +244,25 @@ namespace RoeFighter
             lastPosition = space.position;
             lastRotation = spaceRotation;
 
+            // one node after the other, as UE's anim graph runs them: a node reads the pose the ones before it wrote (Eve's
+            // tie is two nodes, the second rooted on the first's last bone)
             foreach (var n in nodes)
+            {
+                ReadPose(n, inverse);
                 Simulate(n, dt, move, turn, inverse);
+                Apply(n, spaceRotation);
+            }
             dtOld = dt;
-            Apply(spaceRotation);
+        }
+
+        /// <summary>The animation's pose of a node's bones (as the nodes before it left them), in the fighter's space.</summary>
+        void ReadPose(Node n, Quaternion inverse)
+        {
+            foreach (var b in n.bones)
+            {
+                b.pose = space.InverseTransformPoint(b.t.position);
+                b.poseRotation = inverse * b.t.rotation;
+            }
         }
 
         void Simulate(Node n, float dt, Vector3 move, Quaternion turn, Quaternion inverse)
@@ -339,12 +350,11 @@ namespace RoeFighter
 
         /// <summary>ApplySimulateResult: the root where the animation has it, every other bone where it was simulated; a bone
         /// with one child turned so the child lies where it was simulated.  Written parents first, blended by Weight.</summary>
-        void Apply(Quaternion spaceRotation)
+        void Apply(Node n, Quaternion spaceRotation)
         {
             float w = Mathf.Clamp01(Weight);
             if (w <= 0f)
                 return;
-            foreach (var n in nodes)
             {
                 var bones = n.bones;
                 foreach (var b in bones)

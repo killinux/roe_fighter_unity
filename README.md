@@ -38,6 +38,7 @@
 | Magica Cloth 2 插件（用户 10-04 下载）：F4 的 `magica`；a08 的长裙片、g04 的裙片用 MeshCloth 直接模拟网格，其余骨链用 BoneCloth，霞的网格布模拟控制点 | 完成（10-04 晚），见 [`docs/magica-cloth-2.md`](docs/magica-cloth-2.md) 第 10 节；插件不进仓库，只在播放模式里跑（另写了播放模式录像）。对比视频 `out\mc2_compare_v2_front.mp4`、`out\mc2_compare_v2_back.mp4`（a08：左 Magica、中骨骼布料、右关；霞的海盗裙：左 Magica、中 DOA6 的、右关）。a08 的裙片有了褶皱、踢腿时搭在腿上；不是默认方案 |
 | Vindictus 的 Fiona（白羽礼服 PCF_005，`fio005`）加入战斗；衣服、头发、胸用她游戏自己的物理：游戏里是 KawaiiPhysics 插件，每条链的参数从游戏文件里读出来，算法照插件源码搬过来（F4 的 `kawaii`，`auto` 下她默认用它） | 完成（10-04 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)；物理对比视频 `out\fio005_physics_front.mp4`、`out\fio005_physics_back.mp4`、`out\fio005_physics_chest.mp4`（左：她游戏的 KawaiiPhysics，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_fio005.mp4`，静帧 `out\fio005_stills.jpg`。鞋跟按鞋底量出来压脚（32°），平脚的动作套上来也踩在鞋跟上。10-04 夜：**动作换成她游戏里自己的**（长剑加盾，87 段转成人形动作），剑和盾也从游戏里拿来，攻击按剑身判定；MetaHuman 多出的脊柱节和扭转骨运行时补回（`RoeUeRig`）；检查图 `out\fio005_own_moves_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_fio005_own.mp4`，前臂扭转对比 `out\fio005_twist.jpg`。10-05：剑和盾跟着游戏的动作转（举盾反击时盾朝前，胜利时反手握剑），前后对比 `out\fio005_props.jpg`；扭转骨、肩肘髋膝的修正骨、手指半关节照游戏自己的程序化骨骼驱动（从包里的 ControlRig 字节码解出来的），对比 `out\fio005_rig.jpg` |
 | 对战镜头不跑到场地外面：建场景时量出镜头能站的地方，镜头只站在空处、看两人的视线不被挡（F8 切回旧镜头） | 完成（10-05），见 [`docs/fight-camera.md`](docs/fight-camera.md)；新旧镜头并排 `out\fight_camera_compare.mp4`，同一场电脑对电脑重录 `out\fight_cpu_match_fio005_cam.mp4`，地图 `_work\camera_room\e23_steel_s02.png` |
+| 剑星（Stellar Blade）的 Eve（7 代潜降服，`eve09`）加入战斗；物理全部用剑星自己的：胸、臀、大腿、护腕是 UE4 的 SpringBone，前发、鬓发、马尾根、领带是 KawaiiPhysics，马尾后段和半透明披风是 PhysX 刚体链，参数都从游戏包里读出来（F4 的 `stellar`，`auto` 下她默认用它；没用 Magica Cloth 2） | 完成（10-05），见 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md)；物理对比视频 `out\eve09_physics_front.mp4`、`out\eve09_physics_back.mp4`（左：剑星自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08）。动作暂时是动作包加 UFE 2 的受击和技能；她游戏里自己的动作、手肘膝盖的修正骨还没做 |
 
 ## 目录
 
@@ -48,6 +49,8 @@ Assets/RoeFighter/Editor/      编辑器脚本：建工程设置、拼角色、�
 Assets/RoeFighter/Settings/    渲染管线、影棚的后期和地面
 Assets/ROE/                    （不入库）从游戏取出的素材，按角色和游戏包分文件夹
 Assets/DOA/                    （不入库）DOA6 角色的模型、贴图、物理数据、动作（Assets/DOA/<id>）
+Assets/VDF/                    （不入库）Vindictus 角色（Fiona）的模型、贴图、物理数据（Assets/VDF/<id>）
+Assets/SB/                     （不入库）剑星角色（Eve）的模型、贴图、物理数据（Assets/SB/<id>）
 Assets/RoeFighter/Generated/   （不入库）拼好的角色预制体、人形骨架、转好的动作、mocap/ 下是动作捕捉转成的基础动作
 Assets/RoeFighter/Scenes/      （不入库）生成的对战场景（游戏的战斗场景 + 两个角色 + 格斗逻辑）
 tools/                         Python / PowerShell 工具
@@ -335,7 +338,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢；Fiona 用自己的：突刺、反击斩、转身斩、踢加斩） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
-| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
+| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 剑星的物理 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
@@ -1332,6 +1335,41 @@ python tools\vdf_rig_sheet.py _work\vdf\rig out\fio005_rig.jpg
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.CameraStats -Graphics -Extra '-roeMatches','fio005:a08:2,g05:fio005:3'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','fio005','-roeP2','a08','-roeSeconds','120','-roeCamAvoid','0','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_camold2'
 python tools\camera_compare_video.py _work\fight_camold2 _work\fight_camnew2 out\fight_camera_compare.mp4 --to 70
+```
+
+### 剑星的 Eve（10-05）
+
+用户 10-05："另外把剑星里的eve的也加个角色进来，物理能用剑星自己的就用自己的，次选项才是用magic cloth2"。全部细节见 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md)。
+
+- **模型**：ripper_tpose 归档的 `Eve_CH_P_EVE_09.blend`（服装身体 + 头 + 发型 + 马尾，一个骨架）→ FBX（`tools/sb_fbx.py`）→ Unity（`Assets/SB/eve09`，不入库）。
+  - 贴图按她游戏里的材质实例重新取（`tools/sb_textures.py`，用 CUE4Parse 读）：颜色、法线、ORM、服装上绿色光线的发光图；披风半透明，蕾丝镂空。
+  - 和 Fiona 共用建模型的代码（`VdfFighter.BuildModel`，加了发光贴图）。她的绑定姿势本来就站在高跟上，不用压脚。
+- **物理**（F4 的 `stellar`，`auto` 下她默认用它）：全部从游戏的动画蓝图和物理资产读出来（`tools/sb_physics.py`）。
+  - 胸、臀、大腿扭转骨、护腕：UE4 的 SpringBone，照 UE 4.26 的源码移植，120 Hz 子步。
+  - 前发、鬓发、马尾根、领带：KawaiiPhysics，用的是 Fiona 那次移植的代码；节点改成一个接一个模拟（领带的两段首尾相接）。
+  - 马尾后 7 节、披风左右各 7 节：PhysX 刚体链。她有自己的物理场景，刚体在她自己的坐标系里，等于游戏的"本地空间模拟"：整个人移动不甩，身体动作才甩。
+    21 个关节按游戏数据摆出的静止位置和她的骨骼全部对上（0.0 厘米、0°）。
+  - 没搬的：手臂压胸的 Control Rig、领口一小片 NvCloth、马尾的挡板（见文档 2.6）。
+- **效果**：物理对比 `out\eve09_physics_front.mp4`、`out\eve09_physics_back.mp4`（左剑星自己的，中我们的骨骼布料，右关）。
+  - 剑星自己的：走路时马尾贴着背小幅摆，回旋踢、转身时整条甩出去再落回来；披风跟着腿和胯摆。
+  - 骨骼布料：找到了马尾、头发、胸，没认出披风，披风一直是僵的。
+  - 关：马尾和披风停在建模时的样子（马尾斜着支在背后）。
+  - 电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08，116 秒，Eve 2:0），抽查的画面里没有甩飞。
+- **动作**：暂时和 Fiona 第一版一样。站架、走、四个攻击用动作包；受击、倒地、起身和三个技能用 UFE 2 的（技能 1 是 Ethan 的三连击，技能 2 是 Mike 的升龙拳，超必杀是 Mecanim Bot 的鳳翼扇）。
+  她游戏里自己的动作（约 4100 段，含剑技连招）还没导。
+- **还没做**：手肘、膝盖的扭转骨和修正骨。游戏里这些骨是逐帧打在每段动画上的，要用她自己的动作拟合，等导她的动作时一起做。
+- 定义在 `tools/sb/eve09.json`，名单默认加上 `eve09`。物理演示加了 `-roeView back`（从背后拍全身，给长马尾、披风用）。
+
+```powershell
+& 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup 'E:\game_export\StellarBlade\Eve\blend\CH_P_EVE_09\Eve_CH_P_EVE_09.blend' --python tools\sb_fbx.py -- Assets\SB\eve09 eve09
+python tools\sb_textures.py Assets\SB\eve09
+python tools\sb_physics.py Assets\SB\eve09
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve09'      # 日志里有关节静止位置的检查
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','eve09','-roeCloths','stellar,magica_style,off','-roeView','back','-roeOut','E:\code\othercode\roe_fighter_unity\_work\eve_cloth_back'
+python tools\cloth_demo_video.py _work\eve_cloth_back out\eve09_physics_back.mp4 --chars eve09 --variants stellar,magica_style,off
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve09','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve09'
+python tools\make_video.py _work\fight_eve09 out\fight_cpu_match_eve09.mp4
 ```
 
 ## 已知问题和待定的事

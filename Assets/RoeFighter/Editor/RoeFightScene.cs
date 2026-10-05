@@ -47,8 +47,9 @@ namespace RoeFighter.EditorTools
         /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
         /// kas comes in when her DOA6 files are there, DoaFighter.IsDoa; kas011 is her pirate dress, COS_011, whose skirt and
         /// sleeves are the game's grid cloth; "再加入一个角色吧，vindictus里的fiona，用 PCF_005 这个版本" - fio005, VdfFighter, with
-        /// her game's KawaiiPhysics and UFE 2's reactions and specials).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005";
+        /// her game's KawaiiPhysics and UFE 2's reactions and specials; 10-05 "另外把剑星里的eve的也加个角色进来，物理能用剑星自己的就用
+        /// 自己的" - eve09, SbFighter, Stellar Blade's Eve in her Planet Diving Suit (7th) on her game's own physics).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005,eve09";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };

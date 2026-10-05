@@ -1,0 +1,281 @@
+"""Stellar Blade's own physics for Eve, read out of the game (user 10-05: "物理能用剑星自己的就用自己的，次选项才是用magic cloth2"):
+
+    python tools/sb_physics.py Assets/SB/<id> [--outfit CH_P_EVE_09] [--hair EVE_HR_01]
+
+Everything comes from the game's cooked packages through the CUE4Parse CLI with the community .usmap (-f json, cached in
+_work/sb/research/json; exported here when missing).  What the game runs on her (docs/stellar-blade-eve.md):
+  - KawaiiPhysics nodes (the plugin, MIT - an older generation than Vindictus': TeleportDistance/Rotation thresholds,
+    no simulation space or bone constraints): the ponytail's first two bones in her main anim blueprint
+    (CH_P_EVE_01_AnimBP_New: root Ab-TL-HairB01, Ab-TL-HairB03 and below excluded), the four front locks and the two
+    side locks in the hair's (EVE_HR_01_AnimBP, its collision capsules in KawaiiLimitsData_Head on the hair's root), the
+    tie in the outfit's (CH_P_EVE_09_AnimBP, two nodes down the tie);
+  - UE's AnimNode_SpringBone (27 in the main blueprint, SB's own version with bUseLocalSpace / AverageVelocityFrameCount):
+    the ones whose bone her outfit has - breasts, the hips' Ab-*-Hip-Reg, the thighs' twist bones, the forearm bands;
+  - PhysX rigid bodies (UE physics assets), simulated in the component's local space (bLocalSpaceSimulation on the
+    body and the ponytail components): the ponytail from Ab-TL-HairB03 down (EVE_HR_01_Tail_PhysicsAsset: masses
+    1.0 -> 0.04 kg, linear / angular damping 5 / 1, cone and twist limits) colliding with the outfit's ponytail set
+    (CH_P_EVE_09_PonytailPhysicsAsset on the body bones SB's AdditiveMasterBoneArray names), and the back panels
+    Ab_CapeL/R01-07 (CH_P_EVE_09_Physics: 20 kg each, damping 5 / 10, limits 10 degrees) colliding with the body's own
+    kinematic bodies.
+Bone names: the Biped's hyphens become spaces (tools/sb_fbx.py renames her bones so); the hair blueprint's "Root" is the
+hair mesh's root (Hair_Root in the merged armature).  Units stay the game's (cm, degrees, UE bone space): RoeSbPhysics
+and RoeKawaiiPhysics turn them into Unity's.
+
+Writes <dir>/kawaii.json (RoeKawaiiRig: one entry per Kawaii node, as tools/vdf_kawaii.py) and <dir>/sbphysics.json
+(RoeSbRig: springs, bodies, joints).
+"""
+import argparse
+import json
+import os
+import subprocess
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+PROJECT = os.path.dirname(HERE)
+CLI = r"E:\tools\cue4parse_cli_ff7\cue4parse.exe"
+PAKS = r"D:\Program Files (x86)\Steam\steamapps\common\StellarBlade\SB\Content\Paks"
+USMAP = r"E:\game_export\StellarBlade\_meta\mappings\StellarBlade_1.1.0.usmap"
+JSON_DIR = os.path.join(PROJECT, "_work", "sb", "research", "json")
+PC = "SB/Content/Art/Character/PC"
+
+
+def game_json(package):
+    """A package's exports (CUE4Parse JSON), exported first when not cached.  package: SB/Content/... without extension."""
+    path = os.path.join(JSON_DIR, package.replace("/", os.sep) + ".json")
+    if not os.path.exists(path):
+        subprocess.run([CLI, "-i", PAKS, "-g", "GAME_StellarBlade", "-m", USMAP, "-f", "json", "-o", JSON_DIR, "-y",
+                        "-p", package + ".*"], capture_output=True)
+    if not os.path.exists(path):
+        raise SystemExit(f"could not export {package}")
+    return json.load(open(path, encoding="utf-8-sig"))
+
+
+def cdo(package):
+    return next(e for e in game_json(package) if e.get("Name", "").startswith("Default__"))["Properties"]
+
+
+def bone_name(name, root_alias=None):
+    if name is None:
+        return None
+    if name == "Root" and root_alias:
+        return root_alias
+    return name.replace("-", " ") if name.startswith("Bip001-") else name
+
+
+def vec(d, keys="XYZ"):
+    return [round(float(d.get(k, 0.0)), 6) for k in keys]
+
+
+def curve(node, field):
+    """A Kawaii curve as flat [t0, v0, t1, v1, ...]: the node's own keys, else its external CurveFloat asset's."""
+    c = node.get(field) or {}
+    keys = (c.get("EditorCurveData") or {}).get("Keys") or []
+    if not keys and c.get("ExternalCurve"):
+        path = c["ExternalCurve"]["ObjectPath"].split(".")[0]
+        asset = game_json("SB/Content/" + path[len("/Game/"):])
+        fc = next(e for e in asset if e.get("Type") == "CurveFloat")["Properties"]
+        keys = (fc.get("FloatCurve") or {}).get("Keys") or []
+    out = []
+    for k in keys:
+        out += [round(float(k.get("Time", 0.0)), 6), round(float(k.get("Value", 0.0)), 6)]
+    return out
+
+
+def capsules_of(node, root_alias):
+    caps = list(node.get("CapsuleLimits") or [])
+    caps += node.get("CapsuleLimitsData") or []
+    lda = node.get("LimitsDataAsset")
+    if lda and not node.get("CapsuleLimitsData"):
+        path = lda["ObjectPath"].split(".")[0]
+        asset = game_json("SB/Content/" + path[len("/Game/"):])
+        props = next(e for e in asset if e.get("Type", "").startswith("KawaiiPhysicsLimitsDataAsset"))["Properties"]
+        caps += props.get("CapsuleLimitsData") or []
+    out = []
+    for c in caps:
+        if not c.get("bEnable", True):
+            continue
+        r = c.get("OffsetRotation") or {}
+        out.append({"bone": bone_name(c["DrivingBone"]["BoneName"], root_alias), "radius": round(float(c["Radius"]), 4),
+                    "length": round(float(c["Length"]), 4), "offset": vec(c.get("OffsetLocation") or {}),
+                    "rotation": [round(float(r.get(k, 0.0)), 4) for k in ("Pitch", "Yaw", "Roll")]})
+    return out
+
+
+def kawaii_nodes(package, abp, kinds, root_alias=None):
+    props = cdo(package)
+    nodes = []
+    for key, n in props.items():
+        if not key.startswith("AnimGraphNode_KawaiiPhysics") or not isinstance(n, dict) or not n.get("bEnabled", True):
+            continue
+        root = n["RootBone"]["BoneName"]
+        ps = n.get("PhysicsSettings") or {}
+        g = n.get("Gravity") or {}
+        nodes.append({
+            "name": key, "abp": abp, "kind": kinds(root), "root": bone_name(root, root_alias),
+            "exclude": [bone_name(b["BoneName"], root_alias) for b in n.get("ExcludeBones") or []],
+            "damping": ps.get("Damping", 0.1), "stiffness": ps.get("Stiffness", 0.05),
+            "worldDampingLocation": ps.get("WorldDampingLocation", 0.8), "worldDampingRotation": ps.get("WorldDampingRotation", 0.8),
+            "radius": ps.get("Radius", 3.0), "limitAngle": ps.get("LimitAngle", 0.0),
+            "gravity": vec(g), "targetFramerate": float(n.get("TargetFramerate", 60)),
+            "dampingCurve": curve(n, "DampingCurveData"), "stiffnessCurve": curve(n, "StiffnessCurveData"),
+            "radiusCurve": curve(n, "RadiusCurveData"), "limitAngleCurve": curve(n, "LimitAngleCurveData"),
+            "capsules": capsules_of(n, root_alias),
+            "game": {"DummyBoneLength": n.get("DummyBoneLength"), "BoneForwardAxis": n.get("BoneForwardAxis"),
+                     "WindScale": n.get("WindScale"), "bEnableWind": n.get("bEnableWind"),
+                     "TeleportDistanceThreshold": n.get("TeleportDistanceThreshold"),
+                     "TeleportRotationThreshold": n.get("TeleportRotationThreshold"),
+                     "OverrideTargetFramerate": n.get("OverrideTargetFramerate")},
+        })
+    return nodes
+
+
+def springs(package, have):
+    out = []
+    for key, n in cdo(package).items():
+        if not key.startswith("AnimGraphNode_SpringBone") or not isinstance(n, dict):
+            continue
+        bone = bone_name(n["SpringBone"]["BoneName"])
+        if bone not in have:
+            continue
+        out.append({
+            "name": key, "bone": bone, "kind": "breast" if "Breast" in bone else "chain" if "Acc" in bone else "body",
+            "maxDisplacement": float(n.get("MaxDisplacement", 0.0)), "stiffness": float(n.get("SpringStiffness", 50.0)),
+            "damping": float(n.get("SpringDamping", 4.0)), "errorResetThresh": float(n.get("ErrorResetThresh", 256.0)),
+            "limitDisplacement": bool(n.get("bLimitDisplacement", False)),
+            "translate": [bool(n.get("bTranslate" + a, True)) for a in "XYZ"],
+            "rotate": [bool(n.get("bRotate" + a, False)) for a in "XYZ"],
+            "localSpace": bool(n.get("bUseLocalSpace", False)), "alpha": float(n.get("Alpha", 1.0)),
+            "averageVelocityFrames": int(n.get("AverageVelocityFrameCount", 0)),
+        })
+    return out
+
+
+def shape_list(agg):
+    out = []
+    for s in agg.get("SphylElems") or []:
+        out.append({"type": "capsule", "center": vec(s["Center"]), "rotation": [s["Rotation"].get(k, 0.0) for k in ("Pitch", "Yaw", "Roll")],
+                    "radius": s["Radius"], "length": s["Length"]})
+    for s in agg.get("TaperedCapsuleElems") or []:
+        out.append({"type": "capsule", "center": vec(s["Center"]), "rotation": [s["Rotation"].get(k, 0.0) for k in ("Pitch", "Yaw", "Roll")],
+                    "radius": 0.5 * (s["Radius0"] + s["Radius1"]), "length": s["Length"], "tapered": [s["Radius0"], s["Radius1"]]})
+    for s in agg.get("SphereElems") or []:
+        out.append({"type": "sphere", "center": vec(s["Center"]), "radius": s["Radius"]})
+    for s in agg.get("BoxElems") or []:
+        out.append({"type": "box", "center": vec(s["Center"]), "rotation": [s["Rotation"].get(k, 0.0) for k in ("Pitch", "Yaw", "Roll")],
+                    "size": [s["X"], s["Y"], s["Z"]]})
+    return out
+
+
+def physics_asset(package, have, chain, simulate_from, root_alias=None):
+    """Bodies and joints of a physics asset: the bodies under simulate_from (and that bone) simulate, the rest are kinematic
+    colliders following their bones; bones her rig lacks are left out."""
+    exports = game_json(package)
+    bodies, joints = [], []
+    for e in exports:
+        p = e.get("Properties", {})
+        if e.get("Type") == "SkeletalBodySetup":
+            bone = bone_name(p["BoneName"], root_alias)
+            if bone not in have:
+                continue
+            di = p.get("DefaultInstance") or {}
+            bodies.append({"bone": bone, "chain": chain, "simulate": False,
+                           "kinematicInGame": "Kinematic" in p.get("PhysicsType", ""),
+                           "mass": float(di.get("MassInKgOverride", 0.0)) if di.get("bOverrideMass") else 0.0,
+                           "linearDamping": float(di.get("LinearDamping", 0.01)), "angularDamping": float(di.get("AngularDamping", 0.0)),
+                           "shapes": shape_list(p.get("AggGeom") or {})})
+        elif e.get("Type") == "PhysicsConstraintTemplate":
+            ci = p["DefaultInstance"]
+            prof = ci.get("ProfileInstance") or {}
+            cone, twist = prof.get("ConeLimit") or {}, prof.get("TwistLimit") or {}
+            child, parent = bone_name(ci["ConstraintBone1"], root_alias), bone_name(ci["ConstraintBone2"], root_alias)
+            if child not in have or parent not in have:
+                continue
+            joints.append({"chain": chain, "child": child, "parent": parent,
+                           "pos1": vec(ci.get("Pos1") or {}), "pri1": vec(ci.get("PriAxis1") or {"X": 1}), "sec1": vec(ci.get("SecAxis1") or {"Y": 1}),
+                           "pos2": vec(ci.get("Pos2") or {}), "pri2": vec(ci.get("PriAxis2") or {"X": 1}), "sec2": vec(ci.get("SecAxis2") or {"Y": 1}),
+                           # UE's defaults where the unversioned data leaves them out: 45 degrees, free
+                           "swing1": float(cone.get("Swing1LimitDegrees", 45.0)), "swing2": float(cone.get("Swing2LimitDegrees", 45.0)),
+                           "twist": float(twist.get("TwistLimitDegrees", 45.0)),
+                           "swing1Motion": cone.get("Swing1Motion", "ACM_Free").split("::")[-1],
+                           "swing2Motion": cone.get("Swing2Motion", "ACM_Free").split("::")[-1],
+                           "twistMotion": twist.get("TwistMotion", "ACM_Free").split("::")[-1]})
+    # simulated: simulate_from and every body below it (by joints)
+    below = {simulate_from}
+    grew = True
+    while grew:
+        grew = False
+        for j in joints:
+            if j["parent"] in below and j["child"] not in below:
+                below.add(j["child"])
+                grew = True
+    for b in bodies:
+        b["simulate"] = b["bone"] in below and not b["kinematicInGame"]
+    return bodies, joints
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("folder")
+    ap.add_argument("--outfit", default="CH_P_EVE_09")
+    ap.add_argument("--hair", default="EVE_HR_01")
+    a = ap.parse_args()
+    # her bones, as tools/sb_fbx.py exported them
+    have = {b["name"] for b in json.load(open(os.path.join(a.folder, "bones.json"), encoding="utf-8"))["bones"]}
+
+    def hair_kind(root):
+        return "hair"
+    nodes = []
+    nodes += kawaii_nodes(f"{PC}/CH_P_EVE_01/Blueprints/CH_P_EVE_01_AnimBP_New", "CH_P_EVE_01_AnimBP_New",
+                          lambda r: "hair" if "Hair" in r else "ribbon")
+    nodes += kawaii_nodes(f"{PC}/00_HR/{a.hair}/{a.hair}_AnimBP", f"{a.hair}_AnimBP", hair_kind, root_alias="Hair_Root")
+    nodes += kawaii_nodes(f"{PC}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP",
+                          lambda r: "ribbon" if "Neck" in r or "Tie" in r else "chain")
+    missing = [n["root"] for n in nodes if n["root"] not in have]
+    nodes = [n for n in nodes if n["root"] in have]
+    kawaii = {"source": "Stellar Blade (1.4.1) KawaiiPhysics nodes read from the cooked anim blueprints (tools/sb_physics.py). "
+                        "Units: cm, degrees, UE bone space. Curves multiply the base value over the chain (0 root, 1 tip).",
+              "nodes": nodes}
+    json.dump(kawaii, open(os.path.join(a.folder, "kawaii.json"), "w", encoding="utf-8"), indent=1)
+
+    sp = springs(f"{PC}/CH_P_EVE_01/Blueprints/CH_P_EVE_01_AnimBP_New", have)
+    # the ponytail component's skeleton has its own "Root" (where it hangs on the head socket): not a bone of hers, so its
+    # bodies there (a head capsule; the outfit set's big flat box behind the head) are left out
+    tail_root = "(ponytail root)"
+    tail_bodies, tail_joints = physics_asset(f"{PC}/00_HR/{a.hair}/{a.hair}_Tail_PhysicsAsset", have, "ponytail",
+                                             "Ab-TL-HairB03", root_alias=tail_root)
+    tail_coll, _ = physics_asset(f"{PC}/{a.outfit}/{a.outfit}_PonytailPhysicsAsset", have, "ponytail", "", root_alias=tail_root)
+    body_bodies, body_joints = physics_asset(f"{PC}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeL01")
+    _, cape_r = physics_asset(f"{PC}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeR01")
+    capes = {b["bone"] for b in body_bodies if b["bone"].startswith("Ab_Cape")}
+    for b in body_bodies:
+        b["simulate"] = b["bone"] in capes
+    # the cape set: its simulated panels and the body's kinematic bodies (the ponytail's bodies of this asset are the
+    # tail component's business - left out here)
+    cape_bodies = [b for b in body_bodies if b["simulate"] or not b["bone"].startswith("Ab-TL")]
+    cape_joints = [j for j in body_joints if j["child"] in capes]
+    # the ponytail set: the tail asset's own bodies (B01, B02 follow Kawaii's bones; B03 down simulate; its kinematic
+    # "Root" is the head) and the outfit's collision set for it
+    for b in tail_bodies:
+        b["simulate"] = b["simulate"] and b["bone"] not in ("Ab-TL-HairB01", "Ab-TL-HairB02")
+    for b in tail_coll:
+        b["simulate"] = False
+        b["chain"] = "ponytail"
+    tail_joints = [j for j in tail_joints if j["child"] in {b["bone"] for b in tail_bodies if b["simulate"]}]
+    data = {
+        "source": f"Stellar Blade (1.4.1): springs from CH_P_EVE_01_AnimBP_New, rigid bodies from {a.hair}_Tail_PhysicsAsset + "
+                  f"{a.outfit}_PonytailPhysicsAsset (ponytail) and {a.outfit}_Physics (back panels); UE units (cm, kg, degrees), "
+                  "UE bone space; simulated in the fighter's local space as the game's components do (bLocalSpaceSimulation)",
+        "springs": sp,
+        "bodies": tail_bodies + tail_coll + cape_bodies,
+        "joints": tail_joints + cape_joints,
+    }
+    json.dump(data, open(os.path.join(a.folder, "sbphysics.json"), "w", encoding="utf-8"), indent=1)
+    print(f"kawaii: {len(nodes)} nodes ({', '.join(f'{n['root']} [{n['kind']}]' for n in nodes)}); not on her rig: {missing}")
+    print(f"springs: {len(sp)} ({', '.join(s['bone'] for s in sp)})")
+    for chain in ("ponytail", "cape"):
+        bs = [b for b in data["bodies"] if b["chain"] == chain]
+        print(f"{chain}: {sum(b['simulate'] for b in bs)} simulated ({', '.join(b['bone'] for b in bs if b['simulate'])}), "
+              f"{sum(not b['simulate'] for b in bs)} colliders, {len([j for j in data['joints'] if j['chain'] == chain])} joints")
+
+
+if __name__ == "__main__":
+    main()
