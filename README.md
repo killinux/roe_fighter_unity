@@ -42,6 +42,7 @@
 | DOA6 的不知火舞（`mai`，默认红衣 `MAI_COS_004`）加入战斗；物理用 DOA6 自己的：胸和臀是软体，衣服的 5 块垂布和马尾是网格布，身后的长穗和肩上的绳是骨链 | 完成（10-05），见下面"不知火舞（DOA6）"一节和 [`docs/doa-physics.md`](docs/doa-physics.md) 第 12 节；物理对比视频 `out\mai_physics_front.mp4`、`out\mai_physics_back.mp4`（左：DOA6 自己的，中：我们的骨骼布料，右：关），电脑对电脑 `out\fight_cpu_match_mai.mp4`（对霞）。站架和四个攻击就是 g04 用的那套 |
 | Eve 的百褶裙（Office Style，`eve37`）：裙子除了剑星的 KawaiiPhysics，还跑游戏自己的裙子 Control Rig——直接执行它的 UE 4.26 RigVM 字节码，按大腿抬起多少把各裙片转开 | 完成（10-05），见下面"Eve 的百褶裙（eve37）和裙子的 Control Rig"一节和 [`docs/stellar-blade-eve.md`](docs/stellar-blade-eve.md) 第 6 节；对比视频 `out\eve37_skirt_hips.mp4`（胯部特写）、`out\eve37_skirt_back.mp4`（左：剑星自己的，中：不跑 Control Rig，右：我们的骨骼布料），踢腿放大 `out\eve37_skirt_kick.jpg` |
 | Inase 的裙子调研：游戏里逐帧手 K、没有物理；拿她自己的技能当标准答案，我们的骨骼布料、Magica Cloth 2、只跟着腿都差 61–63°，游戏里长裙片大幅飘开，三种方案都贴着腿垂 | 调研完成（10-05），见下面"Inase 的裙子：游戏里怎么动的"一节和 [`docs/inase-skirt.md`](docs/inase-skirt.md)；对比视频 `out\a08_skirt_vs_keys.mp4`；改法等你定 |
+| ROE 战斗里有没有物理：战斗角色、敌人、技能都没有物理组件，舞台只有不会动的碰撞体和少量会碰撞的粒子；真正的物理（Magica Cloth 2）只在大厅 | 调研完成（10-05），见下面"ROE 战斗里有没有物理"一节和 [`docs/roe-battle-physics.md`](docs/roe-battle-physics.md)；工具 `tools/roe_physics_scan.py` |
 
 ## 目录
 
@@ -1623,4 +1624,21 @@ python tools\cloth_demo_video.py _work\eve37_rig_frontright out\eve37_skirt_hips
 ```powershell
 python tools\skirt_key_models.py a08
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','a08','-roeCloths','magica_style,legs','-roeScript','skills','-roeSkirtKeys','off','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_skills_nokeys'
+```
+
+### ROE 战斗里有没有物理（10-05）
+
+用户 10-05："战斗的场景也没有物理是吧，都调研一下，ROE内的"。细节见 [`docs/roe-battle-physics.md`](docs/roe-battle-physics.md)。
+
+- **战斗里没有物理模拟。**
+  - 战斗角色 266 个包、敌人 115 个、技能数据 231 个：一个物理组件都没有。角色身上会动的头发、胸、裙子、挂件全是关键帧。
+  - 战斗舞台 194 个包、舞台的环境模型 1427 个：只有不会动的碰撞体（给点击、手势做射线检测，给粒子当地面），没有刚体、关节、布料，也没有 Magica。
+    少量粒子开了碰撞（落叶落地）或被力场吹（风沙）。
+  - 特效 3058 个包：4.6 万个粒子系统里 107 个开了碰撞，大多是回忆模式里的液体。
+- **真正的物理只在大厅**（Magica Cloth 2）：头发、挂件，还有时装配件上的 21 个（头纱、蝴蝶结、尾巴、流苏……）。这些时装没有战斗模型。
+- 工具 `tools/roe_physics_scan.py`：一共 5998 个包，扫 22 秒，`--report` 按类别汇总。
+
+```powershell
+python tools\roe_physics_scan.py
+python tools\roe_physics_scan.py --report
 ```
