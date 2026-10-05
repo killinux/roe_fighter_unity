@@ -138,7 +138,28 @@ E:\tools\cue4parse_cli_ff7\cue4parse.exe -i $G -g GAME_StellarBlade -m $M -f jso
 | `PhysTransformStabilizationLerpValue 0.2` | 剑星自己加的组件参数 | 源码在 exe 里 |
 | 扭转骨、修正骨（`Ab-*-Tw0/1`、`Ab-*-Elbow`、`Ab-*-Knee`、`Dm-*` 等） | 3ds Max 的辅助骨 | 游戏里是逐帧打在每段动画上的关键帧，不是运行时算的（主蓝图里没有驱动它们的节点）。人形动作不带这些骨，所以要像 ROE 角色那样用她游戏里的动作片段拟合（`RoeHelperFit`），等导她自己的动作时一起做 |
 
-## 3. 效果
+## 3. 脚（10-05 修）
+
+用户问："eve的脚是不是有问题"。对比图 `out\eve09_feet_fix.jpg`（上：修复前，下：修复后；站架、前进、侧步、刺拳收招，贴地拍）。
+
+- **她的脚**：坡跟厚底靴，脚在鞋里绷到 77°（脚踝到脚掌只往前 2.6 厘米、往下 11.3 厘米），和小腿只差 16°；
+  绑定姿势下整块鞋底平贴地面（从脚踝后 8 厘米到前 6 厘米都着地），脚踝离地 15.3 厘米、脚掌骨 4.1 厘米。Blender 里量的。
+- **出了什么错**（`RoeFootProbe.FootFrames` 分三步量）：
+  1. 绑定姿势：脚尖朝前（左右各外撇 10°），鞋底贴地。
+  2. 动捕站架直接套到她的人形骨架上：左脚尖转到朝后 157°、右脚 129°，脚踝抬到 30 厘米，鞋底斜着。
+     动捕演员站架时脚跟抬起（脚往下绷），加到她已经绷直的脚上，就越过垂直线翻到后面去了。
+  3. 格斗逻辑把第 2 步的样子当成"站着时脚该什么样"（`footRest`），每一帧照着摆。ROE 角色也有类似的翻转，
+     但它们的这个样子取自游戏自己的站立动作，所以能纠正回来；Eve 没有游戏动作，取到的就是翻过去的动捕站架。
+- **改法**（`tools/sb/eve09.json` 的 `"feet": "bind"`）：
+  - 脚和脚趾相对小腿一直保持绑定姿势的角度（`FighterRig.bindFeet`）。她的脚在鞋里本来就动不了；踢腿、迈步时也不会翻。
+  - 落地的脚照绑定姿势站：鞋底放平，朝向跟着小腿（脚踝的转轴），按绑定姿势的脚踝和脚掌高度落地
+    （`flatFeet` 那一套，`flatRest` / `flatToe` / `flatSoles` 取自绑定姿势，不再转脚；建场景时 `RoeFightScene.BindFeet` 量）。
+  - 借来的"游戏动作"（出场、受击、技能，都是 UFE 2 的）格斗逻辑原本不做落地，套到她身上整个人陷进地里 13.7 厘米。
+    现在她身体立着时（头到胯的方向和竖直方向夹角小于约 50°），鞋底低于地面就整体抬上来：只抬不压，跳起来的招保持高度，躺倒时不动。
+- **结果**（`RoeFightProbe.Feet`，64 个镜头）：站架、走、退、侧步、四个攻击里落地的脚，鞋跟一半和鞋尖一半离地都是 0.0 厘米，朝向：
+  前脚内扣 20°、后脚外撇 64°（格斗站架本来的样子）；出场动作鞋底在地面下 0.6 厘米。录了一场电脑对电脑看受击、技能、被 KO、躺地，脚都在地上。
+
+## 4. 效果
 
 物理对比录像，每段 11.6 秒：站架、前进、后退、两次侧步，再按 A、C、D、B 四个攻击（刺拳、直拳、回旋踢、挥砍）；左：剑星自己的（`stellar`），中：我们的骨骼布料（`magica_style`），右：关。
 
@@ -154,7 +175,7 @@ E:\tools\cue4parse_cli_ff7\cue4parse.exe -i $G -g GAME_StellarBlade -m $M -f jso
 
 胸、臀、大腿、护腕的弹簧骨，游戏设的位移上限只有 0.5–2 厘米，画面上几乎看不出来。
 
-电脑对电脑 `out\fight_cpu_match_eve09.mp4`：对 a08，116 秒，Eve 2:0 赢。抽查整场的画面，马尾和披风没有甩飞、没有卡在奇怪的位置。
+电脑对电脑 `out\fight_cpu_match_eve09.mp4`：对 a08，120 秒（修脚之后重录）。抽查整场的画面，马尾和披风没有甩飞、没有卡在奇怪的位置。
 画面里大团的黑灰色拖影是命中火花（所有对局共用的 g04 技能命中特效），不是她的物理。
 
 **录这组视频时发现并修掉的问题**（所有角色都有）：换物理方案或开新的一局时（F4、F3、选人后再开一局，`FighterRig.Init`），
@@ -162,7 +183,7 @@ E:\tools\cue4parse_cli_ff7\cue4parse.exe -i $G -g GAME_StellarBlade -m $M -f jso
 一直斜着支着；"关"那栏停在骨骼布料最后一帧的样子；exe 里按 F4 后马尾一直水平支着。现在 `Init` 一开始先让旧方案把骨骼放回静止姿势。
 修复后重录：第一栏（剑星自己的）和修复前逐像素相同，后两栏的马尾变成直直垂着，就是上表。
 
-## 4. 用法
+## 5. 用法
 
 ```powershell
 # 1. 模型（Blender 3.6，读归档的 .blend，不保存）
@@ -181,6 +202,9 @@ python tools\cloth_demo_video.py _work\eve_cloth_back out\eve09_physics_back.mp4
 # 电脑对电脑
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve09','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve09'
 python tools\make_video.py _work\fight_eve09 out\fight_cpu_match_eve09.mp4
+# 脚：贴地拍并量鞋跟、鞋尖离地多高；脚的朝向分三步量
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.Feet -Graphics -Extra '-roeChar','eve09','-roePacks','bandai1'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFootProbe.FootFrames -Extra '-roeChar','eve09'
 ```
 
 - 素材在 `Assets/SB/eve09/`（不入库），格斗定义 `tools/sb/eve09.json`。

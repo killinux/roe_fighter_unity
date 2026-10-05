@@ -336,7 +336,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 |---|---|---|
 | 左右移动（朝对手走 / 后退，按住后退 = 防御） | A / D（或手柄摇杆） | ← / → |
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
-| A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢；Fiona 用自己的：突刺、反击斩、转身斩、踢加斩） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
+| A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢；Fiona 用自己的：突刺、反击斩、转身斩、踢加斩；Inase 用 Mecanim Bot 的：刺拳、中段前踢、冲步直拳、回旋高踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
 | 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 剑星的物理 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
@@ -834,6 +834,28 @@ python tools\strike_demo_video.py _work\strike_takes out\a08_ufe_normals.mp4
   - 能打中的那几帧右下角亮红色"能打中"。
 - `StrikeTakes` 每一帧都拍（每秒 60 帧，慢放才不卡），镜头比别的演示远一点（4.6 米），高踢的脚不出画。
 - 挑中的招可以做成她自己的招式（`strikesOnly` 的包，像 g04 的不知火舞）。
+
+#### Inase 用 Mecanim Bot 的普通攻击（10-05）
+
+用户看完上面的视频说："inase用mecanim bot的动作"。
+
+- 她自己的招式包 `tools/motionpacks/ufe_bot_inase.json`（`strikesOnly`，像 g04 的不知火舞），建场景时默认给 a08（`-roeOwnStrikes` 的默认值加了 `a08=ufe_bot_inase`）。
+- Bot 有 6 个站立普通攻击，按键只有 4 个：
+  - A 轻拳：刺拳，0.17 秒，够到 0.55 米；
+  - B 中脚：中段前踢，0.80 米；
+  - C 重拳：冲步直拳，0.98 米；
+  - D 重脚：回旋高踢，1.23 米。
+  - 没用的：轻脚（UFE 表里的帧数和动作对不上，只有 0.125 秒、够到 0.39 米）、中拳（上勾拳）。换招改这个 JSON。
+- 速度和"能打中的时间"照 UFE 的招式表（从 `ufe_normals.json` 抄过来）；UFE 没给这几招击倒，这里也没有。
+- 站架和走路还是当前动作包的（F3），和挑招的视频里一样。
+- 视频：`out\a08_bot_strikes.mp4`（四招，每招先实速再半速）；电脑对电脑 `out\fight_cpu_match_a08_eve09.mp4`（Inase 对 Eve，120 秒）。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/ufe_bot_inase.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','ufe_bot_inase','-roeChars','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_bot'
+python tools\strike_demo_video.py _work\strike_takes_bot out\a08_bot_strikes.mp4 --pack tools/motionpacks/ufe_bot_inase.json --id a08
+```
 
 ### 爆衣：衣服按件掉，掉完是全身（10-03）
 
@@ -1354,9 +1376,20 @@ python tools\camera_compare_video.py _work\fight_camold2 _work\fight_camnew2 out
   - 剑星自己的：走路时马尾贴着背小幅摆，回旋踢、转身时整条甩出去再落回来；披风跟着腿和胯摆。
   - 骨骼布料：找到了马尾、头发、胸，但马尾基本直直挂着，踢腿、转身也几乎不甩（按头发的预设，刚度大）；没认出披风。
   - 关：马尾直直垂在背后、披风垂在身体两侧，都只跟着身体走。
-  - 电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08，116 秒，Eve 2:0），抽查的画面里没有甩飞。
+  - 电脑对电脑 `out\fight_cpu_match_eve09.mp4`（对 a08，120 秒，修脚之后重录），抽查的画面里没有甩飞。
 - **动作**：暂时和 Fiona 第一版一样。站架、走、四个攻击用动作包；受击、倒地、起身和三个技能用 UFE 2 的（技能 1 是 Ethan 的三连击，技能 2 是 Mike 的升龙拳，超必杀是 Mecanim Bot 的鳳翼扇）。
   她游戏里自己的动作（约 4100 段，含剑技连招）还没导。
+- **脚（10-05 修）**：用户问"eve的脚是不是有问题"。确实有：站着时鞋底往前倾、离地十几厘米，脚翻到后面去（对比图 `out\eve09_feet_fix.jpg`）。
+  - 她的靴子是坡跟厚底，脚在鞋里绷到 77°，几乎和小腿一条线（只差 16°）；绑定姿势下整块鞋底平贴地面，脚踝离地 15.3 厘米。
+  - 她的动作全是别人的（动捕、UFE 2）。动捕的格斗站架脚跟是抬起的，这个"再往下绷"加到她已经绷直的脚上，脚就越过垂直线翻到后面：
+    站架里左脚尖朝后 157°、右脚 129°，脚踝抬到 30 厘米。格斗逻辑又把这个站架当成"站着时脚该什么样"，每一帧照着摆。
+  - 现在角色定义里写 `"feet": "bind"`（`tools/sb/eve09.json`）：
+    - 脚和脚趾相对小腿一直保持绑定姿势的角度（她的脚在鞋里本来就动不了），踢腿、迈步时也不会翻；
+    - 落地的脚照绑定姿势站：鞋底放平，朝向跟着小腿，按绑定姿势的脚踝高度落地（`FighterRig.bindFeet`，建场景时 `RoeFightScene.BindFeet` 量好）；
+    - 借来的"游戏动作"（出场、受击、技能）格斗逻辑原本不做落地，套到她身上整个人陷进地里 13.7 厘米：
+      现在她身体立着的时候，鞋底低于地面就整体抬上来，只抬不压（跳起来的招不受影响），躺倒时不动。
+  - 检查（`RoeFightProbe.Feet` 贴地拍脚并量鞋跟、鞋尖两半离地多高）：站架、走、侧步、四个攻击里落地的脚，两半离地都是 0.0 厘米；
+    出场动作的鞋底在地面下 0.6 厘米。`RoeFootProbe.FootFrames` 把"绑定姿势 / 站架直接套上去 / 格斗逻辑处理后"三步的脚分开量，用来找是哪一步出的错。
 - **还没做**：手肘、膝盖的扭转骨和修正骨。游戏里这些骨是逐帧打在每段动画上的，要用她自己的动作拟合，等导她的动作时一起做。
 - 定义在 `tools/sb/eve09.json`，名单默认加上 `eve09`。物理演示加了 `-roeView back`（从背后拍全身，给长马尾、披风用）。
 - **顺带修了一个所有角色都有的问题**：换物理方案、开新的一局时，新方案把骨骼当时的样子记成静止姿势，可旧方案没先把它动过的骨骼放回去。
@@ -1375,6 +1408,8 @@ python tools\sb_physics.py Assets\SB\eve09
 python tools\cloth_demo_video.py _work\eve_cloth_back out\eve09_physics_back.mp4 --chars eve09 --variants stellar,magica_style,off
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve09','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve09'
 python tools\make_video.py _work\fight_eve09 out\fight_cpu_match_eve09.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.Feet -Graphics -Extra '-roeChar','eve09','-roePacks','bandai1'   # 脚贴地拍 + 量
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFootProbe.FootFrames -Extra '-roeChar','eve09'                       # 脚的朝向分三步量
 ```
 
 ## 已知问题和待定的事

@@ -82,7 +82,7 @@ namespace RoeFighter.Fight
         PlayableDirector activeDirector;
         bool weaponsShown = true;
         RoeHelperRig helpers;
-        Transform hips;
+        Transform hips, head;
         Transform[] toes, feet;
         bool grounded;
         float toeSole, ankleSole, groundOffset;
@@ -157,6 +157,19 @@ namespace RoeFighter.Fight
         public Vector2 flatSoles;
 
         /// <summary>
+        /// Feet held at the ankle as the bind pose has them, in every clip (tools/sb/eve09.json "feet": "bind" - Stellar Blade's
+        /// Eve).  Her foot points 77 degrees down into a platform shoe, 16 degrees off her shin, and her bind pose stands the
+        /// whole sole on the floor.  Every clip she plays is another body's (motion capture, UFE 2): a heel the clip raises
+        /// took her toes on past straight down and round to the back - in the guard 129-157 degrees off her facing, the
+        /// ankles 15 cm up, the soles on their front edge - and the stance's feet, taken as how she stands, kept her so.  So
+        /// the foot and toe bones keep their bind rotations against the shin (the ankle as stiff as her shoe), and a planted
+        /// foot stands as the bind pose does: flatFeet, with flatRest / flatToe / flatSoles from the bind pose, flatPitch 0
+        /// (RoeFightScene.BindFeet).
+        /// </summary>
+        public bool bindFeet;
+        public Quaternion[] bindFoot = new Quaternion[2], bindToe = new Quaternion[2];
+
+        /// <summary>
         /// How high the game's battle clips hold her above the floor (m), measured when the scene is built: g05 hovers
         /// 23 cm in her battle stance and in every battle clip that starts from it (hurt, die, the skills); 0 = they
         /// stand on the floor.  The fight stands her on the floor - her basic moves walk on it - and a hit lifted her
@@ -210,6 +223,7 @@ namespace RoeFighter.Fight
             animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
             // the soles: how high the toe and ankle bones are when the game's stance stands on the floor
             hips = animator.GetBoneTransform(HumanBodyBones.Hips);
+            head = animator.GetBoneTransform(HumanBodyBones.Head);
             toes = new[] { animator.GetBoneTransform(HumanBodyBones.LeftToes), animator.GetBoneTransform(HumanBodyBones.RightToes) };
             feet = new[] { animator.GetBoneTransform(HumanBodyBones.LeftFoot), animator.GetBoneTransform(HumanBodyBones.RightFoot) };
             grounded = stance != null && toes.All(t => t != null) && feet.All(t => t != null);
@@ -572,6 +586,14 @@ namespace RoeFighter.Fight
                     w.localScale *= weaponScale;
             StepLinger(dt);
             float mocap = 1f - gameWeight;
+            // the ankle as stiff as her shoe (bindFeet): the foot and toes at their bind rotations against the shin, before
+            // the feet are stood on the floor
+            if (bindFeet && grounded && bindFoot.Length == 2 && bindToe.Length == 2)
+                for (int i = 0; i < 2; i++)
+                {
+                    feet[i].localRotation = bindFoot[i];
+                    toes[i].localRotation = bindToe[i];
+                }
             if (dt > 0f)
                 hoverWeight = Mathf.MoveTowards(hoverWeight, hoverTarget, dt / HoverRise);
             // the share of the game's hover that comes down (gameHover)
@@ -611,6 +633,17 @@ namespace RoeFighter.Fight
                     HoverDrop = Mathf.Min(Mathf.Clamp(-groundOffset, 0f, gameHover), Mathf.Max(0f, room)) * unhover;
                 }
                 hips.position += Vector3.up * (groundOffset * mocap - HoverDrop);
+            }
+            // bindFeet: her "game clips" are other bodies' too (UFE 2's), and retargeted onto her shoes the standing ones put
+            // the soles 13-14 cm into the floor (the intro).  While she is upright her body comes up until the lowest sole is
+            // on the floor - only up: a jump keeps its height, and lying down (head no higher than the hips) nothing changes.
+            if (bindFeet && grounded && gameWeight > 0f && head != null)
+            {
+                float sink = animator.transform.position.y - LowestSole();
+                var spine = head.position - hips.position;
+                float upright = Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.4f, 0.75f, spine.y / Mathf.Max(spine.magnitude, 1e-4f)));
+                if (sink > 0f)
+                    hips.position += Vector3.up * (sink * upright);
             }
             if (grounded && mocap > 0f)
             {

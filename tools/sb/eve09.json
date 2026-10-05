@@ -5,6 +5,7 @@
  "source": "Stellar Blade",
  "pack": "",
  "stance": "bandai1:guard",
+ "feet": "bind",
  "game": [
   { "name": "hurt", "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Robot_Kyle/Animations/HitStandingHeavy.anim" },
   { "name": "die", "clip": "Assets/UFE/Demos/Shared_Assets/Characters/Mecanim_Bot/Animations/Hit/get_hit_high_knockdown.anim" },

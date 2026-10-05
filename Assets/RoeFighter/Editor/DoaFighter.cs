@@ -37,6 +37,9 @@ namespace RoeFighter.EditorTools
             public string source = "DOA6";      // the game she comes from (the log)
             /// <summary>Without an own pack: the clip she stands in (FighterRig.stance: soles, bones no clip moves), "pack:role" or a clip path.</summary>
             public string stance;
+            /// <summary>"bind": her feet stand as the bind pose has them, the ankle held at its bind angle in every clip (Eve's
+            /// platform shoes; FighterRig.bindFeet); empty: as the stance has them.</summary>
+            public string feet;
             /// <summary>
             /// The fight's clip names (hurt, die, rip, react_02 intro, idle_02 win, skill_01..03) -> segment names of her pack's
             /// BVH, or a humanoid clip's asset path ("Assets/.../x.anim", "Assets/.../x.fbx:clip").

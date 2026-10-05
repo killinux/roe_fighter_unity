@@ -101,6 +101,7 @@ namespace RoeFighter.EditorTools
             rig.stance = DoaStance(def, rig.strikePack);
             if (rig.stance == null)
                 Debug.LogWarning($"[ROE] {id}: no stance clip ({def.pack} / {def.stance})");
+            string feetNote = def.feet == "bind" ? ", feet " + BindFeet(rig, id) : "";
             var clips = new Dictionary<string, AnimationClip>();
             Directory.CreateDirectory($"{DoaFighter.Dir(id)}/clips");
             foreach (var g in def.game)
@@ -125,8 +126,47 @@ namespace RoeFighter.EditorTools
             rig.audioSource.spatialBlend = 0f;
             Debug.Log($"[ROE] fighter {id} ({def.source}): stance {(rig.stance != null ? rig.stance.name : "none")}, own strikes " +
                       $"{(rig.strikePack != null ? string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}")) : "none")}, " +
-                      $"{rig.clips.Count} clips ({string.Join(" ", rig.clips.Select(c => c.name))}), DOA6 physics {(rig.animator.GetComponent<RoeDoaRig>() != null ? "yes" : "none")}");
+                      $"{rig.clips.Count} clips ({string.Join(" ", rig.clips.Select(c => c.name))}), DOA6 physics {(rig.animator.GetComponent<RoeDoaRig>() != null ? "yes" : "none")}{feetNote}");
             return rig;
+        }
+
+        /// <summary>
+        /// A fighter whose bind pose stands her feet as they should stand (FighterRig.bindFeet; Eve's platform shoes): the foot
+        /// and toe bones' bind rotations, and planted feet standing as there - against the direction the toes point along the
+        /// floor, at the bind pose's toe and ankle heights (flatFeet, nothing turned).  Returns a note for the log.
+        /// </summary>
+        static string BindFeet(FighterRig rig, string id)
+        {
+            var go = Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            var an = go.GetComponent<Animator>();
+            var feet = new[] { an.GetBoneTransform(HumanBodyBones.LeftFoot), an.GetBoneTransform(HumanBodyBones.RightFoot) };
+            var toes = new[] { an.GetBoneTransform(HumanBodyBones.LeftToes), an.GetBoneTransform(HumanBodyBones.RightToes) };
+            if (feet.Any(f => f == null) || toes.Any(t => t == null))
+            {
+                Object.DestroyImmediate(go);
+                return "as the stance has them (no foot or toe bones)";
+            }
+            rig.bindFeet = rig.flatFeet = true;
+            rig.bindFoot = feet.Select(f => f.localRotation).ToArray();
+            rig.bindToe = toes.Select(t => t.localRotation).ToArray();
+            rig.flatToe = rig.bindToe.ToArray();
+            rig.flatRest = new Quaternion[2];
+            var notes = new List<string>();
+            for (int k = 0; k < 2; k++)
+            {
+                var d = toes[k].position - feet[k].position;
+                var ahead = new Vector3(d.x, 0f, d.z);
+                if (ahead.sqrMagnitude < 1e-6f)
+                    ahead = go.transform.forward;
+                rig.flatRest[k] = Quaternion.Inverse(Quaternion.LookRotation(ahead.normalized, Vector3.up)) * feet[k].rotation;
+                notes.Add($"{(k == 0 ? "L" : "R")} pitch {Mathf.Atan2(-d.y, ahead.magnitude) * Mathf.Rad2Deg:F0} deg");
+            }
+            rig.flatAxis = new[] { Vector3.right, Vector3.right };
+            rig.flatPitch = new[] { 0f, 0f };
+            rig.flatSoles = new Vector2((toes[0].position.y + toes[1].position.y) * 0.5f, (feet[0].position.y + feet[1].position.y) * 0.5f);
+            Object.DestroyImmediate(go);
+            return $"as the bind pose has them ({string.Join(", ", notes)}, toe bone {100f * rig.flatSoles.x:F1} cm and ankle {100f * rig.flatSoles.y:F1} cm up, ankle held)";
         }
 
         /// <summary>The clip a character from another game stands in: her own pack's guard, else the definition's stance
@@ -512,9 +552,10 @@ namespace RoeFighter.EditorTools
             // (user 10-02: "小招的时候就不显示扇子了，大招再用扇子")
             rig.weaponRenderers = model.GetComponentsInChildren<Renderer>(true)
                 .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_"))).ToArray();
-            // her own strikes instead of the motion pack's (user 10-03: g04 strikes like Mai Shiranui, from DOA6;
-            // -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her weapon (user 10-03: a smaller fan; -roeWeaponScale g04=0.7)
-            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai").TryGetValue(c.id, out var own))
+            // her own strikes instead of the motion pack's (user 10-03: g04 strikes like Mai Shiranui, from DOA6; 10-05 "inase用
+            // mecanim bot的动作": a08 strikes like UFE 2's Mecanim Bot; -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her
+            // weapon (user 10-03: a smaller fan; -roeWeaponScale g04=0.7)
+            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=ufe_bot_inase").TryGetValue(c.id, out var own))
                 rig.strikePack = OwnStrikes(own);
             if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
                 rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
