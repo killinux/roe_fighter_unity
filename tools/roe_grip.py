@@ -1,12 +1,16 @@
 """Where a ROE character holds her weapon, from her game's own animation (user 10-06: sword strikes for Inase, a08).
 
     python tools/roe_grip.py <decoded clip .json> <id> [--frames a-b] [--pair B=A --pair-clip <clip .json>]
-                             [--out tools/roe/<id>_grip.json] [--slack 0.01] [--turn 2]
+                             [--out tools/roe/<id>_grip.json] [--slack 0.01] [--turn 2] [--bones a,b] [--holders a,b]
+                             [--burst B=N]
 
 The decoded clip is ripper_tpose's (scripts/riseoferos decode_roe_clip.py; the archive keeps them at
-E:/game_export/RiseOfEros/<name>/vmd/<model>/_clips/<clip>.json): every bone's local transform per frame on the hd
-skeleton, as the game plays it.  For each bone whose name looks like a weapon's (Point007*, *weapon*, *Prop*), its place and
-turn in each hand's frame over the clip; a hand it does not move in (within --slack metres and --turn degrees) holds it.
+E:/game_export/RiseOfEros/<name>/vmd/<model>/_clips/<clip>.json, tools/roe_clips.py decodes any outfit's into _work):
+every bone's local transform per frame on the hd skeleton, as the game plays it.  For each bone whose name looks like a
+weapon's (Point007*, *weapon*, *Prop*; --bones names them), its place and turn in each holder's frame over the clip (the
+two hands; --holders other bones too); a holder it does not move in (within --slack metres and --turn degrees) holds it.
+--burst B=N: B is gone once the clothes burst takes stage N off (b10, Kart: her pistols sit in holsters on her thighs,
+which come off in stage 1).
 --frames: only these frames of the clip (a08 holds her greatsword two ways: in the battle stance by the pommel, the blade down
 on the ground; while she cuts, in skill_01 frames 58-111, the blade out from the thumb's side - the strikes take that one).
 --pair B=A: bone B is not held on its own but goes with A as in --pair-clip's first frame (a08's two greatswords are one in her
@@ -69,12 +73,18 @@ def main():
     ap.add_argument("--out")
     ap.add_argument("--slack", type=float, default=0.01)
     ap.add_argument("--turn", type=float, default=2.0)
+    ap.add_argument("--bones", help="a,b: measure these bones (default: the names that look like a weapon's)")
+    ap.add_argument("--holders", default="Bip001 R Hand,Bip001 L Hand",
+                    help="the bones that may hold them (b10's pistols sit in holsters: Bip001 R Thigh, Bip001 L Thigh)")
+    ap.add_argument("--burst", action="append", default=[],
+                    help="B=N: bone B is gone once the clothes burst takes stage N off (b10's pistols go with their holsters)")
     a = ap.parse_args()
     d = json.load(open(a.clip, encoding="utf-8"))
     bones = d["bones"]
     names = [b["name"] for b in bones]
-    hands = {n: names.index(n) for n in ("Bip001 R Hand", "Bip001 L Hand") if n in names}
-    weap = [i for i, n in enumerate(names) if re.search(r"(?i)^point007|weapon|prop\d", n) and n not in hands]
+    hands = {n: names.index(n) for n in a.holders.split(",") if n in names}
+    weap = ([names.index(n) for n in a.bones.split(",")] if a.bones else
+            [i for i, n in enumerate(names) if re.search(r"(?i)^point007|weapon|prop\d", n) and n not in hands])
     frames = d["frames"]
     lo, hi = (int(x) for x in a.frames.split("-")) if a.frames else (0, len(frames) - 1)
     hi = min(hi, len(frames) - 1)
@@ -100,6 +110,11 @@ def main():
         if held:
             grips.append({"bone": names[w], "hand": hn, "position": [round(float(x), 5) for x in pos],
                           "rotation": [round(float(x), 6) for x in rot], "slack": round(slack, 4), "turn": round(turn, 3)})
+    for tag in a.burst:
+        b_name, stage = tag.split("=")
+        for g in grips:
+            if g["bone"] == b_name:
+                g["burstStage"] = int(stage)
     # weapons that go with another one (one sword of two)
     if a.pair:
         pd = json.load(open(a.pair_clip, encoding="utf-8")) if a.pair_clip else d

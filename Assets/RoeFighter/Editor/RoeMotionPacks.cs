@@ -341,6 +341,8 @@ namespace RoeFighter.EditorTools
                 {
                     float time = clip.length * i / Mathf.Max(1, shots - 1);
                     RoeCapture.Pose(go, clip, time);
+                    // the limb helpers as the fight drives them (b10's knees stayed behind on her thigh twists without)
+                    go.GetComponentInChildren<RoeHelperRig>()?.Apply();
                     if (pack.grip)
                         go.GetComponent<RoeGrips>()?.Apply(animator);      // her weapon in her hand (a08's greatsword)
                     var hips = animator.GetBoneTransform(HumanBodyBones.Hips).position;

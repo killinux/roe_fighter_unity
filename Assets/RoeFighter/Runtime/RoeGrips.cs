@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using UnityEngine;
 
 namespace RoeFighter
@@ -10,6 +11,8 @@ namespace RoeFighter
     /// was shown only during her game's own clips).  Measured from that stance by RoeWeaponGrip (editor): the bone that
     /// carries each weapon, in the frame of the hand that holds it.  FighterRig.Holds puts them there each step when her own
     /// strikes are made for it (MotionPack.grip); RoeMotionPacks.Measure does the same while it measures such strikes.
+    /// The "hand" is any humanoid bone: b10's axe is in her right hand, her two pistols in the holsters on her thighs (user
+    /// 10-06: "把ROE中的卡地亚也加入战斗，一个拿斧子和枪的上衣是红色的卡地亚").
     /// </summary>
     public class RoeGrips : MonoBehaviour
     {
@@ -20,6 +23,8 @@ namespace RoeFighter
             public HumanBodyBones hand;
             public Vector3 position;                 // in the hand's frame, unscaled: hand.position + hand.rotation * position
             public Quaternion rotation = Quaternion.identity;
+            public int burstStage;                   // gone once the clothes burst has taken this stage off (b10's pistols go
+                                                     // with their holsters, stage 1); 0: never
         }
 
         public Grip[] grips = new Grip[0];
@@ -39,6 +44,22 @@ namespace RoeFighter
                 else
                     g.bone.SetPositionAndRotation(Vector3.Lerp(g.bone.position, pos, weight), Quaternion.Slerp(g.bone.rotation, rot, weight));
             }
+        }
+
+        /// <summary>The grip that carries a weapon's mesh (one of its bones is the grip's bone or under it), or null.</summary>
+        public Grip Carrying(Renderer weapon)
+        {
+            if (weapon is SkinnedMeshRenderer s)
+            {
+                foreach (var g in grips)
+                    if (g?.bone != null && s.bones.Any(b => b != null && (b == g.bone || b.IsChildOf(g.bone))))
+                        return g;
+                return null;
+            }
+            foreach (var g in grips)
+                if (g?.bone != null && weapon != null && weapon.transform.IsChildOf(g.bone))
+                    return g;
+            return null;
         }
     }
 }

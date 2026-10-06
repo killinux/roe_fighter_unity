@@ -48,6 +48,7 @@
 | Eve 两套（eve09、eve37）也能爆衣：剑星的裸体 mod 当衣服下面的身体，被衣服盖住的地方等那件掉了再画 | 完成（10-05），见"Eve 也能爆衣"一节；检查图 `out\clothes_burst\unity\eve09_sheet.png`、`eve37_sheet.png`，演示 `out\clothes_burst_demo_eve.mp4` |
 | Fiona（fio005）也能爆衣：衣服下面用游戏自己的素体（以前没导出过），在 Blender 里贴到 PCF_005 的皮肤上；四段掉到全身，高跟鞋留着 | 完成（10-06），见"Fiona 也能爆衣"一节；检查图 `out\clothes_burst\unity\fio005_sheet.png`，演示（对 Inase）`out\clothes_burst_demo_fio005.mp4` |
 | Inase 拿巨剑打普通攻击：ROE 和 UFE 2 都没有现成的拿剑普通攻击，从 Vindictus 的剑招和她自己的技能 1 里挑了四招；剑一直握在右手（握法从她游戏自己的技能动作里量出来），按剑身判定 | 完成（10-06），见"Inase 拿巨剑的普通攻击"一节；13 招候选 `out\a08_sword_candidates.mp4`、`out\a08_sword_candidates_sheet.jpg`，定下的四招 `out\a08_sword_strikes.mp4`、`out\a08_sword_moves_sheet.jpg`、`out\a08_sword_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（对 Fiona）；换招改 `tools/motionpacks/a08_sword.json` |
+| 卡地亚（Kart，b10，红色短夹克）拿斧头打普通攻击：她 10-03 就在战斗里，但以前用拳脚；现在照她游戏的站架，小斧头握在右手、两把枪插在大腿枪套里（枪套被爆衣打掉时枪一起消失），四个普通攻击用斧头；枪还是在技能里自己飞出来开火，和游戏一样 | 完成（10-06），见"卡地亚（Kart，b10）拿斧头打普通攻击"一节；14 招候选 `out\b10_axe_candidates.mp4`，定下的四招 `out\b10_axe_strikes.mp4`、`out\b10_axe_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（对 Inase）；换招改 `tools/motionpacks/b10_axe.json` |
 
 ## 目录
 
@@ -952,6 +953,106 @@ python tools\strike_sheet.py out\motion_sheets\a08_sword out\a08_sword_check_she
 python tools\make_video.py _work\fight_a08_sword out\fight_cpu_match_a08_sword.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','g04','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_g04_a08sword'
 python tools\burst_video.py _work\burst_demo_g04_a08sword out\clothes_burst_demo_g04_by_a08_sword.mp4
+```
+
+#### 卡地亚（Kart，b10）拿斧头打普通攻击（10-06）
+
+用户说："把ROE中的卡地亚也加入战斗，一个拿斧子和枪的上衣是红色的卡地亚"。
+
+**卡地亚就是 Kart 的 b10**：红色短夹克、拿斧头、大腿上挂两把枪的那一套。她 10-03 晚就已经在战斗里了，选人界面上写的是 KART。
+
+- 以前她打普通攻击用的是动作包的拳脚，斧头和枪只在技能里出现。
+- 现在照 Inase 巨剑的做法：平时斧头握在手里，四个普通攻击都用斧头。
+
+**她游戏里武器是怎么拿的**（`tools/roe_clips.py` 把她的游戏动作解码出来再量）：
+
+- 站架 `idle_01`：小斧头握在右手。两把枪插在大腿的枪套里，跟着大腿走，不在手上。
+- 技能 1：冲上去把斧头扔出去。技能 2：先把斧头扔在地上，两把枪自己从枪套里飞出来，悬在空中开火。技能 3：空中翻滚、扔斧头，枪也在空中开火。
+- 她的手从来不拿枪。所以普通攻击只用斧头，枪还是在技能里飞出来开火，和游戏里一样。
+
+**握法**（`tools/roe/b10_grip.json`）：
+
+| 武器（骨头） | 挂在哪 | 在游戏站架里晃动多少 |
+|---|---|---|
+| 斧头 `Axe_01` | 右手 | 0.46 厘米 / 0.6° |
+| 右手枪 `Pistol_R` | 右大腿（枪套） | 0.03 厘米 / 0.07° |
+| 左手枪 `Pistol_L` | 左大腿（枪套） | 0.12 厘米 / 0.07° |
+
+- 枪套在爆衣第 1 段就掉了，两把枪跟着消失（`--burst Pistol_R=1`，`RoeGrips.Grip.burstStage`）。技能里枪照样从空中飞出来。
+- 斧头的判定线从手到斧头端 0.43 米（斧头全长 0.60 米）。检查图 `out\weapon_grip\b10_0..2.png`：游戏原样、套上握法、换一个手臂姿势。
+- 为这次通用化的改动：
+  - `roe_grip.py` 加了 `--bones`（量哪几根骨头）、`--holders`（除了手还能挂在哪，比如大腿）、`--burst`（爆衣第几段掉了就消失）；
+  - `RoeWeaponGrip` 的握点可以是任意人形骨头；
+  - `FighterRig.ShowWeapons` 握着武器时只显示握住的那几件，每一步按爆衣进度重新判断。
+
+**挑招**：14 个候选（`tools/motionpacks/b10_axe_candidates.json`）。
+
+- 候选：Vindictus 的 12 个单手剑招（小斧头和单手剑挥法一样），加上她自己技能里扔斧头的两段（斧头这里一直握在手里，扔变成了挥）。
+- 视频 `out\b10_axe_candidates.mp4`，总览图 `out\b10_axe_candidates_sheet.jpg`。
+
+**默认四招**：`tools/motionpacks/b10_axe.json`（`strikesOnly` + `grip`）。
+
+| 键 | 招式 | 出处 | 出手 |
+|---|---|---|---|
+| A | 横扫 | 她自己技能 1 的那一下（0.3–1.0 秒） | 0.17 秒 |
+| B | 劈砍 | Vindictus 重击 1 | 0.13 秒 |
+| C | 冲步斩 | Vindictus 重击 2 | 0.33 秒 |
+| D | 举斧砸地（击倒） | Vindictus 连击 4 | 0.44 秒 |
+
+- 挑法：
+  - A、B、C 三招 Fiona 和 Inase 都没用；D 和 Inase 的 C 是同一个动作。
+  - 终结技剑尖几乎够不到身前；技能 3 开头那段是冲步加跪地，看不出在打；冲刺重击几乎不挥斧头。
+- 四招都手动设成中段：自动量取斧头最远那一帧的高度，A 会判成上段、B 判成下段。
+- 建场景时默认给 b10 这套（`-roeOwnStrikes` 的默认值加了 `b10=b10_axe`）；换回拳脚就在表里去掉这一项。
+
+**膝盖和小腿**（用户问："卡地亚的膝盖和小腿是不是有问题"）：有问题，已修。对比图 `out\b10_knee_fix.jpg`。
+
+- **样子**：
+  - 冲步、劈砍这类深弓步里，往后伸的那条腿，膝盖到小腿被扯成一条细长的带子，连到靴口；
+  - 往前弯的那条腿，膝盖像被切掉一截；
+  - 左边的枪套悬在半空。
+  - 以前用拳脚时腿弯得浅，不明显。
+- **原因**：
+  - b10 的大腿扭转骨 `Bip001 L/RThighTwist`、`ThighTwist1` 挂在脊柱下面，不在腿下面。
+  - 拟合辅助骨（`RoeHelperFit`）只收"最近的人形祖先是四肢"的骨，把这 4 根漏了。动捕动作里它们一直停在站架的位置。
+  - 膝盖一圈的皮肤（衣服下面换上的底模身体）每条腿约 116 个顶点主要挂在 `ThighTwist1` 上。大腿往后一摆，这块皮留在原地，靴子跟着小腿走，中间就被拉长了。
+  - 大腿的绑带和枪套也挂在这几根骨上。
+- **修法**：
+  - 名字带 `ThighTwist` / `CalfTwist` 的骨，不管挂在哪，都当腿的辅助骨拟合。
+  - b10 现在拟合 24 根（原来 20 根）。这 4 根都跟着大腿走，误差 2.4–5.1°。
+  - a08、g04、g05 的腿部扭转骨本来就挂在大腿下，不受影响。
+- **检查工具**：
+  - 新加 `RoeFightProbe.LegShots`：按对战的驱动方式把她摆到某招某一刻，近距离分"全部 / 只看身体 / 只看衣服"三层、从右、前、左三个方向拍腿。
+  - 日志里列出膝盖、小腿一圈的皮肤主要挂在哪根骨上（就是靠它找到的原因）。
+  - `RoeMotionPacks.Sheet` 的检查图原来不跑辅助骨，现在跑了，和对战里看到的一样。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.Run -Extra '-roeChars','b10'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.LegShots -Graphics -Extra '-roeChar','b10','-roeClip','ax_lunge','-roeTimes','0.45','-roeSpeed','1.1'   # → out\leg_shots
+```
+- 视频 `out\b10_axe_strikes.mp4`（四招，每招先实速再半速）；总览图 `out\b10_axe_moves_sheet.jpg`；检查图 `out\b10_axe_check_sheet.jpg`；电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（Kart 对 Inase，120 秒）。
+- 爆衣演示（Inase 打 Kart）`out\clothes_burst_demo_b10_axe.mp4`：第 1 段打掉枪套时，两把枪一起消失；她游戏自带的动作（技能、回合结束）里枪照游戏的样子出现。
+
+```powershell
+python tools\roe_clips.py b10                                   # 她的游戏动作 → _work\roe_clips\b10
+python tools\roe_grip.py _work\roe_clips\b10\idle_01.json b10 --bones Axe_01,Pistol_R,Pistol_L --holders "Bip001 R Hand,Bip001 L Hand,Bip001 R Thigh,Bip001 L Thigh" --slack 0.02 --turn 3 --burst Pistol_R=1 --burst Pistol_L=1
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeaponGrip.Build -Graphics -Extra '-roeChars','b10'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/b10_axe_candidates.json','-roeTips','E:\code\othercode\roe_fighter_unity\_work\axe_tips'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/b10_axe.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','b10_axe_candidates','-roeChars','b10','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_axe'
+python tools\strike_demo_video.py _work\strike_takes_axe out\b10_axe_candidates.mp4 --pack tools/motionpacks/b10_axe_candidates.json --id b10
+python tools\takes_sheet.py _work\strike_takes_axe out\b10_axe_candidates_sheet.jpg --pack tools\motionpacks\b10_axe_candidates.json
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','b10_axe','-roeChars','b10','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_b10_axe'
+python tools\strike_demo_video.py _work\strike_takes_b10_axe out\b10_axe_strikes.mp4 --pack tools/motionpacks/b10_axe.json --id b10
+python tools\takes_sheet.py _work\strike_takes_b10_axe out\b10_axe_moves_sheet.jpg --pack tools\motionpacks\b10_axe.json --cols 12 --tile 200
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','b10_axe','-roeChars','b10','-roeShots','10'
+python tools\strike_sheet.py out\motion_sheets\b10_axe out\b10_axe_check_sheet.jpg --pack tools\motionpacks\b10_axe.json --cols 10
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','b10','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_b10_axe'
+python tools\make_video.py _work\fight_b10_axe out\fight_cpu_match_b10_axe.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','b10','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_b10_axe'
+python tools\burst_video.py _work\burst_demo_b10_axe out\clothes_burst_demo_b10_axe.mp4
 ```
 
 ### 爆衣：衣服按件掉，掉完是全身（10-03）

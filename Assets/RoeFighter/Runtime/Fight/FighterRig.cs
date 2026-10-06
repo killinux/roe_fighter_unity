@@ -724,6 +724,8 @@ namespace RoeFighter.Fight
             // clips key it themselves (thrown, two-handed, the other hand)
             if (Holds && mocap > 0f)
                 Grips.Apply(animator, mocap);
+            if (Holds)
+                ShowWeapons(weaponsShown);       // a burst stage may have taken a held weapon's holster off
             // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
             // game's animators key it, then hung on the body (the skin, posed with the helpers above); the
             // cloth swings from there.  On the legs' final pose.
@@ -1225,15 +1227,27 @@ namespace RoeFighter.Fight
             return roots.ToArray();
         }
 
+        /// <summary>
+        /// Her weapons shown (her game's own clips) or not.  While she holds them (Holds) the ones in her grips show anyway,
+        /// each until the clothes burst takes its stage off (b10's pistols go with their holsters); Tick asks again each step.
+        /// </summary>
         public void ShowWeapons(bool show)
         {
-            show |= Holds;
-            if (show == weaponsShown || weaponRenderers == null)
-                return;
-            foreach (var r in weaponRenderers)
-                if (r != null)
-                    r.enabled = show;
             weaponsShown = show;
+            if (weaponRenderers == null)
+                return;
+            bool holds = Holds;
+            int dropped = burst != null ? burst.Dropped : 0;
+            foreach (var r in weaponRenderers)
+            {
+                if (r == null)
+                    continue;
+                bool on = show;
+                if (!on && holds && Grips.Carrying(r) is RoeGrips.Grip g)
+                    on = g.burstStage <= 0 || dropped < g.burstStage;
+                if (r.enabled != on)
+                    r.enabled = on;
+            }
         }
 
         public Transform Bone(HumanBodyBones bone) => animator.GetBoneTransform(bone);

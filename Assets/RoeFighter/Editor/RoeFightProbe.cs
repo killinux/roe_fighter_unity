@@ -728,6 +728,134 @@ namespace RoeFighter.EditorTools
             }
             Debug.Log($"[ROE] legs {id} {clipName} ({len:F2} s):" + sb);
         }
+
+        /// <summary>
+        /// Close views of a fighter's legs at moments of a clip as the fight drives her (motion capture, helper rig, grips): all
+        /// of her, her body alone (skin, nude base, head), her outfit alone (the burst's pieces and what stays); from her right,
+        /// the front and her left (user 10-06: "卡地亚的膝盖和小腿是不是有问题").  Frames to out/leg_shots/&lt;id&gt;_&lt;clip&gt;_&lt;t&gt;_&lt;layer&gt;_&lt;view&gt;.png;
+        /// the log says which renderer went to which layer and, per leg, the knee bend and the helper bones' turn off the calf.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.LegShots -roeChar b10 -roeClip ax_lunge -roeTimes 0.45 [-roeSpeed 1.1]
+        /// </summary>
+        public static void LegShots()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "b10");
+            string clipName = RoeCapture.Arg("-roeClip", "ax_lunge");
+            float speed = float.Parse(RoeCapture.Arg("-roeSpeed", "1"), System.Globalization.CultureInfo.InvariantCulture);
+            var times = RoeCapture.Arg("-roeTimes", "0.45").Split(',').Select(s => float.Parse(s, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
+            string outDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "out", "leg_shots");
+            System.IO.Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
+            rig.gameObject.SetActive(true);
+            foreach (var other in Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).Where(r => r != rig))
+                other.gameObject.SetActive(false);
+            var hud = Object.FindFirstObjectByType<Canvas>();
+            if (hud != null)
+                hud.gameObject.SetActive(false);
+            var all = rig.GetComponentsInChildren<Renderer>(true).Where(r => r.enabled && r.gameObject.activeInHierarchy).ToList();
+            foreach (var smr in all.OfType<SkinnedMeshRenderer>())
+                smr.forceMatrixRecalculationPerRender = true;
+            var weapons = new HashSet<Renderer>(rig.weaponRenderers ?? new Renderer[0]);
+            var outfit = new HashSet<Renderer>(rig.burst != null ? rig.burst.pieces.Where(p => p.renderer != null).Select(p => (Renderer)p.renderer) : new Renderer[0]);
+            foreach (var r in all.Where(r => r.name.Contains("body2") || r.name.Contains("__stays")))
+                outfit.Add(r);
+            var body = all.Where(r => !outfit.Contains(r) && !weapons.Contains(r)).ToList();
+            Debug.Log($"[ROE] leg shots {id}: body {string.Join(", ", body.Select(r => r.name))}; outfit {outfit.Count} renderers " +
+                      $"({string.Join(", ", outfit.Select(r => r.name).Take(12))}); weapons {string.Join(", ", weapons.Where(w => w != null).Select(r => r.name))}");
+            // what the skin of each lower leg hangs on: per renderer, the vertices round the middle of the shin (bind pose, in the
+            // mesh's own space: the knee and the ankle are where the bind poses put the calf's and the foot's bones), by the bone
+            // with the largest weight
+            foreach (var smr in all.OfType<SkinnedMeshRenderer>().Where(r => r.sharedMesh != null && !weapons.Contains(r)))
+            {
+                var mesh = smr.sharedMesh;
+                var binds = mesh.bindposes;
+                var bw = mesh.boneWeights;
+                if (bw.Length != mesh.vertexCount || binds.Length != smr.bones.Length)
+                    continue;
+                var report = new System.Text.StringBuilder();
+                foreach (var (calfBone, footBone, side, s0, s1) in new[] {
+                             (HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, "L thigh", 0.25f, 0.75f), (HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, "R thigh", 0.25f, 0.75f),
+                             (HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, "L knee", -0.2f, 0.15f), (HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, "R knee", -0.2f, 0.15f),
+                             (HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, "L shin", 0.25f, 0.75f), (HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, "R shin", 0.25f, 0.75f) })
+                {
+                    int ci = System.Array.IndexOf(smr.bones, rig.animator.GetBoneTransform(calfBone));
+                    int fi = System.Array.IndexOf(smr.bones, rig.animator.GetBoneTransform(footBone));
+                    if (ci < 0 || fi < 0)
+                        continue;
+                    Vector3 knee = binds[ci].inverse.MultiplyPoint3x4(Vector3.zero), ankle = binds[fi].inverse.MultiplyPoint3x4(Vector3.zero);
+                    var seg = ankle - knee;
+                    var counts = new Dictionary<string, int>();
+                    var verts = mesh.vertices;
+                    for (int v = 0; v < verts.Length; v++)
+                    {
+                        float s = Vector3.Dot(verts[v] - knee, seg) / seg.sqrMagnitude;
+                        if (s < s0 || s > s1 || Vector3.Distance(verts[v], knee + seg * s) > 0.09f)
+                            continue;
+                        var w = bw[v];
+                        int top = w.weight0 >= w.weight1 && w.weight0 >= w.weight2 && w.weight0 >= w.weight3 ? w.boneIndex0
+                                : w.weight1 >= w.weight2 && w.weight1 >= w.weight3 ? w.boneIndex1 : w.weight2 >= w.weight3 ? w.boneIndex2 : w.boneIndex3;
+                        string name = top < smr.bones.Length && smr.bones[top] != null ? smr.bones[top].name : "?";
+                        counts[name] = (counts.TryGetValue(name, out int c) ? c : 0) + 1;
+                    }
+                    if (counts.Count > 0)
+                        report.Append($" {side}: " + string.Join(", ", counts.OrderByDescending(kv => kv.Value).Select(kv => $"{kv.Key} {kv.Value}")) + ";");
+                }
+                if (report.Length > 0)
+                    Debug.Log($"[ROE] leg shots {id} {smr.name}:{report}");
+            }
+            var camGo = new GameObject("Leg Camera") { hideFlags = HideFlags.DontSave };
+            var cam = camGo.AddComponent<Camera>();
+            cam.fieldOfView = 34f;
+            cam.nearClipPlane = 0.05f;
+            var a = rig.animator;
+            foreach (float time in times)
+            {
+                rig.Init();
+                rig.Play(clipName, speed, 0f);
+                float t = 0f;
+                const float dt = 1f / 60f;
+                while (t + dt <= time)
+                {
+                    rig.Tick(dt);
+                    t += dt;
+                }
+                var log = new System.Text.StringBuilder($"[ROE] leg shots {id} {clipName} t={t:F2}:");
+                foreach (var (upper, lower, foot, side) in new[] { (HumanBodyBones.LeftUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.LeftFoot, "L"),
+                                                                   (HumanBodyBones.RightUpperLeg, HumanBodyBones.RightLowerLeg, HumanBodyBones.RightFoot, "R") })
+                {
+                    Transform u = a.GetBoneTransform(upper), l = a.GetBoneTransform(lower), f = a.GetBoneTransform(foot);
+                    float bend = Vector3.Angle(l.position - u.position, f.position - l.position);
+                    log.Append($" {side} knee bent {bend:F0} deg;");
+                    foreach (var helper in u.GetComponentsInChildren<Transform>(true).Where(x => x != u && x != l && !x.IsChildOf(l) && x.parent == u))
+                        log.Append($" {helper.name} {Quaternion.Angle(helper.rotation, l.rotation):F0} deg off the calf, {Quaternion.Angle(helper.rotation, u.rotation):F0} off the thigh,");
+                }
+                Debug.Log(log.ToString());
+                var knees = (a.GetBoneTransform(HumanBodyBones.LeftLowerLeg).position + a.GetBoneTransform(HumanBodyBones.RightLowerLeg).position) * 0.5f;
+                var hips = a.GetBoneTransform(HumanBodyBones.Hips).position;
+                var look = Vector3.Lerp(knees, hips, 0.25f);
+                var fwd = rig.transform.forward;
+                var right = rig.transform.right;
+                foreach (var (layer, show) in new[] { ("all", all), ("body", body), ("outfit", all.Where(r => outfit.Contains(r)).ToList()) })
+                {
+                    foreach (var r in all)
+                        r.enabled = show.Contains(r);
+                    foreach (var (view, dir) in new[] { ("right", right), ("front", fwd), ("left", -right) })
+                    {
+                        camGo.transform.position = look + dir * 2.2f + Vector3.up * 0.25f;
+                        camGo.transform.LookAt(look, Vector3.up);
+                        string file = System.IO.Path.Combine(outDir, $"{id}_{clipName}_{t:F2}_{layer}_{view}.png");
+                        RoeCapture.Render(cam, 640, 720, file);
+                        RoeCapture.Render(cam, 640, 720, file);
+                    }
+                }
+                foreach (var r in all)
+                    r.enabled = true;
+            }
+            Object.DestroyImmediate(camGo);
+            Debug.Log($"[ROE] leg shots {id} {clipName}: {times.Length} moments to {outDir}");
+        }
             /// <summary>
         /// How much the skirt swings, in numbers: one fighter goes through guard, walking on and back, a
         /// side step and the four strikes in the real fight logic; for every skirt chain tip, per part,

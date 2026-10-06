@@ -29,6 +29,9 @@ namespace RoeFighter.EditorTools
 
         static readonly string[] Clips = { "idle_01", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03", "hurt", "die", "rip" };
 
+        /// <summary>A leg's twist bone wherever it hangs (3ds Max biped: Bip001 LThighTwist, Bip001 RCalfTwist1).</summary>
+        static readonly Regex LegTwist = new Regex(@"(Thigh|Calf)Twist", RegexOptions.IgnoreCase);
+
         // each human bone's next one along the limb: its axis, and the bone whose roll its helpers share
         static readonly Dictionary<string, string> Next = new Dictionary<string, string>
         {
@@ -131,8 +134,11 @@ namespace RoeFighter.EditorTools
             }
 
             var skinned = new HashSet<Transform>(go.GetComponentsInChildren<SkinnedMeshRenderer>(true).SelectMany(r => r.bones).Where(b => b != null));
-            // chains and ribbons swing (RoeBoneCloth), they follow no limb (g05's ribbons on her arms fitted 26-85 degrees off)
-            var helpers = skinned.Where(b => !human.ContainsKey(b) && LimbOwners.Contains(Owner(b)) && !Regex.IsMatch(b.name, "chain|riband|ribbon", RegexOptions.IgnoreCase))
+            // chains and ribbons swing (RoeBoneCloth), they follow no limb (g05's ribbons on her arms fitted 26-85 degrees off).
+            // A leg's twist bones may hang off the trunk: b10's Bip001 L/RThighTwist(1) are on Bip001 Spine, and with them left
+            // where the stance put them her knees stayed behind in every lunge (user 10-06: "卡地亚的膝盖和小腿是不是有问题") - by name
+            var helpers = skinned.Where(b => !human.ContainsKey(b) && (LimbOwners.Contains(Owner(b)) || LegTwist.IsMatch(b.name)) &&
+                                             !Regex.IsMatch(b.name, "chain|riband|ribbon", RegexOptions.IgnoreCase))
                 .OrderBy(b => Depth(b)).ToList();
             var candidates = map.Where(kv => !kv.Key.Contains(" ")).Select(kv => kv.Key).ToList();     // no fingers
             var tracked = new HashSet<Transform>(helpers.Concat(map.Values));

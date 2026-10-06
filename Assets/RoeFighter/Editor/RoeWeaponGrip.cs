@@ -21,7 +21,10 @@ namespace RoeFighter.EditorTools
     /// longest weapon also gets a RoeBlade (hilt to tip in its bone's frame, from its baked mesh): strikes with that hand hit
     /// and reach with the blade (only while she holds it: FighterRig.Blade).  Check pictures of the stance and of the grip on
     /// a raised arm go to out/weapon_grip/&lt;id&gt;_0..2.png.  A fighter prefab rebuilt from scratch gets the grips again
-    /// (RoeHumanoidClips.ConvertAll, when tools/roe/&lt;id&gt;_grip.json is there).
+    /// (RoeHumanoidClips.ConvertAll, when tools/roe/&lt;id&gt;_grip.json is there).  b10 (Kart, user 10-06: "一个拿斧子和枪的上衣是
+    /// 红色的卡地亚"): her axe in her right hand, her pistols in the holsters on her thighs (any humanoid bone holds), the
+    /// pistols gone once burst stage 1 takes the holsters off.
+    ///   -executeMethod RoeFighter.EditorTools.RoeWeaponGrip.Build -roeChars b10
     ///   -executeMethod RoeFighter.EditorTools.RoeWeaponGrip.Build [-roeChars a08]
     /// </summary>
     public static class RoeWeaponGrip
@@ -48,9 +51,19 @@ namespace RoeFighter.EditorTools
         [System.Serializable]
         class GripEntry
         {
-            public string bone, hand;
+            public string bone, hand;            // hand: the holding bone's name on the game's skeleton (any humanoid bone)
             public float[] position, rotation;
             public float slack, turn;
+            public int burstStage;               // RoeGrips.Grip.burstStage (tools/roe_grip.py --burst)
+        }
+
+        /// <summary>The humanoid bone whose transform has this name (the game's: "Bip001 R Hand", "Bip001 R Thigh"), or null.</summary>
+        static HumanBodyBones? HumanBone(Animator animator, string name)
+        {
+            foreach (HumanBodyBones b in System.Enum.GetValues(typeof(HumanBodyBones)))
+                if (b != HumanBodyBones.LastBone && animator.GetBoneTransform(b)?.name == name)
+                    return b;
+            return null;
         }
 
         static string GripJson(string id) => $"tools/roe/{id}_grip.json";
@@ -91,7 +104,7 @@ namespace RoeFighter.EditorTools
             var original = Object.Instantiate(game);
             original.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             var log = new StringBuilder($"[ROE] grips {id}:");
-            var grips = new List<(string bone, HumanBodyBones hand, Vector3 pos, Quaternion rot, float slack, float turn)>();
+            var grips = new List<(string bone, HumanBodyBones hand, Vector3 pos, Quaternion rot, float slack, float turn, int burst)>();
             (string bone, Vector3 hilt, Vector3 tip, HumanBodyBones hand, float length)? blade = null;
             try
             {
@@ -141,15 +154,16 @@ namespace RoeFighter.EditorTools
                     foreach (var r in roots)
                     {
                         var e = fromGame.grips.FirstOrDefault(x => x.bone == r.name);
-                        var h = e == null ? (HumanBodyBones?)null : hands.Cast<HumanBodyBones?>().FirstOrDefault(x => animator.GetBoneTransform(x.Value)?.name == e.hand);
+                        var h = e == null ? null : HumanBone(animator, e.hand);
                         if (e == null || h == null || e.position == null || e.position.Length != 3 || e.rotation == null || e.rotation.Length != 4)
                         {
                             log.Append($" {r.name}: none");
                             continue;
                         }
-                        log.Append($" {r.name} in the {h.Value} ({e.slack * 100f:F2} cm / {e.turn:F2} deg over the game's {fromGame.clip})");
+                        log.Append($" {r.name} in the {h.Value} ({e.slack * 100f:F2} cm / {e.turn:F2} deg over the game's {fromGame.clip})" +
+                                   (e.burstStage > 0 ? $", gone with burst stage {e.burstStage}" : ""));
                         grips.Add((PathTo(go.transform, r), h.Value, new Vector3(e.position[0], e.position[1], e.position[2]),
-                                   new Quaternion(e.rotation[0], e.rotation[1], e.rotation[2], e.rotation[3]).normalized, e.slack, e.turn));
+                                   new Quaternion(e.rotation[0], e.rotation[1], e.rotation[2], e.rotation[3]).normalized, e.slack, e.turn, e.burstStage));
                     }
                 }
                 foreach (var r in fromGame != null ? new Transform[0] : roots)
@@ -174,7 +188,7 @@ namespace RoeFighter.EditorTools
                         continue;
                     }
                     var first = local[(r, best.h)][0];
-                    grips.Add((PathTo(go.transform, r), best.h, first.p, first.r, best.slack, best.turn));
+                    grips.Add((PathTo(go.transform, r), best.h, first.p, first.r, best.slack, best.turn, 0));
                 }
                 // the blade: the longest held weapon, from its mesh as the stance's first frame poses it, held as measured
                 RoeCapture.Pose(go, stance, 0f);
@@ -244,7 +258,7 @@ namespace RoeFighter.EditorTools
                 else
                 {
                     comp = comp != null ? comp : root.AddComponent<RoeGrips>();
-                    comp.grips = grips.Select(g => new RoeGrips.Grip { bone = root.transform.Find(g.bone), hand = g.hand, position = g.pos, rotation = g.rot }).ToArray();
+                    comp.grips = grips.Select(g => new RoeGrips.Grip { bone = root.transform.Find(g.bone), hand = g.hand, position = g.pos, rotation = g.rot, burstStage = g.burst }).ToArray();
                     if (blade.HasValue)
                     {
                         var on = root.transform.Find(blade.Value.bone);
