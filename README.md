@@ -49,6 +49,7 @@
 | Fiona（fio005）也能爆衣：衣服下面用游戏自己的素体（以前没导出过），在 Blender 里贴到 PCF_005 的皮肤上；四段掉到全身，高跟鞋留着 | 完成（10-06），见"Fiona 也能爆衣"一节；检查图 `out\clothes_burst\unity\fio005_sheet.png`，演示（对 Inase）`out\clothes_burst_demo_fio005.mp4` |
 | Inase 拿巨剑打普通攻击：ROE 和 UFE 2 都没有现成的拿剑普通攻击，从 Vindictus 的剑招和她自己的技能 1 里挑了四招；剑一直握在右手（握法从她游戏自己的技能动作里量出来），按剑身判定 | 完成（10-06），见"Inase 拿巨剑的普通攻击"一节；13 招候选 `out\a08_sword_candidates.mp4`、`out\a08_sword_candidates_sheet.jpg`，定下的四招 `out\a08_sword_strikes.mp4`、`out\a08_sword_moves_sheet.jpg`、`out\a08_sword_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（对 Fiona）；换招改 `tools/motionpacks/a08_sword.json` |
 | 卡地亚（Kart，b10，红色短夹克）拿斧头打普通攻击：她 10-03 就在战斗里，但以前用拳脚；现在照她游戏的站架，小斧头握在右手、两把枪插在大腿枪套里（枪套被爆衣打掉时枪一起消失），四个普通攻击用斧头；枪还是在技能里自己飞出来开火，和游戏一样 | 完成（10-06），见"卡地亚（Kart，b10）拿斧头打普通攻击"一节；14 招候选 `out\b10_axe_candidates.mp4`，定下的四招 `out\b10_axe_strikes.mp4`、`out\b10_axe_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（对 Inase）；换招改 `tools/motionpacks/b10_axe.json`。大腿根（10-06 晚）：屁股坠到大腿上是这几招把着地的腿往里转了 45–60°（游戏自己最多 36°），限制住了，对比 `out\b10_thigh_root.jpg`、`out\b10_axe_strikes_compare.mp4` |
+| 两个 Luf 的裙子和飘带：四种物理并排比（我们的骨骼布料、Magica Cloth 2 用我们的参数、Magica Cloth 2 用插件预设、关），出招和选人展示动作都录了 | 完成（10-06 晚），见"Luf 的裙子：四种物理对比"一节；结论是两人都留在骨骼布料（不改默认）。对比视频 `out\luf_skirt_front.mp4`、`out\luf_skirt_back.mp4`、`out\luf_showcase.mp4`，静帧 `out\luf_skirt_compare.jpg` |
 
 ## 目录
 
@@ -2059,3 +2060,49 @@ python tools\roe_physics_scan.py --report
   - `RoeBodyCheck`（菜单 `ROE Fighter/Checks/Body check`）：转胸骨、烘网格，看什么跟着动，出报告、胸部特写和热度图（`tools/body_check_sheet.py`）；
   - `RoeClothPlayDemo` 加了 `-roeView chest|hair`、`auto:nude`（衣服全掉）、胸的读数（`breasts.txt`）和头发穿模读数（`hair.txt`）；
   - `tools/takes_grid_video.py`：几段录像拼成网格视频。
+
+### Luf 的裙子：四种物理对比（10-06 晚）
+
+用户 10-06 晚："luf的裙子的物理也检查一下"；又问各角色用的什么物理，是不是 Vindictus 的最好、其次 Magica Cloth 2。
+
+- **怎么比**：
+  - 播放模式录像（`RoeClothPlayDemo`，Magica 只在播放模式里动），g04（Luf）和 g05（女神 Luf）各录四种：
+    - 我们的骨骼布料（`magica_style`，两人现在的默认）；
+    - Magica Cloth 2 用我们的参数（`magica`：g04 的三块裙片是 MeshCloth，其余骨链是 BoneCloth）；
+    - Magica Cloth 2 全接管、用插件自带的预设（`magica_full`，Inase 现在用的）；
+    - 关（`off`，只跟动画）。
+  - 同一段动作：站架、前进、后退、侧步、四个普通攻击（不知火舞的那四招），正面和右后两个机位；
+  - 另录了选人界面播的展示动作（`-roeScript showcase`：idle_02、react_01、idle_02、react_02，游戏自己的动作）。
+- **读数**（`_work\luf_skirt_front\metrics.txt`，全段平均；骨骼布料和关每次结果一样，Magica 每次略有出入，右后机位那次差不多）：
+
+  | | 骨骼布料 | Magica（我们的参数） | Magica（插件预设） | 关 |
+  |---|---|---|---|---|
+  | g04 穿进身体（顶点超过 1 cm 在身体里的比例） | 0.46% | **0.32%** | 0.80% | 0.83% |
+  | g04 抖动（每步的二阶差分，毫米；关的那一列是动作本身带的） | 9.1 | 7.6 | 8.0 | 2.5 |
+  | g04 网格拉伸：平均（最坏一步里排前 1% 的边） | **2.5%（67%）** | 3.9%（129%） | 5.0%（150%） | 2.1%（59%） |
+  | g05 穿进身体 | **0.19%** | 0.37% | 0.62% | 0.46% |
+  | g05 抖动 | 11.4 | **7.3** | 9.5 | 5.5 |
+
+- **看画面**（`out\luf_skirt_compare.jpg`，从左到右就是上表四列）：
+  - **g04**：骨骼布料的裙片完整、自然下垂，高踢时前片垂在支撑腿前面，冲拳时后片贴着屁股。
+    - Magica 两种设置都把左边那条窄裙片（MeshCloth `left ribbon`，在 `Skirt_Left_01` 上）拉成几根细条，表里最坏拉伸 129–150% 就是它；
+    - 刺拳、冲拳时后片上端离开屁股掀起来（10-02 用户说过的"屁股附近翘起来"那样）；
+    - 插件预设在高踢时还把前片甩起来揉成一团；
+    - 关的时候前片僵硬地跟着踢起的腿斜出去。
+  - **g05**：她没有裙子，是飘带和长发。
+    - 骨骼布料穿模最少，但抖动最大（侧步 7.1 对 Magica 的 1.6）：两侧飘带在动画给的"飘起来"和重力的"垂下去"之间来回摆，身后的长飘带垂到地上，末端在地上翻折；
+    - Magica（我们的参数）飘带多半垂着，更平静；
+    - 插件预设把头发和飘带甩得很乱（这一条录像的动作和另三条差几帧，没完全对齐）。
+  - **选人展示动作**（游戏自己的动作，`out\luf_showcase.mp4`）：g04 的裙子在游戏动作里本来就照游戏手 K 的关键帧（骨骼布料、Magica 我们的参数、关三列一模一样）；
+    只有插件预设在游戏动作里也模拟：react_01 抬膝时前片盖到膝盖上，美术手 K 的是撩开、露出腿。g05 的飘带三种都垂着、跟关键帧差不多。
+- **结论**：两个 Luf 都留在骨骼布料，`auto` 不变（Inase 仍是 `magica_full`）。Magica Cloth 2 在 Inase 的长裙片上好，在 Luf 的窄裙片上会拉出细条。
+- 工具的改动：录像加了 `-roeScript showcase`（脚本里的 `clip:<名字>` 一步让她播那段动作，`RoeClothDemo.PlayScriptClips`）；
+  `tools/cloth_demo_video.py` 不给 `--chars` 时按 `takes.txt` 里录了的人拼。
+
+```powershell
+# 四种物理并排：正面、右后、选人展示动作（播放模式，每次约 7 分钟）
+.\tools\unity_batch.ps1 -NoQuit -Graphics -TimeoutMinutes 50 -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Name luf_skirt_front `
+    -Extra '-roeChars','g04,g05','-roeCloths','magica_style,magica,magica_full,off','-roeScript','moves','-roeView','front','-roeOut','_work\luf_skirt_front'
+python tools\cloth_demo_video.py _work\luf_skirt_front out\luf_skirt_front.mp4 --variants magica_style,magica,magica_full,off
+# 右后：-roeView backright；展示动作：-roeScript showcase
+```

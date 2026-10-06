@@ -382,6 +382,7 @@ namespace RoeFighter.EditorTools
                     input = inp;
             if (input.s1 || input.s2 || input.s3)
                 me.meter = 100f;            // a skill whatever the meter
+            RoeClothDemo.PlayScriptClips(Script, t, me);
             var cam = game.cam;
             var camRight = cam.transform.right;
             camRight.y = 0f;

@@ -13,7 +13,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 FFMPEG = r'D:\Program Files\ffmpeg\bin\ffmpeg.exe'
 FONT = r'C:\Windows\Fonts\msyh.ttc'
-STEPS = {'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '侧步', 'skill 1': '技能 1（游戏动作）', 'skill 2': '技能 2（游戏动作）'}
+STEPS = {'clip:idle_02': '展示待机（idle_02）', 'clip:react_01': '展示反应 1（react_01）', 'clip:react_02': '展示反应 2（react_02）', 'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '侧步', 'skill 1': '技能 1（游戏动作）', 'skill 2': '技能 2（游戏动作）'}
 MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回旋踢', 'slash': '挥砍', 'hook': '勾拳',
          'uppercut': '上勾拳', 'roundhouse_lead': '前腿回旋踢', 'front_kick': '前踢', 'side_kick': '侧踢', 'roundhouse': '后腿回旋踢', 'low_kick': '低踢',
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
@@ -74,7 +74,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('dir', nargs='?', default=os.path.join(PROJECT, '_work', 'cloth_demo'))
     ap.add_argument('out', nargs='?', default=os.path.join(PROJECT, 'out', 'bone_cloth_demo.mp4'))
-    ap.add_argument('--chars', default='g04,a08')
+    ap.add_argument('--chars', default='', help='fighters, one after the other (default: as filmed - takes.txt; older runs g04,a08)')
     ap.add_argument('--variants', default='', help='takes to put side by side, left to right (default: as filmed)')
     ap.add_argument('--fps', type=int, default=30)
     ap.add_argument('--slow', type=float, default=1.0, help='play this many times slower')
@@ -85,6 +85,10 @@ def main():
         t, what = line.strip().split(' ', 1)
         script.append((float(t), what))
     takes = read_takes(a.dir)
+    if not a.chars:
+        filmed = os.path.join(a.dir, 'takes.txt')
+        ids = [line.split('\t', 1)[0] for line in open(filmed, encoding='utf-8')] if os.path.exists(filmed) else ['g04', 'a08']
+        a.chars = ','.join(dict.fromkeys(i for i in ids if i))
     big = ImageFont.truetype(FONT, 34)
     small = ImageFont.truetype(FONT, 28)
     colours = [(255, 255, 255), (255, 225, 110), (140, 220, 255), (200, 255, 160)]

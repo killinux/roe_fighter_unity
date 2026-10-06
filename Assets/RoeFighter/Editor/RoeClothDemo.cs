@@ -61,9 +61,37 @@ namespace RoeFighter.EditorTools
             Script.Concat(SkillScript.Select(x => (x.from + Length, x.to + Length, x.input, x.what))).ToArray();
         internal const float FullLength = Length + SkillLength;
 
-        /// <summary>A demo script by name (-roeScript): moves (the default), skills (SkillScript), full (both).</summary>
+        /// <summary>
+        /// "showcase" (-roeScript showcase): the outfit's showcase clips as ROE's menus and the select screen play them - idle_02,
+        /// react_01, idle_02, react_02, idle_02 (user 10-06: "luf的裙子的物理也检查一下", after the select screen got them).  A step
+        /// "clip:&lt;name&gt;" plays that clip (PlayScriptClips); the fight holds her still meanwhile (no input).
+        /// </summary>
+        internal static readonly (float from, float to, FighterInput input, string what)[] ShowcaseScript =
+        {
+            (0.0f, 0.0f, default, "clip:idle_02"),
+            (3.0f, 3.0f, default, "clip:react_01"),
+            (6.4f, 6.4f, default, "clip:idle_02"),
+            (8.4f, 8.4f, default, "clip:react_02"),
+            (11.6f, 11.6f, default, "clip:idle_02"),
+        };
+        internal const float ShowcaseLength = 13.6f;
+
+        /// <summary>A demo script by name (-roeScript): moves (the default), skills (SkillScript), full (both), showcase.</summary>
         internal static ((float from, float to, FighterInput input, string what)[] script, float length) Named(string name) =>
-            name == "skills" ? (SkillScript, SkillLength) : name == "full" ? (FullScript, FullLength) : (Script, Length);
+            name == "skills" ? (SkillScript, SkillLength) : name == "full" ? (FullScript, FullLength)
+            : name == "showcase" ? (ShowcaseScript, ShowcaseLength) : (Script, Length);
+
+        /// <summary>The script's "clip:&lt;name&gt;" steps due at t (s): the fighter plays that clip (a clip she lacks is skipped).</summary>
+        internal static void PlayScriptClips((float from, float to, FighterInput input, string what)[] script, float t, Fighter me)
+        {
+            foreach (var (from, _, _, what) in script)
+                if (what != null && what.StartsWith("clip:") && Mathf.Abs(t - from) < 0.5f / 60f)
+                {
+                    string clip = what.Substring(5);
+                    if (me.rig.Has(clip))
+                        me.rig.Play(clip, 1f, 0.2f);
+                }
+        }
 
         /// <summary>The demo script named by -roeScript.</summary>
         internal static ((float from, float to, FighterInput input, string what)[] script, float length) Chosen() =>
@@ -311,6 +339,7 @@ namespace RoeFighter.EditorTools
                         input.x *= Vector3.Dot(me.foe.pos - me.pos, camRight) >= 0f ? 1 : -1;
                         if (input.s1 || input.s2 || input.s3)
                             me.meter = 100f;            // a skill whatever the meter
+                        PlayScriptClips(script, t, me);
                         var inputs = new FighterInput[2];
                         inputs[who] = input;
                         game.Step(inputs);
