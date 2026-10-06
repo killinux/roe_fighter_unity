@@ -923,6 +923,10 @@ python tools\strike_demo_video.py _work\strike_takes_bot out\a08_bot_strikes.mp4
 - 换招：改这个 JSON（候选里的任何一招，或别的人形动作），重新导入、重建场景。
 - 视频：`out\a08_sword_strikes.mp4`（四招，每招先实速再半速）；电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（Fiona 对 Inase，120 秒：第一回合时间到 Fiona 赢，第二回合 Inase 把 Fiona KO）。
 - 图：总览图 `out\a08_sword_moves_sheet.jpg`（对战里拍的，按键后每 0.1 秒一格）；检查图 `out\a08_sword_check_sheet.jpg`（影棚里每招 10 格）。
+- 爆衣演示：拿巨剑的 Inase 打 Luf（g04），`out\clothes_burst_demo_g04_by_a08_sword.mp4`（38 秒，用户 10-06："inase 把luf 再打爆衣再实验一下"）。
+  - 流程和"爆衣"一节的演示一样，打两局：每局先走近放超必杀，然后电脑接着打到 KO。
+  - 四段全掉：第一局超必杀打掉前片、左飘带、后片和下摆毛边、裙饰和流苏，KO 打掉主裙；第二局超必杀打掉手套、上衣、项圈和腰带，决胜的 KO 打掉内裤。
+  - 第一局的 KO 是技能 2 打的；第二局决胜的 KO 是巨剑普通攻击砍的。
 - 建场景时默认给 a08 这套（`-roeOwnStrikes` 的默认值改成 `a08=a08_sword`）。参数会替换整张表，换回 Mecanim Bot 的拳脚要写全：`-roeOwnStrikes g04=doa6_mai,g05=doa6_mai,a08=ufe_bot_inase`。
 
 ```powershell
@@ -946,6 +950,8 @@ python tools\takes_sheet.py _work\strike_takes_a08_sword out\a08_sword_moves_she
 python tools\strike_sheet.py out\motion_sheets\a08_sword out\a08_sword_check_sheet.jpg --pack tools\motionpacks\a08_sword.json --cols 10
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','fio005','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_a08_sword'
 python tools\make_video.py _work\fight_a08_sword out\fight_cpu_match_a08_sword.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','g04','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_g04_a08sword'
+python tools\burst_video.py _work\burst_demo_g04_a08sword out\clothes_burst_demo_g04_by_a08_sword.mp4
 ```
 
 ### 爆衣：衣服按件掉，掉完是全身（10-03）
