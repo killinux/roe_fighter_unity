@@ -211,11 +211,11 @@ Magica 给她的预设：前面的刘海 FrontHair，后面的头发和辫子 Sh
 裙子的读数（游戏里的 Magica / 原来的骨骼布料，整段）：穿进腿和胯 1.1 % / 0.5 %，抖动 8.8 / 4.7 mm，拉长 7.4 % / 7.5 %。
 Magica 的裙子更活，代价是穿进身体多一点；普通攻击（直拳、回旋踢）里也有几帧边被拉长到 2–3 倍；技能 1 开头的问题见 6.3。
 
-## 8. 还没有爆衣的 6 个角色
+## 8. 还没有爆衣的 6 个角色（10-05 之后剩 4 个：Eve 两套已补上）
 
 | 角色 | 有没有裸体 | 要做的 |
 |---|---|---|
-| eve09、eve37（剑星） | 有：`E:\game_export\StellarBlade\Eve\blend\Nude_Barefoot\Eve_Nude_Barefoot.blend`，和服装同一套骨架（差 1.3 mm） | 用 `tools/sb_fbx.py` 导进来，写爆衣规则（`Editor/Burst/eve09.json`），裸体按现在的办法抄服装皮肤的权重 |
+| eve09、eve37（剑星） | 有：`E:\game_export\StellarBlade\Eve\blend\Nude_Barefoot\Eve_Nude_Barefoot.blend`，和服装同一套骨架（差 1.3 mm） | **10-05 已做**，见 README"Eve 也能爆衣"一节：比衣服丰满，盖住的地方等衣服掉了再画 |
 | fio005（Vindictus） | 有：Fiona_BaseBody，但是旧的 Bip001 骨架，脸和下半身的位置也不同 | 先在 Blender 里把它对到 PCF_005 的姿势上（PMX 那边 `pmx_add_nude.py` 做过同样的事），再导进来 |
 | kas、kas011、mai（DOA6） | 没有：DOA6 没有裸体，只有 44 件衣服带"破损版"（霞的是 004 那套，这三套都没有）；本机导过的不知火舞 NSFW mod 手臂贴图是乱的 | 需要 DOA6 的裸体 mod（REDELBE，`scripts/doa6/export_nude_mod.ps1` 能导），或者换成有破损版的服装 |
 

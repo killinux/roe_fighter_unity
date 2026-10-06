@@ -17,6 +17,8 @@ namespace RoeFighter.EditorTools
         public Camera camera;
         public UniversalAdditionalCameraData cameraData;
         public Light key, fill, rim;
+        /// <summary>How steeply the key light comes down (degrees; 90 straight down, as the fight stage's spotlights do).</summary>
+        public float keyPitch = 38f;
         public Volume volume;
         public DepthOfField depthOfField;
         public GameObject floor;
@@ -204,7 +206,7 @@ namespace RoeFighter.EditorTools
             var forward = Vector3.ProjectOnPlane(subjectForward, Vector3.up).normalized;
             float yaw = Mathf.Atan2(forward.x, forward.z) * Mathf.Rad2Deg;      // 0 when the subject faces +Z
             // light euler y = direction the light travels; a light in front of the subject travels against its forward
-            key.transform.rotation = Quaternion.Euler(38f, yaw + 180f - 32f, 0f);
+            key.transform.rotation = Quaternion.Euler(keyPitch, yaw + 180f - 32f, 0f);
             fill.transform.rotation = Quaternion.Euler(18f, yaw + 180f + 70f, 0f);
             rim.transform.rotation = Quaternion.Euler(22f, yaw + 15f, 0f);
         }

@@ -7,6 +7,7 @@ using RoeFighter.Fight;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 using Object = UnityEngine.Object;
 
 namespace RoeFighter.EditorTools
@@ -18,6 +19,7 @@ namespace RoeFighter.EditorTools
     /// own (with the HUD) and a close one on the victim; frames, captions and the sounds per take for
     /// tools/burst_video.py.
     ///   -executeMethod RoeFighter.EditorTools.RoeBurstDemo.Run [-roeChars g04,a08] [-roeFoes b10,g05] [-roeOut dir] [-roeSize 960x540]
+    ///                  [-roeFaces 1] [-roeSsao 0] [-roeShadows 0] [-roeShots 520]
     /// </summary>
     public static class RoeBurstDemo
     {
@@ -33,6 +35,7 @@ namespace RoeFighter.EditorTools
             var foes = RoeCapture.Arg("-roeFoes", "").Split(',');
             var size = RoeCapture.Arg("-roeSize", "960x540").Split('x');
             int width = int.Parse(size[0]), height = int.Parse(size[1]);
+            int maxShots = int.Parse(RoeCapture.Arg("-roeShots", "100000"));     // frames per take at most (a quick look)
             ShaderUtil.allowAsyncCompilation = false;
             RoeClothesBurst.Enabled = true;
             // opened once (a second open in the same session lost URP's volume components: black frames)
@@ -44,6 +47,17 @@ namespace RoeFighter.EditorTools
             foreach (var rig in game.rigs)
                 foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
+            // -roeSsao 0: screen-space ambient occlusion off for this run (to see what it darkens; switched back at the end)
+            var ssaoOff = RoeCapture.Arg("-roeSsao", "1") == "0"
+                ? AssetDatabase.FindAssets("t:UniversalRendererData").Select(g => AssetDatabase.LoadAssetAtPath<UniversalRendererData>(AssetDatabase.GUIDToAssetPath(g)))
+                    .Where(d => d != null).SelectMany(d => d.rendererFeatures).OfType<ScreenSpaceAmbientOcclusion>().Where(f => f.isActive).ToList()
+                : new List<ScreenSpaceAmbientOcclusion>();
+            foreach (var f in ssaoOff)
+                f.SetActive(false);
+            // -roeShadows 0: no light casts shadows (the scene is not saved)
+            if (RoeCapture.Arg("-roeShadows", "1") == "0")
+                foreach (var l in Object.FindObjectsByType<Light>(FindObjectsInactive.Include, FindObjectsSortMode.None))
+                    l.shadows = LightShadows.None;
             var closeGo = Object.Instantiate(game.cam.gameObject);
             closeGo.name = "Burst Close Camera";
             closeGo.hideFlags = HideFlags.DontSave;
@@ -73,6 +87,15 @@ namespace RoeFighter.EditorTools
                 foreach (var rig in game.rigs)
                     foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                         smr.forceMatrixRecalculationPerRender = true;
+                // -roeFaces 1: the victim drawn by which side of each triangle shows, unlit (Hidden/ROE/FaceSide: grey front,
+                // magenta back, yellow a front whose normal looks away) - what her moves and physics do to the meshes, apart
+                // from the light (the pieces that come off fly in it too)
+                if (RoeCapture.Arg("-roeFaces", "0") == "1")
+                {
+                    var side = new Material(Shader.Find("Hidden/ROE/FaceSide")) { hideFlags = HideFlags.DontSave };
+                    foreach (var r in victim.rig.GetComponentsInChildren<Renderer>(true))
+                        r.sharedMaterials = Enumerable.Repeat(side, r.sharedMaterials.Length).ToArray();
+                }
                 string dir = Path.Combine(outDir, id);
                 if (Directory.Exists(dir))
                     Directory.Delete(dir, true);
@@ -167,7 +190,7 @@ namespace RoeFighter.EditorTools
                     }
                     if (part == "end" && after < 0)
                         after = s + 60 * 4;
-                    if (after >= 0 && s >= after)
+                    if ((after >= 0 && s >= after) || shot >= maxShots)
                         break;
                     // the close camera: on the victim, from the front and the side the fight camera is not on
                     var fwd = victim.Forward;
@@ -214,6 +237,10 @@ namespace RoeFighter.EditorTools
             }
             File.WriteAllText(Path.Combine(outDir, "takes.txt"), string.Join("\n", takes));
             Object.DestroyImmediate(closeGo);
+            foreach (var f in ssaoOff)
+                f.SetActive(true);
+            if (ssaoOff.Count > 0)
+                log.Append($"\n[ROE]   ambient occlusion was off ({ssaoOff.Count} renderer features), on again");
             Debug.Log(log.ToString());
         }
 

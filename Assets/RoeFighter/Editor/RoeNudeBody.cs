@@ -28,12 +28,43 @@ namespace RoeFighter.EditorTools
     /// Rules: the "nude" block of Editor/Burst/&lt;id&gt;.json (prefab, renderer, submesh, material of the base; the suit
     /// renderer it goes next to; the suit's skin it replaces).  Called by RoeBurstBuilder.Apply before the outfit is
     /// split.
+    ///
+    /// Stellar Blade's Eve (10-05): her only nude base is a mod's (EveOriginalProportions), on her own skeleton but fuller than
+    /// her outfits - up to 2.8 cm out through the suit at the hips and chest.  Two more words in the rules for her:
+    ///   pose "bones"  the base is carried onto the suit's bind pose by its own weights, bones by name (one the suit lacks
+    ///                 follows its nearest ancestor the suit has): eve37's hips stand 1.1 cm otherwise than the base's;
+    ///   reveal        the body under the outfit's opaque pieces (lace and see-through plastic hide nothing) is drawn only
+    ///                 once they are off: its triangles go to a renderer per stage (RoeClothesBurst.reveals), switched on as
+    ///                 that stage comes off - so the base keeps its own shape and nothing comes out through the clothes.
+    ///                 A vertex is under a piece when a triangle of it lies over the vertex (within 4 mm of right over it,
+    ///                 4 cm along its normal either way, facing the way the body does) and the piece lies on the body or
+    ///                 never comes off (thick soles and platform shoes lie further from the foot than 2.5 cm); a
+    ///                 triangle is drawn from the earliest stage any corner needs (no gap at a piece's edge).  A vertex
+    ///                 under no piece and further than 2.5 cm from the suit's skin that shows (skin under an opaque
+    ///                 piece does not, by the same test: eve09's suit keeps skin inside its boots) comes out where the dressed outfit shows
+    ///                 no skin - her flat bare toes out of the suit's heeled feet: it waits for the pieces nearest to it,
+    ///                 however far (those within 3 cm of the nearest: the last of their stages; never when only pieces
+    ///                 that stay on are there).
+    ///   fit           where pieces that never come off lie (eve37's strappy heels), the base takes the shape of the suit's
+    ///                 own skin it replaces: within 2 cm of such a piece wholly (the nearest point of that skin, 5 cm at
+    ///                 most), blended back to its own shape at 4 cm.  The suit's feet were made for its shoes, the base's
+    ///                 flat bare feet were not: its toes came out through the shoes and between the straps its ankles
+    ///                 were either through them or (left out) missing.
     /// </summary>
     public static class RoeNudeBody
     {
         public const float SkinReach = 0.015f;       // the suit's skin this close is what the body copies
         const float MaxFill = 0.3f;                  // a fill that would add more than this share of a submesh is not one
         const float Cell = 0.02f;
+        const float CoverReach = 0.04f;              // reveal: a piece's triangle this far along its normal (either way) covers a vertex
+        const float CoverAside = 0.004f;             //   when the vertex is this close to right under it
+        const float CoverFacing = 0.3f;              //   and the triangle faces the way the body does (cos)
+        const float NearSkin = 0.025f;               // reveal: a vertex this close to the suit's skin is where the outfit shows skin
+        const float SkinAside = 0.0005f;             //   the suit's skin is hidden only right under a piece's triangle
+        const float FitInner = 0.02f;                // fit: within this of a piece that never comes off, the suit skin's shape wholly
+        const float FitOuter = 0.04f;                //   blended back to the base's own by here
+        const float FitReach = 0.05f;                //   the suit's skin at most this far (eve09's feet have none: left alone)
+        const float AroundPieces = 0.06f;            //   one further from it and under no piece waits for the nearest pieces (looked for this far, then 2x, 4x)
 
         class Grid
         {
@@ -122,7 +153,7 @@ namespace RoeFighter.EditorTools
         /// no "nude" block or something is missing (logged).
         /// </summary>
         public static SkinnedMeshRenderer Build(GameObject model, string id, RoeBurstBuilder.Rules rules, RoeBurstBuilder.Analysis analysis,
-                                                string dir, StringBuilder log)
+                                                string dir, StringBuilder log, List<RoeClothesBurst.Reveal> reveals = null)
         {
             var n = rules.nude;
             if (n == null || string.IsNullOrEmpty(n.prefab))
@@ -151,12 +182,15 @@ namespace RoeFighter.EditorTools
             var tight = new List<bool>();             // outfit points of pieces that lie on the body
             var follow = new List<bool>();            // ... of a group that follows the body (followBody): not a source of weights
             var influence = new List<(Transform bone, float weight)[]>();
+            var pointStage = new List<int>();         // the stage of the piece an outfit point is on (int.MaxValue: stays on; 0: skin)
+            var pointNormal = new List<Vector3>();    // its normal, model space (reveal: which way the skin faces)
             var bindpose = new Dictionary<Transform, Matrix4x4>();
             void Add(SkinnedMeshRenderer r, IEnumerable<int> vertices, bool isSkin, Func<int, bool> stays, Func<int, bool> lies = null,
-                     Func<int, bool> follows = null)
+                     Func<int, bool> follows = null, Func<int, int> stageOf = null)
             {
                 var m = r.sharedMesh;
                 var v = m.vertices;
+                var vn = m.normals;
                 var perVertex = m.GetBonesPerVertex();
                 var all = m.GetAllBoneWeights();
                 var start = new int[m.vertexCount + 1];
@@ -184,6 +218,8 @@ namespace RoeFighter.EditorTools
                     permanent.Add(stays(i));
                     tight.Add(lies != null && lies(i));
                     follow.Add(follows != null && follows(i));
+                    pointStage.Add(stageOf != null ? stageOf(i) : 0);
+                    pointNormal.Add(i < vn.Length ? toModel.MultiplyVector(vn[i]).normalized : Vector3.zero);
                     influence.Add(list.ToArray());
                 }
             }
@@ -208,6 +244,7 @@ namespace RoeFighter.EditorTools
             // ---- the body's own vertices (the base's body submesh)
             var tris = mesh.GetTriangles(n.submesh);
             var nv = mesh.vertices;
+            var nn0 = mesh.HasVertexAttribute(VertexAttribute.Normal) ? mesh.normals : new Vector3[nv.Length];
             // ---- more of the base where the suit has nothing (Fill): the triangles of another base submesh that the
             // named suit renderers do not have, compared by the places of their corners (the suit's head is the base's
             // head, cut under the collar)
@@ -262,9 +299,19 @@ namespace RoeFighter.EditorTools
                 fillNote.Append($" submesh {f.submesh}: {lacking} of {total} triangles the suit lacks");
             }
             var used = tris.Concat(fillTris).Distinct().OrderBy(i => i).ToList();
+            // where each vertex lies: where the base has it, or ("pose": "bones") carried from the base's bind pose to the suit's
+            // by its own weights
+            string placeNote = "";
+            var place = n.pose == "bones" ? PlaceByBones(model, renderers, prefab, nudeRenderer, nudeToModel, used, out placeNote) : null;
+            Vector3 Placed(int i, Vector3 v) => place != null ? place[i].MultiplyPoint3x4(nudeToModel.MultiplyPoint3x4(v)) : nudeToModel.MultiplyPoint3x4(v);
+            Vector3 PlacedDir(int i, Vector3 d) => place != null ? place[i].MultiplyVector(nudeToModel.MultiplyVector(d)) : nudeToModel.MultiplyVector(d);
             var position = new Dictionary<int, Vector3>();
             foreach (int i in used)
-                position[i] = nudeToModel.MultiplyPoint3x4(nv[i]);
+                position[i] = Placed(i, nv[i]);
+            var normalOf = new Dictionary<int, Vector3>();
+            foreach (int i in used)
+                normalOf[i] = PlacedDir(i, nn0[i]).normalized;
+            string fitNote = n.fit ? Fit(model, renderers, n, analysis, used, position, normalOf) : "";
             var bodyPoints = used.Select(i => position[i]).ToList();
             var bodyGrid = new Grid(bodyPoints, Enumerable.Range(0, bodyPoints.Count));
             var near = new List<(int i, float d)>();
@@ -277,21 +324,27 @@ namespace RoeFighter.EditorTools
             // the outfit: a piece is tight when it lies on the body (median distance of its vertices at most 2.5 cm) -
             // armour, bra, gloves, shoes; skirt panels, chains and ribbons hang away from it and give no weights
             int tightParts = 0, looseParts = 0;
+            var cover = new List<(Vector3 a, Vector3 b, Vector3 c, Vector3 n, int stage)>();     // reveal: opaque triangles lying on the body
             foreach (var g in analysis.parts.GroupBy(x => x.renderer))
             {
                 var r = g.Key;
                 var stays = new Dictionary<int, bool>();
                 var onBody = new Dictionary<int, bool>();
                 var follows = new Dictionary<int, bool>();
+                var stageOfV = new Dictionary<int, int>();
                 var toModel = ToModel(r.transform);
                 var rv = r.sharedMesh.vertices;
+                var rn = r.sharedMesh.normals;
+                var mats = r.sharedMaterials;
+                var subTris = new Dictionary<int, int[]>();
+                int[] Tris(int sub) => subTris.TryGetValue(sub, out var t) ? t : subTris[sub] = r.sharedMesh.GetTriangles(sub);
                 foreach (var part in g)
                 {
                     bool forever = part.group == null || part.group.stage <= 0;
                     var verts = new HashSet<int>();
                     foreach (var kv in part.triangles)
                     {
-                        var t = r.sharedMesh.GetTriangles(kv.Key);
+                        var t = Tris(kv.Key);
                         foreach (int tri in kv.Value)
                             for (int c = 0; c < 3; c++)
                                 verts.Add(t[tri * 3 + c]);
@@ -302,14 +355,35 @@ namespace RoeFighter.EditorTools
                         tightParts++;
                     else
                         looseParts++;
+                    if (n.reveal && (lies || forever))      // shoes and soles hide the foot however thick they are; a loose
+                                                            // piece (a skirt) does not hide what shows under its hem
+                        foreach (var kv in part.triangles)
+                        {
+                            if (!Opaque(mats[Mathf.Clamp(kv.Key, 0, mats.Length - 1)]))
+                                continue;
+                            var t = Tris(kv.Key);
+                            foreach (int tri in kv.Value)
+                            {
+                                int i0 = t[tri * 3], i1 = t[tri * 3 + 1], i2 = t[tri * 3 + 2];
+                                Vector3 a = toModel.MultiplyPoint3x4(rv[i0]), b = toModel.MultiplyPoint3x4(rv[i1]), c = toModel.MultiplyPoint3x4(rv[i2]);
+                                var fn = Vector3.Cross(b - a, c - a);
+                                if (fn.sqrMagnitude < 1e-14f)
+                                    continue;
+                                fn.Normalize();
+                                if (rn.Length == rv.Length && Vector3.Dot(fn, toModel.MultiplyVector(rn[i0] + rn[i1] + rn[i2])) < 0f)
+                                    fn = -fn;
+                                cover.Add((a, b, c, fn, forever ? int.MaxValue : part.group.stage));
+                            }
+                        }
                     foreach (int v in verts)
                     {
                         stays[v] = forever;
                         onBody[v] = lies;
                         follows[v] = part.group != null && part.group.followBody;
+                        stageOfV[v] = forever ? int.MaxValue : part.group.stage;
                     }
                 }
-                Add(r, stays.Keys, false, i => stays[i], i => onBody[i], i => follows[i]);
+                Add(r, stays.Keys, false, i => stays[i], i => onBody[i], i => follows[i], i => stageOfV[i]);
             }
             int skinCount = skin.Count(x => x);
             var all = Enumerable.Range(0, points.Count).ToList();
@@ -400,14 +474,91 @@ namespace RoeFighter.EditorTools
                 weightsOf[i] = top.Select(kv => (kv.Key, kv.Value / total)).ToArray();
             }
 
-            // ---- triangles: all but those only under pieces that never come off (and any with a vertex left without weights)
+            // ---- (reveal) the stage after which each vertex is drawn: the last stage of the opaque pieces over it, 0 none
+            var coverer = n.reveal ? new Cover(cover) : null;
+            var revealAt = coverer != null ? used.ToDictionary(i => i, i => coverer.Stage(position[i], normalOf[i], CoverReach)) : null;
+            // ...and one under no piece and away from the suit's skin that shows waits for the pieces round it (never: only pieces
+            // that stay on); the suit's skin shows where no opaque piece lies over it
+            int outside = 0, skinShown = 0, skinHidden = 0;
+            Grid shownSkin = null;
+            if (coverer != null)
+            {
+                var shown = all.Where(k => skin[k] && coverer.Stage(points[k], pointNormal[k], CoverReach, SkinAside) == 0).ToList();
+                skinShown = shown.Count;
+                skinHidden = skinCount - shown.Count;
+                shownSkin = new Grid(points, shown);
+            }
+            var coveredAt = revealAt != null ? new Dictionary<int, int>(revealAt) : null;
+            var outfitGrid = revealAt != null ? new Grid(points, all.Where(k => !skin[k])) : null;
+            var byShownSkin = new HashSet<int>();
+            if (revealAt != null)
+                foreach (int i in used)
+                {
+                    if (revealAt[i] != 0)
+                        continue;
+                    shownSkin.Near(position[i], NearSkin, near);
+                    if (near.Count > 0)
+                    {
+                        byShownSkin.Add(i);
+                        continue;
+                    }
+                    // the pieces nearest to it, however far (her base's flat bare feet reach 8.6 cm further forward than eve09's
+                    // suit feet): those within 3 cm of the nearest
+                    foreach (float radius in new[] { AroundPieces, 2f * AroundPieces, 4f * AroundPieces })
+                    {
+                        outfitGrid.Near(position[i], radius, near);
+                        if (near.Count > 0)
+                            break;
+                    }
+                    int stage = 0;
+                    bool staying = false;
+                    float nearest = near.Count > 0 ? near.Min(x => x.d) : 0f;
+                    foreach (var (k, d) in near)
+                    {
+                        if (d > nearest + 0.03f)
+                            continue;
+                        if (pointStage[k] == int.MaxValue)
+                            staying = true;
+                        else
+                            stage = Mathf.Max(stage, pointStage[k]);
+                    }
+                    if (stage == 0 && staying)
+                        stage = int.MaxValue;
+                    if (stage != 0)
+                    {
+                        revealAt[i] = stage;
+                        outside++;
+                    }
+                }
+
+            if (revealAt != null)
+            {
+                // each vertex's verdict, for looking into why a part shows: _work/burst_reveal/<id>.tsv
+                string dumpDir = Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "burst_reveal");
+                Directory.CreateDirectory(dumpDir);
+                var tsv = new StringBuilder("vertex\tx\ty\tz\tcovered\tshown_skin_near\tdrawn_from\n");
+                string St(int v) => v == int.MaxValue ? "never" : v.ToString();
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                foreach (int i in used)
+                    tsv.Append($"{i}\t{position[i].x.ToString("F4", inv)}\t{position[i].y.ToString("F4", inv)}\t{position[i].z.ToString("F4", inv)}\t{St(coveredAt[i])}\t{(byShownSkin.Contains(i) ? 1 : 0)}\t{St(revealAt[i])}\n");
+                File.WriteAllText(Path.Combine(dumpDir, $"{id}.tsv"), tsv.ToString());
+                var pts = new StringBuilder("point\tx\ty\tz\tskin\tstage\n");
+                for (int k = 0; k < points.Count; k++)
+                    pts.Append($"{k}\t{points[k].x.ToString("F4", inv)}\t{points[k].y.ToString("F4", inv)}\t{points[k].z.ToString("F4", inv)}\t{(skin[k] ? 1 : 0)}\t{St(pointStage[k])}\n");
+                File.WriteAllText(Path.Combine(dumpDir, $"{id}_outfit.tsv"), pts.ToString());
+            }
+
+            // ---- triangles: all but those only under pieces that never come off (and any with a vertex left without weights);
+            // with reveal each with the stage it is drawn from
             var keep = new List<int>();
+            var keepStage = new List<int>();
             int dropped = 0;
             for (int t = 0; t + 2 < tris.Length; t += 3)
             {
                 int a = tris[t], b = tris[t + 1], c = tris[t + 2];
+                int stage = revealAt != null ? Mathf.Min(revealAt[a], Mathf.Min(revealAt[b], revealAt[c])) : 0;
                 if (!weightsOf.ContainsKey(a) || !weightsOf.ContainsKey(b) || !weightsOf.ContainsKey(c) ||
-                    (under.Contains(a) && under.Contains(b) && under.Contains(c)))
+                    (under.Contains(a) && under.Contains(b) && under.Contains(c)) || stage == int.MaxValue)
                 {
                     dropped++;
                     continue;
@@ -415,6 +566,7 @@ namespace RoeFighter.EditorTools
                 keep.Add(a);
                 keep.Add(b);
                 keep.Add(c);
+                keepStage.Add(stage);
             }
             var keepFill = new List<int>();
             for (int t = 0; t + 2 < fillTris.Count; t += 3)
@@ -434,22 +586,20 @@ namespace RoeFighter.EditorTools
             var map = new Dictionary<int, int>();
             for (int k = 0; k < order.Count; k++)
                 map[order[k]] = k;
-            var toTarget = modelToTarget * nudeToModel;
             string meshPath = $"{dir}/nude_{RoeBurstBuilder.Safe(n.renderer)}.asset";
-            var outMesh = RoeBurstBuilder.MeshAsset(meshPath);
+            var stagesShown = keepStage.Where(s => s > 0).Distinct().OrderBy(s => s).ToList();
+            bool split = stagesShown.Count > 0;
+            var outMesh = split ? new Mesh { name = "nude whole" } : RoeBurstBuilder.MeshAsset(meshPath);
             outMesh.indexFormat = order.Count > 65535 ? IndexFormat.UInt32 : IndexFormat.UInt16;
-            outMesh.vertices = order.Select(i => toTarget.MultiplyPoint3x4(nv[i])).ToArray();
+            outMesh.vertices = order.Select(i => modelToTarget.MultiplyPoint3x4(position[i])).ToArray();
             if (mesh.HasVertexAttribute(VertexAttribute.Normal))
-            {
-                var nn = mesh.normals;
-                outMesh.normals = order.Select(i => toTarget.MultiplyVector(nn[i]).normalized).ToArray();
-            }
+                outMesh.normals = order.Select(i => modelToTarget.MultiplyVector(normalOf[i]).normalized).ToArray();
             if (mesh.HasVertexAttribute(VertexAttribute.Tangent))
             {
                 var tt = mesh.tangents;
                 outMesh.tangents = order.Select(i =>
                 {
-                    var d = toTarget.MultiplyVector(new Vector3(tt[i].x, tt[i].y, tt[i].z)).normalized;
+                    var d = modelToTarget.MultiplyVector(PlacedDir(i, new Vector3(tt[i].x, tt[i].y, tt[i].z))).normalized;
                     return new Vector4(d.x, d.y, d.z, tt[i].w);
                 }).ToArray();
             }
@@ -490,35 +640,75 @@ namespace RoeFighter.EditorTools
             outMesh.SetBoneWeights(counts, weights);
             counts.Dispose();
             weights.Dispose();
+            var byStage = new Dictionary<int, List<int>>();     // reveal: the triangles drawn from each stage (0: always)
+            for (int k = 0; k < keepStage.Count; k++)
+            {
+                if (!byStage.TryGetValue(keepStage[k], out var list))
+                    byStage[keepStage[k]] = list = new List<int>();
+                list.Add(map[keep[k * 3]]);
+                list.Add(map[keep[k * 3 + 1]]);
+                list.Add(map[keep[k * 3 + 2]]);
+            }
+            var fillMapped = keepFill.Select(i => map[i]).ToList();
             outMesh.subMeshCount = keepFill.Count > 0 ? 2 : 1;
             outMesh.SetTriangles(keep.Select(i => map[i]).ToArray(), 0, false);
             if (keepFill.Count > 0)
-                outMesh.SetTriangles(keepFill.Select(i => map[i]).ToArray(), 1, false);
+                outMesh.SetTriangles(fillMapped.ToArray(), 1, false);
             outMesh.RecalculateBounds();
-            var asset = RoeBurstBuilder.Commit(outMesh, meshPath);
+            Mesh asset;
+            var stageAssets = new Dictionary<int, Mesh>();
+            if (split)
+            {
+                // the whole body cut by stage: what is always drawn, then a mesh per stage (the same vertices, weights, bind poses)
+                var always = byStage.TryGetValue(0, out var l0) ? l0 : new List<int>();
+                var lists0 = keepFill.Count > 0 ? new[] { always, fillMapped } : new[] { always };
+                asset = RoeBurstBuilder.Commit(RoeBurstBuilder.Subset(outMesh, lists0, RoeBurstBuilder.MeshAsset(meshPath)), meshPath);
+                foreach (int s in stagesShown)
+                {
+                    string path = $"{dir}/nude_{RoeBurstBuilder.Safe(n.renderer)}_stage{s}.asset";
+                    stageAssets[s] = RoeBurstBuilder.Commit(RoeBurstBuilder.Subset(outMesh, new[] { byStage[s] }, RoeBurstBuilder.MeshAsset(path)), path);
+                }
+                Object.DestroyImmediate(outMesh);
+            }
+            else
+                asset = RoeBurstBuilder.Commit(outMesh, meshPath);
 
-            var go = new GameObject("nude body") { layer = target.gameObject.layer };
-            go.transform.SetParent(target.transform.parent, false);
-            go.transform.localPosition = target.transform.localPosition;
-            go.transform.localRotation = target.transform.localRotation;
-            go.transform.localScale = target.transform.localScale;
-            var smr = go.AddComponent<SkinnedMeshRenderer>();
-            smr.sharedMesh = asset;
-            smr.bones = bones.ToArray();
-            smr.rootBone = target.rootBone;
-            smr.sharedMaterials = keepFill.Count > 0 ? new[] { material, fillMaterial } : new[] { material };
-            smr.localBounds = target.localBounds;
-            smr.updateWhenOffscreen = target.updateWhenOffscreen;
-            smr.quality = target.quality;
-            smr.skinnedMotionVectors = target.skinnedMotionVectors;
-            smr.shadowCastingMode = target.shadowCastingMode;
-            smr.receiveShadows = target.receiveShadows;
-            smr.lightProbeUsage = target.lightProbeUsage;
-            smr.reflectionProbeUsage = target.reflectionProbeUsage;
-            smr.probeAnchor = target.probeAnchor;
-            smr.forceMatrixRecalculationPerRender = target.forceMatrixRecalculationPerRender;
-            smr.allowOcclusionWhenDynamic = target.allowOcclusionWhenDynamic;
-            smr.renderingLayerMask = target.renderingLayerMask;
+            SkinnedMeshRenderer Renderer(string name, Mesh m, Material[] materials)
+            {
+                var go = new GameObject(name) { layer = target.gameObject.layer };
+                go.transform.SetParent(target.transform.parent, false);
+                go.transform.localPosition = target.transform.localPosition;
+                go.transform.localRotation = target.transform.localRotation;
+                go.transform.localScale = target.transform.localScale;
+                var r = go.AddComponent<SkinnedMeshRenderer>();
+                r.sharedMesh = m;
+                r.bones = bones.ToArray();
+                r.rootBone = target.rootBone;
+                r.sharedMaterials = materials;
+                r.localBounds = target.localBounds;
+                r.updateWhenOffscreen = target.updateWhenOffscreen;
+                r.quality = target.quality;
+                r.skinnedMotionVectors = target.skinnedMotionVectors;
+                r.shadowCastingMode = target.shadowCastingMode;
+                r.receiveShadows = target.receiveShadows;
+                r.lightProbeUsage = target.lightProbeUsage;
+                r.reflectionProbeUsage = target.reflectionProbeUsage;
+                r.probeAnchor = target.probeAnchor;
+                r.forceMatrixRecalculationPerRender = target.forceMatrixRecalculationPerRender;
+                r.allowOcclusionWhenDynamic = target.allowOcclusionWhenDynamic;
+                r.renderingLayerMask = target.renderingLayerMask;
+                return r;
+            }
+            var smr = Renderer("nude body", asset, keepFill.Count > 0 ? new[] { material, fillMaterial } : new[] { material });
+            var revealNote = new StringBuilder();
+            foreach (var kv in stageAssets)
+            {
+                var r = Renderer($"nude body (stage {kv.Key})", kv.Value, new[] { material });
+                r.enabled = false;                  // RoeClothesBurst switches it on once that stage is off
+                int count = byStage[kv.Key].Count / 3;
+                reveals?.Add(new RoeClothesBurst.Reveal { stage = kv.Key, renderer = r, triangles = count });
+                revealNote.Append($"{(revealNote.Length > 0 ? ", " : "")}{count} after stage {kv.Key}");
+            }
 
             skinGap.Sort();
             float Pct(float q) => skinGap.Count > 0 ? skinGap[Mathf.Clamp(Mathf.RoundToInt(q * (skinGap.Count - 1)), 0, skinGap.Count - 1)] * 1000f : -1f;
@@ -528,8 +718,291 @@ namespace RoeFighter.EditorTools
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
                        $"outfit pieces on the body {tightParts}, hanging away {looseParts}; " +
                        $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material {material.name} ({material.shader.name})" +
+                       (place != null ? $"; placed by its bones: {placeNote}" : "") +
+                       (n.fit ? $"; fit: {fitNote}" : "") +
+                       (n.reveal ? $"; reveal: {(byStage.TryGetValue(0, out var shown0) ? shown0.Count / 3 : 0)} triangles always drawn, " +
+                                   (revealNote.Length > 0 ? revealNote.ToString() : "nothing covered") +
+                                   $" ({cover.Count} opaque triangles on the body; the suit's skin shows at {skinShown} points, {skinHidden} under pieces; " +
+                                   $"{outside} vertices under none and off the skin that shows wait for the pieces round them)" : "") +
                        (fills.Count > 0 ? $"; fill:{fillNote} -> {keepFill.Count / 3} triangles added ({(fillMaterial != null ? fillMaterial.name : "no material")})" : ""));
             return smr;
+        }
+
+        /// <summary>
+        /// "fit": within FitInner of a piece that never comes off, a vertex of the base goes to the nearest point of the suit's skin
+        /// it replaces (FitReach at most), its normal to that skin's; blended back to its own place out to FitOuter.  Returns a note.
+        /// </summary>
+        static string Fit(GameObject model, SkinnedMeshRenderer[] renderers, RoeBurstBuilder.Nude n, RoeBurstBuilder.Analysis analysis,
+                          List<int> used, Dictionary<int, Vector3> position, Dictionary<int, Vector3> normalOf)
+        {
+            var root = model.transform;
+            Matrix4x4 ToModelOf(Transform t) => root.worldToLocalMatrix * t.localToWorldMatrix;
+            // the suit's skin, as triangles
+            var skinTris = new List<(Vector3 a, Vector3 b, Vector3 c, Vector3 n, int stage)>();
+            foreach (var s in n.replace ?? new RoeBurstBuilder.Outfit[0])
+            {
+                var r = renderers.FirstOrDefault(x => x.name == s.renderer);
+                if (r == null)
+                    continue;
+                var toModel = ToModelOf(r.transform);
+                var v = r.sharedMesh.vertices;
+                var vn = r.sharedMesh.normals;
+                var subs = s.submesh >= 0 ? new[] { s.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
+                foreach (int sub in subs)
+                {
+                    var t = r.sharedMesh.GetTriangles(sub);
+                    for (int k = 0; k + 2 < t.Length; k += 3)
+                    {
+                        Vector3 a = toModel.MultiplyPoint3x4(v[t[k]]), b = toModel.MultiplyPoint3x4(v[t[k + 1]]), c = toModel.MultiplyPoint3x4(v[t[k + 2]]);
+                        var fn = Vector3.Cross(b - a, c - a);
+                        if (fn.sqrMagnitude < 1e-14f)
+                            continue;
+                        fn.Normalize();
+                        if (vn.Length == v.Length && Vector3.Dot(fn, toModel.MultiplyVector(vn[t[k]] + vn[t[k + 1]] + vn[t[k + 2]])) < 0f)
+                            fn = -fn;
+                        skinTris.Add((a, b, c, fn, 0));
+                    }
+                }
+            }
+            // the points of the pieces that never come off
+            var stay = new List<Vector3>();
+            foreach (var part in analysis.parts.Where(x => x.group == null || x.group.stage <= 0))
+            {
+                var toModel = ToModelOf(part.renderer.transform);
+                var v = part.renderer.sharedMesh.vertices;
+                foreach (var kv in part.triangles)
+                {
+                    var t = part.renderer.sharedMesh.GetTriangles(kv.Key);
+                    foreach (int tri in kv.Value)
+                        for (int c = 0; c < 3; c++)
+                            stay.Add(toModel.MultiplyPoint3x4(v[t[tri * 3 + c]]));
+                }
+            }
+            if (skinTris.Count == 0 || stay.Count == 0)
+                return "nothing to fit (no suit skin or no piece that stays on)";
+            var skin = new Cover(skinTris);
+            var stayGrid = new Grid(stay, Enumerable.Range(0, stay.Count));
+            var near = new List<(int i, float d)>();
+            int whole = 0, blended = 0, noSkin = 0;
+            float moved = 0f;
+            foreach (int i in used)
+            {
+                stayGrid.Near(position[i], FitOuter, near);
+                if (near.Count == 0)
+                    continue;
+                float w = 1f - Mathf.InverseLerp(FitInner, FitOuter, near.Min(x => x.d));
+                if (!skin.Nearest(position[i], FitReach, out var q, out var qn))
+                {
+                    noSkin++;
+                    continue;
+                }
+                moved = Mathf.Max(moved, (q - position[i]).magnitude * w);
+                position[i] = Vector3.Lerp(position[i], q, w);
+                normalOf[i] = Vector3.Lerp(normalOf[i], qn, w).normalized;
+                if (w >= 0.999f)
+                    whole++;
+                else
+                    blended++;
+            }
+            return $"{whole} vertices on the suit's skin, {blended} blended, {noSkin} near a piece that stays on with no suit skin within " +
+                   $"{FitReach * 100f:F0} cm (left as they are); moved at most {moved * 100f:F1} cm";
+        }
+
+        /// <summary>A material that hides what is behind it (lace cut out by its alpha and see-through plastic do not).</summary>
+        internal static bool Opaque(Material m) => m != null && !(m.HasProperty("_Surface") && m.GetFloat("_Surface") > 0.5f) &&
+                                          !(m.HasProperty("_AlphaClip") && m.GetFloat("_AlphaClip") > 0.5f);
+
+        /// <summary>
+        /// Per vertex of the base, the matrix (model space to model space) that carries it from the base's bind pose to the
+        /// suit's: its own weights over each bone's suit bind frame times the inverse of the base's.  Bones by name; one the suit
+        /// lacks follows its nearest ancestor the suit has.
+        /// </summary>
+        static Dictionary<int, Matrix4x4> PlaceByBones(GameObject model, SkinnedMeshRenderer[] renderers, GameObject prefab, SkinnedMeshRenderer nudeRenderer,
+                                                       Matrix4x4 nudeToModel, List<int> used, out string note)
+        {
+            var root = model.transform;
+            var suitBind = new Dictionary<string, Matrix4x4>();         // the suit's bind frames in model space, by bone name
+            foreach (var r in renderers)
+            {
+                var poses = r.sharedMesh.bindposes;
+                var toModel = root.worldToLocalMatrix * r.transform.localToWorldMatrix;
+                for (int k = 0; k < r.bones.Length && k < poses.Length; k++)
+                    if (r.bones[k] != null && !suitBind.ContainsKey(r.bones[k].name))
+                        suitBind[r.bones[k].name] = toModel * poses[k].inverse;
+            }
+            var mesh = nudeRenderer.sharedMesh;
+            var nposes = mesh.bindposes;
+            var nbones = nudeRenderer.bones;
+            var baseBind = new Dictionary<Transform, Matrix4x4>();
+            for (int k = 0; k < nbones.Length && k < nposes.Length; k++)
+                if (nbones[k] != null)
+                    baseBind[nbones[k]] = nudeToModel * nposes[k].inverse;
+            Matrix4x4 BaseBind(Transform t) => baseBind.TryGetValue(t, out var m) ? m : prefab.transform.worldToLocalMatrix * t.localToWorldMatrix;
+            var carry = new Matrix4x4[nbones.Length];
+            int direct = 0, byAncestor = 0, none = 0;
+            float worst = 0f, sum = 0f;
+            string worstName = "";
+            for (int k = 0; k < nbones.Length; k++)
+            {
+                var t = nbones[k];
+                while (t != null && !suitBind.ContainsKey(t.name))
+                    t = t.parent;
+                if (t == null)
+                {
+                    carry[k] = Matrix4x4.identity;
+                    none++;
+                    continue;
+                }
+                if (t == nbones[k])
+                    direct++;
+                else
+                    byAncestor++;
+                carry[k] = suitBind[t.name] * BaseBind(t).inverse;
+                var head = (Vector3)BaseBind(nbones[k]).GetColumn(3);
+                float d = (carry[k].MultiplyPoint3x4(head) - head).magnitude;
+                sum += d;
+                if (d > worst)
+                {
+                    worst = d;
+                    worstName = nbones[k].name;
+                }
+            }
+            var perVertex = mesh.GetBonesPerVertex();
+            var all = mesh.GetAllBoneWeights();
+            var start = new int[mesh.vertexCount + 1];
+            for (int i = 0; i < mesh.vertexCount && i < perVertex.Length; i++)
+                start[i + 1] = start[i] + perVertex[i];
+            var place = new Dictionary<int, Matrix4x4>();
+            foreach (int i in used)
+            {
+                var m = new Matrix4x4();
+                float total = 0f;
+                if (i < perVertex.Length)
+                    for (int j = start[i]; j < start[i + 1]; j++)
+                    {
+                        var w = all[j];
+                        if (w.boneIndex >= carry.Length || w.weight <= 0f)
+                            continue;
+                        for (int e = 0; e < 16; e++)
+                            m[e] += carry[w.boneIndex][e] * w.weight;
+                        total += w.weight;
+                    }
+                if (total <= 0f)
+                    place[i] = Matrix4x4.identity;
+                else
+                {
+                    for (int e = 0; e < 16; e++)
+                        m[e] /= total;
+                    place[i] = m;
+                }
+            }
+            note = $"{direct} bones by name, {byAncestor} by an ancestor, {none} not at all; bones moved {100f * sum / Mathf.Max(1, direct + byAncestor):F2} cm " +
+                   $"on average, at most {100f * worst:F2} cm ({worstName})";
+            return place;
+        }
+
+        /// <summary>Reveal: the outfit's opaque triangles that lie on the body, found by their centres (RoeBurstBuilder: what lies
+        /// over a piece of the outfit).</summary>
+        internal class Cover
+        {
+            readonly List<(Vector3 a, Vector3 b, Vector3 c, Vector3 n, int stage)> tris;
+            readonly Grid grid;
+            readonly float corner;                       // the furthest a triangle's corner is from its centre (at most 10 cm)
+            readonly List<(int i, float d)> near = new List<(int i, float d)>();
+
+            public Cover(List<(Vector3 a, Vector3 b, Vector3 c, Vector3 n, int stage)> tris)
+            {
+                this.tris = tris;
+                var centres = new List<Vector3>(tris.Count);
+                foreach (var t in tris)
+                {
+                    var c = (t.a + t.b + t.c) / 3f;
+                    centres.Add(c);
+                    corner = Mathf.Max(corner, Mathf.Max((t.a - c).magnitude, Mathf.Max((t.b - c).magnitude, (t.c - c).magnitude)));
+                }
+                corner = Mathf.Min(corner, 0.1f);
+                grid = new Grid(centres, Enumerable.Range(0, centres.Count));
+            }
+
+            /// <summary>The nearest point of the triangles to p within reach, and that triangle's normal; false when none is.</summary>
+            public bool Nearest(Vector3 p, float reach, out Vector3 point, out Vector3 normal)
+            {
+                point = p;
+                normal = Vector3.up;
+                if (tris.Count == 0)
+                    return false;
+                grid.Near(p, reach + corner, near);
+                float best = reach;
+                bool found = false;
+                foreach (var (k, _) in near)
+                {
+                    var t = tris[k];
+                    var q = ClosestOnTriangle(p, t.a, t.b, t.c);
+                    float d = (q - p).magnitude;
+                    if (d > best)
+                        continue;
+                    best = d;
+                    point = q;
+                    normal = t.n;
+                    found = true;
+                }
+                return found;
+            }
+
+            /// <summary>
+            /// The last stage of the triangles over p (int.MaxValue: a piece that stays on), 0 when none is: a triangle within
+            /// aside of right over p (CoverAside for the body; the suit's skin only right under one, or the skin between the
+            /// straps of eve37's shoes counted as hidden and her ankles went missing), at most reach along its normal either
+            /// way, facing the way the body does there (facing zero: any way).
+            /// </summary>
+            public int Stage(Vector3 p, Vector3 facing, float reach, float aside = CoverAside)
+            {
+                if (tris.Count == 0)
+                    return 0;
+                grid.Near(p, reach + corner, near);
+                int stage = 0;
+                foreach (var (k, _) in near)
+                {
+                    var t = tris[k];
+                    if (t.stage <= stage || (facing != Vector3.zero && Vector3.Dot(facing, t.n) < CoverFacing))
+                        continue;
+                    var q = ClosestOnTriangle(p, t.a, t.b, t.c);
+                    var v = p - q;
+                    float along = Vector3.Dot(v, t.n);
+                    if (Mathf.Abs(along) > reach || (v - along * t.n).magnitude > aside)
+                        continue;
+                    stage = t.stage;
+                }
+                return stage;
+            }
+        }
+
+        /// <summary>The point of triangle abc nearest to p (Ericson, Real-Time Collision Detection 5.1.5).</summary>
+        static Vector3 ClosestOnTriangle(Vector3 p, Vector3 a, Vector3 b, Vector3 c)
+        {
+            Vector3 ab = b - a, ac = c - a, ap = p - a;
+            float d1 = Vector3.Dot(ab, ap), d2 = Vector3.Dot(ac, ap);
+            if (d1 <= 0f && d2 <= 0f)
+                return a;
+            var bp = p - b;
+            float d3 = Vector3.Dot(ab, bp), d4 = Vector3.Dot(ac, bp);
+            if (d3 >= 0f && d4 <= d3)
+                return b;
+            float vc = d1 * d4 - d3 * d2;
+            if (vc <= 0f && d1 >= 0f && d3 <= 0f)
+                return a + ab * (d1 / (d1 - d3));
+            var cp = p - c;
+            float d5 = Vector3.Dot(ab, cp), d6 = Vector3.Dot(ac, cp);
+            if (d6 >= 0f && d5 <= d6)
+                return c;
+            float vb = d5 * d2 - d1 * d6;
+            if (vb <= 0f && d2 >= 0f && d6 <= 0f)
+                return a + ac * (d2 / (d2 - d6));
+            float va = d3 * d6 - d5 * d4;
+            if (va <= 0f && d4 - d3 >= 0f && d5 - d6 >= 0f)
+                return b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)));
+            float denom = 1f / (va + vb + vc);
+            return a + ab * (vb * denom) + ac * (vc * denom);
         }
     }
 }

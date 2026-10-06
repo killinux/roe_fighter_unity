@@ -44,6 +44,24 @@ namespace RoeFighter.EditorTools
             return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
         }
 
+        /// <summary>
+        /// A model that is no fighter, only its maps, materials and import settings (VdfFighter.BuildMaterials): Eve's nude
+        /// base for the clothes burst, Assets/SB/eve_nude (tools/sb_fbx.py on ripper_tpose's Eve_Nude_Barefoot.blend with
+        /// SB_FBX_SKIP="Hair|Head", then tools/sb_textures.py), which Editor/Burst/eve09.json and eve37.json put under her
+        /// outfits (RoeNudeBody).
+        ///   -executeMethod RoeFighter.EditorTools.SbFighter.BuildBase [-roeSb eve_nude]
+        /// </summary>
+        public static void BuildBase()
+        {
+            foreach (var raw in RoeCapture.Arg("-roeSb", "eve_nude").Split(','))
+            {
+                string id = raw.Trim();
+                var model = VdfFighter.BuildMaterials(id, Dir(id), out int made, out int set);
+                Debug.Log($"[ROE] {id}: base model {(model != null ? AssetDatabase.GetAssetPath(model) : "FAILED")}, {made} materials, {set} texture importers set");
+            }
+            AssetDatabase.SaveAssets();
+        }
+
         /// <summary>RoeSbRig on the fighter prefab, then a check of the game's rigid bodies on her (RoeSbPhysics built on an instance).</summary>
         public static void AttachSb(string id, string dir)
         {

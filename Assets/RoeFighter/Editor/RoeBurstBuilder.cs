@@ -20,8 +20,9 @@ namespace RoeFighter.EditorTools
     ///   groups   in order, the first that matches a piece decides: name, stage (1 first, 0 stays on),
     ///            cloth (drops and lies down) or armour (flies), together (else one piece per side), and the
     ///            conditions - bone (regex on the bone that carries most of the piece's weight), anyBone (bones
-    ///            that together carry at least anyShare, default 0.1), renderer, min/maxTriangles,
-    ///            lowestBelow/Above (m above the floor of its lowest vertex in the bind pose).
+    ///            that together carry at least anyShare, default 0.1), renderer, material (regex on the names of the
+    ///            piece's materials: Eve's outfits are one mesh, her suit and her armour told apart by material),
+    ///            min/maxTriangles, lowestBelow/Above (m above the floor of its lowest vertex in the bind pose).
     /// A piece is a connected part of the outfit (triangles that share a vertex position, welded at 0.1 mm).
     ///
     /// Apply(model, id) splits a fighter: the pieces of each group and side become a SkinnedMeshRenderer of
@@ -58,6 +59,12 @@ namespace RoeFighter.EditorTools
             public string attachTo;                 // the suit renderer it goes next to (its space, bones and settings)
             public Outfit[] replace;                // the suit's skin it replaces (renderer + submesh)
             public Fill[] fill;                     // more of the base where the suit has nothing (the neck under a collar)
+            public string pose;                     // "bones": carried onto the suit's bind pose by its own weights, bones by name
+                                                    // (a base on the suit's own skeleton: Eve's); else where the base has it
+            public bool reveal;                     // the body under the outfit's opaque pieces drawn only once they are off (a base
+                                                    // fuller than the outfit: Eve's would come out through her suits)
+            public bool fit;                        // where pieces that never come off lie (shoes), the base takes the shape of the
+                                                    // suit's skin it replaces (her flat bare feet in eve37's heels)
         }
 
         /// <summary>
@@ -86,7 +93,7 @@ namespace RoeFighter.EditorTools
             public int stage;
             public bool cloth, together;
             public bool followBody;        // worn tight on the body: its pieces take the weights of the nude body under them (FollowBody)
-            public string renderer, bone, anyBone;
+            public string renderer, bone, anyBone, material;
             public float anyShare;
             public int minTriangles, maxTriangles;
             public float lowestBelow, lowestAbove;
@@ -97,6 +104,7 @@ namespace RoeFighter.EditorTools
         {
             public SkinnedMeshRenderer renderer;
             public readonly Dictionary<int, List<int>> triangles = new Dictionary<int, List<int>>();   // submesh -> triangle numbers in it
+            public string materials = "";                        // the names of its materials, space-separated
             public string bone;                                  // carries most of its weight
             public Dictionary<string, float> share;              // bone -> share of its weight
             public Vector3 centre;                               // model space, bind pose
@@ -190,6 +198,11 @@ namespace RoeFighter.EditorTools
                     return x;
                 }
                 var subs = o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, mesh.subMeshCount).ToArray();
+                if (subs.Any(s => s >= mesh.subMeshCount))
+                {
+                    Debug.LogWarning($"[ROE] burst {rules.id}: '{o.renderer}' has {mesh.subMeshCount} submeshes, no {o.submesh}");
+                    continue;
+                }
                 var tris = subs.ToDictionary(s => s, s => mesh.GetTriangles(s));
                 foreach (var t in tris.Values)
                     for (int k = 0; k + 2 < t.Length; k += 3)
@@ -251,6 +264,9 @@ namespace RoeFighter.EditorTools
                     part.highest = hi - a.floor;
                     float across = Vector3.Dot(part.centre - a.pelvis, a.right);
                     part.side = across > 0.03f ? "R" : across < -0.03f ? "L" : "M";
+                    var mats = r.sharedMaterials;
+                    part.materials = string.Join(" ", part.triangles.Keys.OrderBy(k => k)
+                        .Select(k => mats.Length > 0 && mats[Mathf.Min(k, mats.Length - 1)] != null ? mats[Mathf.Min(k, mats.Length - 1)].name : "-"));
                     part.group = rules.groups.FirstOrDefault(g => Matches(g, part));
                     a.parts.Add(part);
                 }
@@ -261,6 +277,8 @@ namespace RoeFighter.EditorTools
         static bool Matches(Group g, Part p)
         {
             if (!string.IsNullOrEmpty(g.renderer) && g.renderer != p.renderer.name)
+                return false;
+            if (!string.IsNullOrEmpty(g.material) && !Regex.IsMatch(p.materials, g.material))
                 return false;
             if (!string.IsNullOrEmpty(g.bone) && !Regex.IsMatch(p.bone, g.bone))
                 return false;
@@ -297,9 +315,10 @@ namespace RoeFighter.EditorTools
             if (burst == null)
                 burst = model.AddComponent<RoeClothesBurst>();
             burst.pieces.Clear();
+            burst.reveals.Clear();
             var log = new StringBuilder($"[ROE] burst {id}: floor {a.floor:F3}, pelvis {a.pelvis}, right {a.right}; {a.parts.Count} pieces in the outfit");
             // the family's nude body under the outfit, in place of the suit's skin (before anything is split)
-            var nude = RoeNudeBody.Build(model, id, rules, a, dir, log);
+            var nude = RoeNudeBody.Build(model, id, rules, a, dir, log, burst.reveals);
             var replaced = new Dictionary<SkinnedMeshRenderer, HashSet<int>>();      // renderer -> submeshes gone whole
             if (nude != null)
                 foreach (var s in rules.nude.replace ?? new Outfit[0])
@@ -355,6 +374,10 @@ namespace RoeFighter.EditorTools
                 log.Append($"\n[ROE]   stage {u.Key.group.stage} {(u.Key.group.cloth ? "cloth " : "armour")} {name,-22} {u.Count(),4} pieces {count,6} triangles  " +
                            $"bones {string.Join(" ", u.Select(p => p.bone).Distinct().Take(6))}{followed}");
             }
+            // the shadows that pieces coming off earlier baked into the occlusion of the pieces under them
+            string occlusion = CleanOcclusion(model, burst, dir);
+            if (occlusion.Length > 0)
+                log.Append($"\n[ROE]   occlusion of what lay under earlier pieces lifted: {occlusion}");
             // what stays on each renderer (the suit's skin the nude body replaces goes as well)
             foreach (var r in replaced.Keys)
                 if (!taken.ContainsKey(r))
@@ -403,6 +426,329 @@ namespace RoeFighter.EditorTools
         }
 
         internal static string Safe(string s) => Regex.Replace(s, @"[^A-Za-z0-9_\-]+", "_");
+
+        // ---- the occlusion a piece casts on what lies under it
+
+        const float UnderReach = 0.03f;     // a piece's triangle this far along its normal (either way) lies over a vertex of another
+        const float UnderAside = 0.004f;    //   when the vertex is this close to right under it
+        const float ShadowSpread = 0.01f;   // a baked shadow reaches this far round what casts it (m, in texels by the triangles' density)
+        const float RingWidth = 0.02f;      // the occlusion round it is read from a ring this wide (m)
+
+        /// <summary>
+        /// Game artists bake the shadow a piece casts on what lies under it into the ambient occlusion of what is under: eve37's
+        /// tie lies on her shirt's placket, and the placket's occlusion holds a tie-shaped shadow (0.1-0.4 against 0.6 round
+        /// it) that Stellar Blade never shows - in the fight, lit from above by the stage's spotlights and so mostly by the
+        /// ambient light the occlusion darkens, it was a black tie on the shirt once the tie was off.  So for each piece, the
+        /// texels of its triangles under an opaque piece that comes off earlier (a corner within 4 mm of right under one of its
+        /// triangles, 3 cm along its normal, facing the same way), spread by the shadow's soft edge (1 cm), are raised to the
+        /// median occlusion of a 2 cm ring round them (texels of the piece's own triangles); the piece gets a copy of its material with
+        /// that occlusion map (Assets/RoeFighter/Generated/&lt;id&gt;/burst/&lt;renderer&gt;__&lt;material&gt;.mat, the map next to it).
+        /// While the piece over it is on, nothing of this shows.  Returns a note for the log ("" when nothing was lifted).
+        /// </summary>
+        static string CleanOcclusion(GameObject model, RoeClothesBurst burst, string dir)
+        {
+            var root = model.transform;
+            Matrix4x4 ToModel(Transform t) => root.worldToLocalMatrix * t.localToWorldMatrix;
+            var notes = new List<string>();
+            foreach (var p in burst.pieces)
+            {
+                var r = p.renderer;
+                if (r == null || r.sharedMesh == null)
+                    continue;
+                // the opaque triangles of the pieces that come off before it, model space as modelled (lace and see-through
+                // plastic cast no solid shadow, and what is under them shows through them while they are on)
+                var over = new List<(Vector3 a, Vector3 b, Vector3 c, Vector3 n, int stage)>();
+                foreach (var q in burst.pieces.Where(x => x.stage < p.stage && x.renderer != null && x.renderer.sharedMesh != null))
+                {
+                    var qm = q.renderer.sharedMesh;
+                    var qv = qm.vertices;
+                    var qn = qm.normals;
+                    var qmats = q.renderer.sharedMaterials;
+                    var toModelQ = ToModel(q.renderer.transform);
+                    for (int qs = 0; qs < qm.subMeshCount; qs++)
+                    {
+                        if (!RoeNudeBody.Opaque(qmats[Mathf.Min(qs, qmats.Length - 1)]))
+                            continue;
+                        var qt = qm.GetTriangles(qs);
+                        for (int k = 0; k + 2 < qt.Length; k += 3)
+                        {
+                            Vector3 a = toModelQ.MultiplyPoint3x4(qv[qt[k]]), b = toModelQ.MultiplyPoint3x4(qv[qt[k + 1]]), c = toModelQ.MultiplyPoint3x4(qv[qt[k + 2]]);
+                            var fn = Vector3.Cross(b - a, c - a);
+                            if (fn.sqrMagnitude < 1e-14f)
+                                continue;
+                            fn.Normalize();
+                            if (qn.Length == qv.Length && Vector3.Dot(fn, toModelQ.MultiplyVector(qn[qt[k]] + qn[qt[k + 1]] + qn[qt[k + 2]])) < 0f)
+                                fn = -fn;
+                            over.Add((a, b, c, fn, q.stage));
+                        }
+                    }
+                }
+                if (over.Count == 0)
+                    continue;
+                var cover = new RoeNudeBody.Cover(over);
+                var mesh = r.sharedMesh;
+                var v = mesh.vertices;
+                var vn = mesh.normals;
+                var uv = mesh.uv;
+                if (uv.Length != v.Length)
+                    continue;
+                var toModel = ToModel(r.transform);
+                var pos = v.Select(x => toModel.MultiplyPoint3x4(x)).ToArray();
+                var under = new bool[v.Length];
+                for (int i = 0; i < v.Length; i++)
+                    under[i] = cover.Stage(pos[i], vn.Length == v.Length ? toModel.MultiplyVector(vn[i]).normalized : Vector3.zero, UnderReach, UnderAside) > 0;
+                var mats = r.sharedMaterials;
+                bool changed = false;
+                for (int sub = 0; sub < mesh.subMeshCount && sub < mats.Length; sub++)
+                {
+                    var mat = mats[sub];
+                    var occ = mat != null && mat.HasProperty("_OcclusionMap") ? mat.GetTexture("_OcclusionMap") as Texture2D : null;
+                    if (occ == null)
+                        continue;
+                    var tris = mesh.GetTriangles(sub);
+                    var footprint = new List<int>();
+                    for (int k = 0; k + 2 < tris.Length; k += 3)
+                        if (under[tris[k]] || under[tris[k + 1]] || under[tris[k + 2]])
+                            footprint.AddRange(new[] { tris[k], tris[k + 1], tris[k + 2] });
+                    if (footprint.Count == 0)
+                        continue;
+                    string baseName = $"{dir}/{Safe(r.name)}__{Safe(mat.name)}";
+                    var lifted = LiftOcclusion(occ, uv, pos, tris, footprint, baseName + "_occlusion.png", out string note);
+                    if (lifted == null)
+                    {
+                        notes.Add($"{p.name}: {note}");
+                        continue;
+                    }
+                    string matPath = baseName + ".mat";
+                    var copy = AssetDatabase.LoadAssetAtPath<Material>(matPath);
+                    if (copy == null)
+                    {
+                        copy = new Material(mat);
+                        AssetDatabase.CreateAsset(copy, matPath);
+                    }
+                    else
+                        copy.CopyPropertiesFromMaterial(mat);
+                    copy.shader = mat.shader;
+                    copy.shaderKeywords = mat.shaderKeywords;
+                    copy.SetTexture("_OcclusionMap", lifted);
+                    EditorUtility.SetDirty(copy);
+                    mats[sub] = copy;
+                    changed = true;
+                    notes.Add($"{p.name} ({mat.name}): {footprint.Count / 3} triangles under earlier pieces, {note}");
+                }
+                if (changed)
+                    r.sharedMaterials = mats;
+            }
+            return string.Join("; ", notes);
+        }
+
+        /// <summary>
+        /// The occlusion map (green, as URP reads it) with the texels of the footprint triangles, spread by ShadowSpread, raised
+        /// to at least the median of a RingWidth ring round each connected part of them (texels of the island's triangles
+        /// only), written as a png next to the burst's meshes with the original's import settings.  Distances become texels by
+        /// the footprint's own density (its texels per metre: UV area against area as modelled).  Null when nothing changed.
+        /// </summary>
+        static Texture2D LiftOcclusion(Texture2D occ, Vector2[] uv, Vector3[] pos, int[] island, List<int> footprint, string path, out string note)
+        {
+            note = "";
+            string src = AssetDatabase.GetAssetPath(occ);
+            string ext = Path.GetExtension(src).ToLowerInvariant();
+            if (ext != ".png" && ext != ".jpg" && ext != ".jpeg")
+            {
+                note = $"{occ.name} is no png or jpg - left as it is";
+                return null;
+            }
+            var img = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+            if (!img.LoadImage(File.ReadAllBytes(Path.Combine(ProjectDir, src))))
+            {
+                note = $"{src} unreadable - left as it is";
+                return null;
+            }
+            int w = img.width, h = img.height;
+            var px = img.GetPixels32();
+            var own = new bool[w * h];
+            Raster(island, uv, w, h, own);
+            var lift = new bool[w * h];
+            Raster(footprint, uv, w, h, lift);
+            double uvArea = 0, worldArea = 0;
+            for (int k = 0; k + 2 < footprint.Count; k += 3)
+            {
+                Vector2 a = Vector2.Scale(uv[footprint[k]], new Vector2(w, h)), b = Vector2.Scale(uv[footprint[k + 1]], new Vector2(w, h)),
+                        c = Vector2.Scale(uv[footprint[k + 2]], new Vector2(w, h));
+                uvArea += Mathf.Abs((b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y)) * 0.5;
+                worldArea += Vector3.Cross(pos[footprint[k + 1]] - pos[footprint[k]], pos[footprint[k + 2]] - pos[footprint[k]]).magnitude * 0.5;
+            }
+            float density = worldArea > 1e-9 ? (float)System.Math.Sqrt(uvArea / worldArea) : Mathf.Max(w, h);   // texels per metre
+            int spread = Mathf.Clamp(Mathf.RoundToInt(ShadowSpread * density), 1, 64);
+            int ringWidth = Mathf.Clamp(Mathf.RoundToInt(RingWidth * density), 2, 128);
+            // the footprint and the soft edge of its shadow (own texels only), its parts labelled
+            var label = new int[w * h];
+            var queue = new Queue<int>();
+            var dist = new int[w * h];
+            for (int i = 0; i < w * h; i++)
+            {
+                dist[i] = -1;
+                if (lift[i])
+                {
+                    dist[i] = 0;
+                    queue.Enqueue(i);
+                }
+            }
+            while (queue.Count > 0)
+            {
+                int i = queue.Dequeue();
+                if (dist[i] >= spread)
+                    continue;
+                int x = i % w, y = i / w;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h)
+                            continue;
+                        int j = ny * w + nx;
+                        if (dist[j] >= 0 || !own[j])
+                            continue;
+                        dist[j] = dist[i] + 1;
+                        lift[j] = true;
+                        queue.Enqueue(j);
+                    }
+            }
+            int parts = 0;
+            for (int i = 0; i < w * h; i++)
+            {
+                if (!lift[i] || label[i] != 0)
+                    continue;
+                label[i] = ++parts;
+                queue.Enqueue(i);
+                while (queue.Count > 0)
+                {
+                    int k = queue.Dequeue(), x = k % w, y = k / w;
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dx = -1; dx <= 1; dx++)
+                        {
+                            int nx = x + dx, ny = y + dy;
+                            if (nx < 0 || ny < 0 || nx >= w || ny >= h)
+                                continue;
+                            int j = ny * w + nx;
+                            if (lift[j] && label[j] == 0)
+                            {
+                                label[j] = parts;
+                                queue.Enqueue(j);
+                            }
+                        }
+                }
+            }
+            if (parts == 0)
+            {
+                note = "no texels under them";
+                return null;
+            }
+            // the ring round each part: own texels outside the parts, labelled by the nearest part
+            var ringOf = new int[w * h];
+            var ringDist = new int[w * h];
+            for (int i = 0; i < w * h; i++)
+            {
+                ringDist[i] = -1;
+                if (label[i] != 0)
+                {
+                    ringDist[i] = 0;
+                    ringOf[i] = label[i];
+                    queue.Enqueue(i);
+                }
+            }
+            var samples = new List<byte>[parts + 1];
+            for (int k = 1; k <= parts; k++)
+                samples[k] = new List<byte>();
+            while (queue.Count > 0)
+            {
+                int i = queue.Dequeue();
+                if (ringDist[i] >= ringWidth)
+                    continue;
+                int x = i % w, y = i / w;
+                for (int dy = -1; dy <= 1; dy++)
+                    for (int dx = -1; dx <= 1; dx++)
+                    {
+                        int nx = x + dx, ny = y + dy;
+                        if (nx < 0 || ny < 0 || nx >= w || ny >= h)
+                            continue;
+                        int j = ny * w + nx;
+                        if (ringDist[j] >= 0)
+                            continue;
+                        ringDist[j] = ringDist[i] + 1;
+                        ringOf[j] = ringOf[i];
+                        queue.Enqueue(j);
+                        if (own[j])
+                            samples[ringOf[j]].Add(px[j].g);
+                    }
+            }
+            var level = new byte[parts + 1];
+            int raised = 0;
+            float before = 0f, after = 0f;
+            for (int k = 1; k <= parts; k++)
+            {
+                var s = samples[k];
+                s.Sort();
+                level[k] = s.Count > 0 ? s[s.Count / 2] : (byte)255;
+            }
+            for (int i = 0; i < w * h; i++)
+            {
+                if (label[i] == 0 || px[i].g >= level[label[i]])
+                    continue;
+                before += px[i].g;
+                px[i].g = level[label[i]];
+                after += px[i].g;
+                raised++;
+            }
+            if (raised == 0)
+            {
+                note = $"{occ.name} already as light there";
+                return null;
+            }
+            img.SetPixels32(px);
+            File.WriteAllBytes(Path.Combine(ProjectDir, path), img.EncodeToPNG());
+            Object.DestroyImmediate(img);
+            AssetDatabase.ImportAsset(path, ImportAssetOptions.ForceSynchronousImport);
+            if (AssetImporter.GetAtPath(src) is TextureImporter from && AssetImporter.GetAtPath(path) is TextureImporter to)
+            {
+                var settings = new TextureImporterSettings();
+                from.ReadTextureSettings(settings);
+                to.SetTextureSettings(settings);
+                to.SetPlatformTextureSettings(from.GetDefaultPlatformTextureSettings());
+                to.SaveAndReimport();
+            }
+            note = $"{raised} texels of {occ.name} raised from {before / raised / 255f:F2} to {after / raised / 255f:F2} on average " +
+                   $"({parts} part{(parts > 1 ? "s" : "")}, {density / 100f:F0} texels/cm: spread {spread} px, ring {ringWidth} px)";
+            return AssetDatabase.LoadAssetAtPath<Texture2D>(path);
+        }
+
+        /// <summary>Marks the texels whose centres lie in the triangles' UVs (each triangle moved by whole tiles into 0..1).</summary>
+        static void Raster(IList<int> tris, Vector2[] uv, int w, int h, bool[] into)
+        {
+            for (int k = 0; k + 2 < tris.Count; k += 3)
+            {
+                Vector2 a = uv[tris[k]], b = uv[tris[k + 1]], c = uv[tris[k + 2]];
+                var tile = new Vector2(Mathf.Floor(a.x), Mathf.Floor(a.y));
+                a = Vector2.Scale(a - tile, new Vector2(w, h));
+                b = Vector2.Scale(b - tile, new Vector2(w, h));
+                c = Vector2.Scale(c - tile, new Vector2(w, h));
+                float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+                if (Mathf.Abs(area) < 1e-9f)
+                    continue;
+                int x0 = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(a.x, Mathf.Min(b.x, c.x)))), x1 = Mathf.Min(w - 1, Mathf.CeilToInt(Mathf.Max(a.x, Mathf.Max(b.x, c.x))));
+                int y0 = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(a.y, Mathf.Min(b.y, c.y)))), y1 = Mathf.Min(h - 1, Mathf.CeilToInt(Mathf.Max(a.y, Mathf.Max(b.y, c.y))));
+                for (int y = y0; y <= y1; y++)
+                    for (int x = x0; x <= x1; x++)
+                    {
+                        float px = x + 0.5f, py = y + 0.5f;
+                        float w0 = ((b.x - px) * (c.y - py) - (c.x - px) * (b.y - py)) / area;
+                        float w1 = ((c.x - px) * (a.y - py) - (a.x - px) * (c.y - py)) / area;
+                        float w2 = 1f - w0 - w1;
+                        if (w0 >= -1e-4f && w1 >= -1e-4f && w2 >= -1e-4f)
+                            into[y * w + x] = true;
+                    }
+            }
+        }
 
         /// <summary>
         /// A piece worn tight on the body takes the weights of the nude body under it (a group's "followBody"), so that it
@@ -526,7 +872,7 @@ namespace RoeFighter.EditorTools
         /// Some triangles of a mesh as a mesh of their own: only the vertices they use, every vertex
         /// stream, every bone influence, the same bind poses; one submesh per list.
         /// </summary>
-        static Mesh Subset(Mesh src, List<int>[] indices, Mesh m)
+        internal static Mesh Subset(Mesh src, List<int>[] indices, Mesh m)
         {
             var map = new Dictionary<int, int>();
             var order = new List<int>();
@@ -678,6 +1024,8 @@ namespace RoeFighter.EditorTools
             Directory.CreateDirectory(outDir);
             ShaderUtil.allowAsyncCompilation = false;
             var studio = RoeStudio.Build();
+            // -roeKeyPitch 88: the key light from straight above, as the fight stage's spotlights (what the arms shade)
+            studio.keyPitch = float.Parse(RoeCapture.Arg("-roeKeyPitch", studio.keyPitch.ToString(CultureInfo.InvariantCulture)), CultureInfo.InvariantCulture);
             var lit = Shader.Find("Universal Render Pipeline/Lit");
             foreach (var id in ids)
             {
@@ -690,10 +1038,10 @@ namespace RoeFighter.EditorTools
                     Object.DestroyImmediate(go);
                     continue;
                 }
-                var stance = RoeHumanoidClips.Standing(id, out var standing);
+                var stance = CheckPose(id, RoeCapture.Arg("-roePose", ""), out float poseTime, out var standing);
                 Debug.Log($"[ROE] burst {id}: {standing}");
                 if (stance != null)
-                    RoeCapture.Pose(go, stance, 0f);
+                    RoeCapture.Pose(go, stance, poseTime);
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 var forward = RoeShowcase.Forward(go);
@@ -713,10 +1061,10 @@ namespace RoeFighter.EditorTools
                 RoeCapture.Render(studio.camera, 200, 200, Path.Combine(outDir, "_warm.png"));
                 // every piece of the outfit and the rule it falls under (for writing the rules)
                 var analysis = Analyse(go, Load(id));
-                File.WriteAllText(Path.Combine(outDir, $"{id}_pieces.txt"), "bone\tshares\ttriangles\tside\tlowest\thighest\tcentre\tgroup\n" +
+                File.WriteAllText(Path.Combine(outDir, $"{id}_pieces.txt"), "bone\tshares\ttriangles\tside\tlowest\thighest\tcentre\tmaterials\tgroup\n" +
                     string.Join("\n", analysis.parts.OrderBy(p => p.bone).ThenByDescending(p => p.Triangles).Select(p =>
                         $"{p.bone}\t{string.Join(" ", p.share.OrderByDescending(kv => kv.Value).Take(3).Select(kv => $"{kv.Key}:{kv.Value:F2}"))}\t" +
-                        $"{p.Triangles}\t{p.side}\t{p.lowest:F2}\t{p.highest:F2}\t{p.centre.x:F2},{p.centre.y:F2},{p.centre.z:F2}\t" +
+                        $"{p.Triangles}\t{p.side}\t{p.lowest:F2}\t{p.highest:F2}\t{p.centre.x:F2},{p.centre.y:F2},{p.centre.z:F2}\t{p.materials}\t" +
                         $"{(p.group != null ? $"{p.group.name} (stage {p.group.stage})" : "-")}")) + "\n");
                 // as the prefab has it, then split: the same picture (tools/burst_sheet.py compares them)
                 Shot($"{id}_unsplit_front.png", 15f);
@@ -725,19 +1073,76 @@ namespace RoeFighter.EditorTools
                 RoeCapture.EndPosing();
                 var burst = Apply(go, id);
                 if (stance != null)
-                    RoeCapture.Pose(go, stance, 0f);
+                    RoeCapture.Pose(go, stance, poseTime);
                 foreach (var smr in go.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                     smr.forceMatrixRecalculationPerRender = true;
                 for (int stage = 0; stage <= burst.stages; stage++)
                 {
-                    foreach (var p in burst.pieces)
-                        p.renderer.enabled = p.stage > stage;
+                    burst.Show(stage);
                     Shot($"{id}_stage{stage}_front.png", 15f);
                     Shot($"{id}_stage{stage}_back.png", 165f);
                 }
+                string facesArg = RoeCapture.Arg("-roeFaces", "0");
+                if (facesArg != "0")
+                {
+                    // which side of the triangles shows (Hidden/ROE/FaceSide: grey front, magenta back, yellow a front whose
+                    // normal looks away), each stage whole and the chest close, next to the chest as drawn; "-roeFaces 1" in
+                    // the pose above, or in each of a list of poses as -roePose takes them ("stance@0,react_02@0.5")
+                    var side = new Material(Shader.Find("Hidden/ROE/FaceSide"));
+                    var kept = go.GetComponentsInChildren<Renderer>(true).ToDictionary(r => r, r => r.sharedMaterials);
+                    var animator = go.GetComponent<Animator>();
+                    var chestBone = animator != null && animator.isHuman
+                        ? animator.GetBoneTransform(HumanBodyBones.UpperChest) ?? animator.GetBoneTransform(HumanBodyBones.Chest) : null;
+                    void Close(string file)
+                    {
+                        // the chest as posed, from the way it faces now (a battle stance stands her side on)
+                        var facing = forward;
+                        var shoulderL = animator != null && animator.isHuman ? animator.GetBoneTransform(HumanBodyBones.LeftUpperArm) : null;
+                        var shoulderR = animator != null && animator.isHuman ? animator.GetBoneTransform(HumanBodyBones.RightUpperArm) : null;
+                        if (shoulderL != null && shoulderR != null)
+                        {
+                            var across = Vector3.Cross(shoulderR.position - shoulderL.position, Vector3.up);
+                            if (across.sqrMagnitude > 1e-6f)
+                                facing = across.normalized;
+                        }
+                        var chest = chestBone != null ? chestBone.position + facing * 0.05f
+                                                      : new Vector3(bounds.center.x, go.transform.position.y + height * 0.74f, bounds.center.z);
+                        studio.LightFrom(facing);
+                        studio.Aim(chest, facing, 15f, 6f, height * 0.7f, 26f);
+                        RoeCapture.Render(studio.camera, 900, 900, Path.Combine(outDir, file));
+                        studio.LightFrom(forward);
+                    }
+                    var looks = facesArg == "1" ? new[] { (clip: stance, time: poseTime, tag: "") }
+                        : facesArg.Split(',').Select(x => x.Trim()).Where(x => x.Length > 0).Select(x =>
+                        {
+                            var clip = CheckPose(id, x, out float t, out var note);
+                            Debug.Log($"[ROE] burst {id} faces: {note}");
+                            return (clip, time: t, tag: Safe(x.Replace("@", "_at_")) + "_");
+                        }).ToArray();
+                    foreach (var look in looks)
+                    {
+                        if (look.clip != null)
+                            RoeCapture.Pose(go, look.clip, look.time);
+                        for (int stage = 0; stage <= burst.stages; stage++)
+                        {
+                            burst.Show(stage);
+                            Close($"{id}_{look.tag}stage{stage}_chest.png");
+                            foreach (var kv in kept)
+                                kv.Key.sharedMaterials = Enumerable.Repeat(side, kv.Value.Length).ToArray();
+                            Shot($"{id}_{look.tag}stage{stage}_faces_front.png", 15f);
+                            Close($"{id}_{look.tag}stage{stage}_faces_chest.png");
+                            foreach (var kv in kept)
+                                kv.Key.sharedMaterials = kv.Value;
+                        }
+                    }
+                    Object.DestroyImmediate(side);
+                    if (stance != null)
+                        RoeCapture.Pose(go, stance, poseTime);
+                    else
+                        RoeCapture.EndPosing();
+                }
                 // the groups in colours on a grey body
-                foreach (var p in burst.pieces)
-                    p.renderer.enabled = true;
+                burst.Show(0);
                 var grey = new Material(lit);
                 grey.SetColor("_BaseColor", new Color(0.62f, 0.62f, 0.64f));
                 var colours = new Dictionary<string, Material>();
@@ -770,6 +1175,28 @@ namespace RoeFighter.EditorTools
                 Object.DestroyImmediate(go);
             }
             Debug.Log($"[ROE] burst check pictures in {outDir}");
+        }
+
+        /// <summary>
+        /// The pose of the check pictures: -roePose name[@seconds], one of her clips (a fighter from another game:
+        /// Assets/&lt;game&gt;/&lt;id&gt;/clips; ROE: the humanoid clips); else the stance the fight stands a ROE fighter in, and the
+        /// bind pose for one from another game ("stance": her battle stance as the fight has it).  Eve's bind pose (arms
+        /// out) hides what her poses do to her clothes: eve37's shirt went dark where the tie had been only in the fight.
+        /// </summary>
+        static AnimationClip CheckPose(string id, string arg, out float time, out string note)
+        {
+            time = 0f;
+            if (string.IsNullOrEmpty(arg))
+                return RoeHumanoidClips.Standing(id, out note);
+            int at = arg.IndexOf('@');
+            string name = at >= 0 ? arg.Substring(0, at) : arg;
+            if (at >= 0)
+                time = float.Parse(arg.Substring(at + 1), CultureInfo.InvariantCulture);
+            var clip = name == "stance" && DoaFighter.IsDoa(id) ? RoeFightScene.DoaStance(DoaFighter.Load(id))
+                     : AssetDatabase.LoadAssetAtPath<AnimationClip>($"{DoaFighter.Dir(id)}/clips/{name}.anim")
+                       ?? AssetDatabase.LoadAssetAtPath<AnimationClip>(RoeHumanoidClips.ClipPath(id, name));
+            note = clip != null ? $"stands in {name} ({clip.name}) at {time:F2} s (-roePose)" : $"no clip {name} (-roePose): bind pose";
+            return clip;
         }
     }
 }

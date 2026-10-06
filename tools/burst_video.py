@@ -1,6 +1,7 @@
 # The clothes burst demo (RoeBurstDemo.Run) as one video: per take the close camera and the fight camera side by
 # side, what is happening written underneath, the game's sounds; the takes one after the other.
 #   python burst_video.py [demo dir] [out.mp4]
+import json
 import os
 import shutil
 import subprocess
@@ -11,6 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 FFMPEG = r'D:\Program Files\ffmpeg\bin\ffmpeg.exe'
+FFPROBE = FFMPEG.replace('ffmpeg.exe', 'ffprobe.exe')
 FONT = r'C:\Windows\Fonts\msyh.ttc'
 
 
@@ -55,6 +57,14 @@ def compose(take):
     return len(names)     # make_video.py reads <take>/frames and <take>/timeline.json
 
 
+def probe(path):
+    """(whether it has a sound track, its length in seconds)"""
+    r = subprocess.run([FFPROBE, '-v', 'error', '-show_entries', 'stream=codec_type:format=duration', '-of', 'json', path],
+                       capture_output=True, text=True)
+    d = json.loads(r.stdout)
+    return any(st.get('codec_type') == 'audio' for st in d.get('streams', [])), float(d['format']['duration'])
+
+
 def main():
     demo = sys.argv[1] if len(sys.argv) > 1 else os.path.join(PROJECT, '_work', 'burst_demo')
     out = sys.argv[2] if len(sys.argv) > 2 else os.path.join(PROJECT, 'out', 'clothes_burst_demo.mp4')
@@ -71,7 +81,17 @@ def main():
     cmd = [FFMPEG, '-y', '-loglevel', 'error']
     for p in parts:
         cmd += ['-i', p]
-    streams = ''.join(f'[{i}:v][{i}:a]' for i in range(len(parts)))
+    # a take without a sound (a foe from another game has none of the game's sounds: Mai) gets silence of its length
+    audio, extra = [], len(parts)
+    for i, p in enumerate(parts):
+        has, length = probe(p)
+        if has:
+            audio.append(f'[{i}:a]')
+        else:
+            cmd += ['-f', 'lavfi', '-t', f'{length:.3f}', '-i', 'anullsrc=r=48000:cl=stereo']
+            audio.append(f'[{extra}:a]')
+            extra += 1
+    streams = ''.join(f'[{i}:v]{audio[i]}' for i in range(len(parts)))
     cmd += ['-filter_complex', f'{streams}concat=n={len(parts)}:v=1:a=1[v][a]', '-map', '[v]', '-map', '[a]',
             '-c:v', 'libx264', '-crf', '18', '-preset', 'slow', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', out]
     subprocess.run(cmd, check=True)

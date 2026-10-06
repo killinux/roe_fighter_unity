@@ -145,6 +145,9 @@ SKIP = re.compile(os.environ.get("SB_FBX_SKIP", r"HairTailShort"))
 skipped = [o.name for o in meshes if SKIP.search(o.name)]
 meshes = [o for o in meshes if not SKIP.search(o.name)]
 print(f"[sb_fbx] left out: {', '.join(skipped) or 'nothing'}")
+# only the materials of what goes out (the nude base for the clothes burst is her body alone: SB_FBX_SKIP="Hair|Head")
+used = {s.material.name for o in meshes for s in o.material_slots if s.material}
+materials = {k: v for k, v in materials.items() if k in used}
 
 # ---- the Biped bones in the spaced form (vertex groups are renamed with them)
 renamed = 0

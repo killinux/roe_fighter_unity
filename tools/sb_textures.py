@@ -109,6 +109,23 @@ def mask_from_orm(path, size, out, ao=0, rough=1, metal=2, rough_range=None):
     Image.fromarray(np.round(np.clip(mask, 0, 1) * 255).astype(np.uint8), "RGBA").save(out)
 
 
+SKIN_ROUGHNESS = (0.228571, 1.107784)     # MinRoughness, MaxRoughness of her own skin (MI_P_EVE_09_Skin on MA_Skin_EVE)
+
+
+def mod_maps(albedo):
+    """A mod's normal and ORSS maps next to its colour map (custombody_A.png -> textures/extra/custombody_N.png,
+    custombody_ORSS.png); None when it has neither."""
+    folder, name = os.path.split(albedo)
+    stem = os.path.splitext(name)[0]
+    stem = stem[:-2] if stem.endswith("_A") else stem
+    found = []
+    for suffix in ("_N", "_ORSS"):
+        hit = next((p for p in (os.path.join(folder, "extra", stem + suffix + ".png"), os.path.join(folder, stem + suffix + ".png"))
+                    if os.path.exists(p)), None)
+        found.append(hit)
+    return tuple(found) if any(found) else None
+
+
 def glow(rgb):
     """An HDR colour scaled so its brightest component is at most GLOW_MAX (sRGB for Unity's colour field)."""
     c = np.array(rgb[:3], np.float32)
@@ -255,6 +272,20 @@ def main():
             if d.get("albedo") and os.path.exists(d["albedo"]):
                 put_albedo(d["albedo"])
             e["smoothness"] = 0.9
+        elif not props and d.get("albedo") and mod_maps(d["albedo"]):
+            # a mod's skin (the nude base, EveOriginalProportions: custombody_A wired in the .blend, its _N and _ORSS in
+            # textures/extra): the ORSS read as MA_Skin_EVE's, over her own skin's roughness range (MI_P_EVE_09_Skin)
+            normal, orss = mod_maps(d["albedo"])
+            put_albedo(d["albedo"])
+            put_normal(normal)
+            if orss:
+                out = os.path.join(tex_out, f"{stem}_mask.png")
+                mask_from_orm(orss, opts.size, out, ao=0, rough=1, metal=None, rough_range=SKIN_ROUGHNESS)
+                e["mask"] = os.path.basename(out)
+                e["smoothness"] = 1.0
+                e["metallic"] = 0.0
+            e["kind"] = "skin"
+            e["source"] = f"the mod's own maps next to {os.path.basename(d['albedo'])}"
         elif d.get("albedo") and os.path.exists(d["albedo"]):
             put_albedo(d["albedo"])
             if d.get("normal") and os.path.exists(d["normal"]):

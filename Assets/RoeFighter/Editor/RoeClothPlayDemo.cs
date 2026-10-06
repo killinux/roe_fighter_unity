@@ -214,9 +214,7 @@ namespace RoeFighter.EditorTools
             me.foe.pos = me.pos + (me.foe.pos - me.pos).normalized * 5.5f;
             me.foe.Place();
             if (nude && me.rig.burst != null)
-                foreach (var p in me.rig.burst.pieces)
-                    if (p.renderer != null)
-                        p.renderer.enabled = false;
+                me.rig.burst.Show(me.rig.burst.stages);
             me.rig.ResetCloth();
             foreach (var rig in game.rigs)
                 rig.ResetSkirtKeyError();

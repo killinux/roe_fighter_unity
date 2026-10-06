@@ -66,6 +66,22 @@ namespace RoeFighter.EditorTools
         /// </summary>
         public static GameObject BuildModel(string id, string dir, string game, bool heels)
         {
+            var model = BuildMaterials(id, dir, out int materialsMade, out int importersSet);
+            if (model == null)
+                return null;
+            if (!DoaFighter.SavePrefabs(id, model, game, $"{materialsMade} materials, {importersSet} texture importers set", heels: heels))
+                return null;
+            return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+        }
+
+        /// <summary>
+        /// BuildModel's first half: the textures' importers, the URP Lit materials from &lt;dir&gt;/unity.json and the model's
+        /// import settings (our materials on it, readable meshes).  Returns the model asset (null: failed).  On its own for a
+        /// model that is no fighter: the nude base under Eve's outfits (SbFighter.BuildBase).
+        /// </summary>
+        public static GameObject BuildMaterials(string id, string dir, out int materialsMade, out int importersSet)
+        {
+            materialsMade = importersSet = 0;
             string sidecarPath = $"{dir}/unity.json";
             if (!File.Exists(sidecarPath))
             {
@@ -184,9 +200,9 @@ namespace RoeFighter.EditorTools
                 .Where(x => x != null && !made.ContainsValue(x)).Select(x => x.name).Distinct().ToList();
             if (missing.Count > 0)
                 Debug.LogWarning($"[ROE] {id}: materials not from unity.json: {string.Join(", ", missing)}");
-            if (!DoaFighter.SavePrefabs(id, model, game, $"{made.Count} materials, {changed} texture importers set", heels: heels))
-                return null;
-            return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
+            materialsMade = made.Count;
+            importersSet = changed;
+            return model;
         }
 
         [System.Serializable]

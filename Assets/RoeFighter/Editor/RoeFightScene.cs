@@ -94,6 +94,8 @@ namespace RoeFighter.EditorTools
             model.transform.SetParent(root.transform, false);
             rig.animator = model.GetComponent<Animator>();
             rig.animator.runtimeAnimatorController = null;
+            // the outfit's pieces that can come off (爆衣, Editor/Burst/<id>.json - Eve's, with her nude base under them)
+            rig.burst = RoeBurstBuilder.Apply(model, id);
             foreach (var smr in model.GetComponentsInChildren<SkinnedMeshRenderer>(true))
                 smr.forceMatrixRecalculationPerRender = false;
 
@@ -128,7 +130,8 @@ namespace RoeFighter.EditorTools
             rig.audioSource.spatialBlend = 0f;
             Debug.Log($"[ROE] fighter {id} ({def.source}): stance {(rig.stance != null ? rig.stance.name : "none")}, own strikes " +
                       $"{(rig.strikePack != null ? string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}")) : "none")}, " +
-                      $"{rig.clips.Count} clips ({string.Join(" ", rig.clips.Select(c => c.name))}), DOA6 physics {(rig.animator.GetComponent<RoeDoaRig>() != null ? "yes" : "none")}{feetNote}");
+                      $"{rig.clips.Count} clips ({string.Join(" ", rig.clips.Select(c => c.name))}), DOA6 physics {(rig.animator.GetComponent<RoeDoaRig>() != null ? "yes" : "none")}{feetNote}, " +
+                      $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")}");
             return rig;
         }
 
@@ -173,7 +176,7 @@ namespace RoeFighter.EditorTools
 
         /// <summary>The clip a character from another game stands in: her own pack's guard, else the definition's stance
         /// ("pack:role" or a clip's asset path).</summary>
-        static AnimationClip DoaStance(DoaFighter.Definition def, MotionPack own = null)
+        internal static AnimationClip DoaStance(DoaFighter.Definition def, MotionPack own = null)
         {
             var pack = own ?? (string.IsNullOrEmpty(def.pack) ? null : RoeMotionPacks.Load(def.pack));
             if (pack != null && pack.Get("guard") != null)

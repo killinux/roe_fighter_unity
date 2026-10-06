@@ -34,7 +34,20 @@ namespace RoeFighter
             public int triangles;
         }
 
+        /// <summary>
+        /// A part of the body under the outfit drawn only once a stage is off (RoeNudeBody, "reveal": a nude base that does not
+        /// fit under the outfit - Eve's is fuller than her suits and would come out through them).
+        /// </summary>
+        [Serializable]
+        public class Reveal
+        {
+            public int stage;                     // drawn once this stage is off
+            public SkinnedMeshRenderer renderer;
+            public int triangles;
+        }
+
         public List<Piece> pieces = new List<Piece>();
+        public List<Reveal> reveals = new List<Reveal>();
         public int stages;                        // how many stages this outfit has
 
         [Header("Armour: flies off along the blow and tumbles")]
@@ -102,15 +115,27 @@ namespace RoeFighter
         public void Restore(int seed)
         {
             ClearDebris();
-            foreach (var p in pieces)
-                if (p.renderer != null)
-                    p.renderer.enabled = true;
+            Show(0);
             dropped = 0;
             due.Clear();
             clock = 0f;
             takeOffMs.Clear();
             snapshotMs.Clear();
             random = new System.Random(seed);
+        }
+
+        /// <summary>
+        /// The outfit as it is once this many stages are off, at once and with nothing flying (checks and pictures; 0 = all on,
+        /// stages = all off): the pieces of those stages hidden, the body under them shown.
+        /// </summary>
+        public void Show(int stagesOff)
+        {
+            foreach (var p in pieces)
+                if (p.renderer != null)
+                    p.renderer.enabled = p.stage > stagesOff;
+            foreach (var r in reveals)
+                if (r.renderer != null)
+                    r.renderer.enabled = r.stage <= stagesOff;
         }
 
         /// <summary>The pieces in the air or on the floor go away at once (a new round).</summary>
@@ -199,6 +224,9 @@ namespace RoeFighter
                 debris.Add(d);
                 onPieceOff?.Invoke(at, d.radius, p.cloth);
             }
+            foreach (var r in reveals)
+                if (r.stage == stage && r.renderer != null)
+                    r.renderer.enabled = true;
             takeOffMs.Add((float)watch.Elapsed.TotalMilliseconds);
             snapshotMs.Add((float)snapshots);
         }
@@ -491,7 +519,12 @@ namespace RoeFighter
                         names.Add(p.name);
                         tris += p.triangles;
                     }
-                parts.Add($"stage {s}: {names.Count} pieces, {tris} triangles ({string.Join(", ", names)})");
+                int shown = 0;
+                foreach (var r in reveals)
+                    if (r.stage == s)
+                        shown += r.triangles;
+                parts.Add($"stage {s}: {names.Count} pieces, {tris} triangles ({string.Join(", ", names)})" +
+                          (shown > 0 ? $", then the body under them ({shown} triangles)" : ""));
             }
             return string.Join("; ", parts);
         }

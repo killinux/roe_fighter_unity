@@ -222,12 +222,9 @@ namespace RoeFighter.EditorTools
             Shoot("dressed");
             if (burst != null)
             {
-                var off = burst.pieces.Where(p => p.renderer != null && p.renderer.enabled).Select(p => p.renderer).ToList();
-                foreach (var r in off)
-                    r.enabled = false;
+                burst.Show(burst.stages);
                 Shoot("nude");
-                foreach (var r in off)
-                    r.enabled = true;
+                burst.Show(0);
             }
             sb.Append(Deformation(layers, rig, cam, Path.Combine(outDir, $"{id}_pinch.jpg"), width, height));
             cam.fieldOfView = fov;
