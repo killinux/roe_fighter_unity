@@ -48,7 +48,7 @@
 | Eve 两套（eve09、eve37）也能爆衣：剑星的裸体 mod 当衣服下面的身体，被衣服盖住的地方等那件掉了再画 | 完成（10-05），见"Eve 也能爆衣"一节；检查图 `out\clothes_burst\unity\eve09_sheet.png`、`eve37_sheet.png`，演示 `out\clothes_burst_demo_eve.mp4` |
 | Fiona（fio005）也能爆衣：衣服下面用游戏自己的素体（以前没导出过），在 Blender 里贴到 PCF_005 的皮肤上；四段掉到全身，高跟鞋留着 | 完成（10-06），见"Fiona 也能爆衣"一节；检查图 `out\clothes_burst\unity\fio005_sheet.png`，演示（对 Inase）`out\clothes_burst_demo_fio005.mp4` |
 | Inase 拿巨剑打普通攻击：ROE 和 UFE 2 都没有现成的拿剑普通攻击，从 Vindictus 的剑招和她自己的技能 1 里挑了四招；剑一直握在右手（握法从她游戏自己的技能动作里量出来），按剑身判定 | 完成（10-06），见"Inase 拿巨剑的普通攻击"一节；13 招候选 `out\a08_sword_candidates.mp4`、`out\a08_sword_candidates_sheet.jpg`，定下的四招 `out\a08_sword_strikes.mp4`、`out\a08_sword_moves_sheet.jpg`、`out\a08_sword_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（对 Fiona）；换招改 `tools/motionpacks/a08_sword.json` |
-| 卡地亚（Kart，b10，红色短夹克）拿斧头打普通攻击：她 10-03 就在战斗里，但以前用拳脚；现在照她游戏的站架，小斧头握在右手、两把枪插在大腿枪套里（枪套被爆衣打掉时枪一起消失），四个普通攻击用斧头；枪还是在技能里自己飞出来开火，和游戏一样 | 完成（10-06），见"卡地亚（Kart，b10）拿斧头打普通攻击"一节；14 招候选 `out\b10_axe_candidates.mp4`，定下的四招 `out\b10_axe_strikes.mp4`、`out\b10_axe_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（对 Inase）；换招改 `tools/motionpacks/b10_axe.json` |
+| 卡地亚（Kart，b10，红色短夹克）拿斧头打普通攻击：她 10-03 就在战斗里，但以前用拳脚；现在照她游戏的站架，小斧头握在右手、两把枪插在大腿枪套里（枪套被爆衣打掉时枪一起消失），四个普通攻击用斧头；枪还是在技能里自己飞出来开火，和游戏一样 | 完成（10-06），见"卡地亚（Kart，b10）拿斧头打普通攻击"一节；14 招候选 `out\b10_axe_candidates.mp4`，定下的四招 `out\b10_axe_strikes.mp4`、`out\b10_axe_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（对 Inase）；换招改 `tools/motionpacks/b10_axe.json`。大腿根（10-06 晚）：屁股坠到大腿上是这几招把着地的腿往里转了 45–60°（游戏自己最多 36°），限制住了，对比 `out\b10_thigh_root.jpg`、`out\b10_axe_strikes_compare.mp4` |
 
 ## 目录
 
@@ -1030,6 +1030,51 @@ python tools\burst_video.py _work\burst_demo_g04_a08sword out\clothes_burst_demo
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.Run -Extra '-roeChars','b10'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.LegShots -Graphics -Extra '-roeChar','b10','-roeClip','ax_lunge','-roeTimes','0.45','-roeSpeed','1.1'   # → out\leg_shots
+```
+
+**大腿根**（用户说："大腿根的权重还是不对呀，看看convert_TO_MMD5 里的大腿和臀部的部分是怎么修复的"）：查清了，主要不是权重，是这几招把腿摆得太拧。
+
+- 对比图：`out\b10_thigh_root.jpg`（之前 / 现在）、`out\b10_thigh_root_settings.jpg`（三档强度）。
+- 对比视频：`out\b10_axe_strikes_compare.mp4`，左边改之前，右边改之后。
+- **样子**：膝盖修好以后，斧头冲步、劈砍、砸地里，弯着的那条腿那边的屁股像往下坠到大腿上，鼓出一块。修膝盖以前，大腿扭转骨不跟大腿走，屁股是圆的，但膝盖坏了。
+- **原因**：
+  - 这几招是别人的动作重定向到她身上的。着地那条腿弯着的时候，大腿往里转了 45–60°：`ax_lunge` −45°、`ax_chop` −60°、`ax_slam` −52°。她游戏自己的 10 个动作里最多 36°。
+  - 大腿往里一转，小腿就往外撇，整条腿成了 W 形，屁股和大腿根的轮廓看上去就像坠下来一块。
+  - 证据：同一帧里大腿的朝向和自转都不变、只把小腿摆回正下方，屁股那一片的像素和原来完全一样（差值图全黑），变的只是腿的样子。
+  - 在她游戏自己的动作里（包括腿抬得最高、分得最开的帧），现在的骨骼和权重摆出来的样子跟游戏关键帧一样，没有鼓包。
+- **试过、没用的**（检查工具都留着，图在 `out\hip_try`、`out\hip_look`）：
+  1. ROE 导 PMX 时（Convert_to_MMD5 之前那一步）修大腿根的办法：大腿扭转骨按它那块皮在大腿上的位置取跟随比例（0.5 + t/0.7），b10 算出 0.86/0.87。
+     - 弓步里几乎没变化。
+     - 在游戏自己的抬腿动作里反而更差：这根骨会跟着大腿自转 86%，而游戏里它是不跟自转的。skill_03 第 1.10 秒，游戏的这根骨离"只跟摆动、不跟自转"差 4°，离"整根跟着转"差 55°。
+     - 已撤回。
+  2. 同一个规则改成逐顶点：大腿根一圈的权重按位置从骨盆渐变到大腿。
+  3. 髋关节加"半角辅助骨"（转角取骨盆和大腿的一半），减轻线性蒙皮转 90° 时的塌陷。
+  4. 屁股上挂在大腿的权重挪回骨盆。
+  5. 换回游戏底模（b01）自己的权重，并像 PMX 导出那样驱动底模自带的臀部辅助骨：Muscle Strand 在臀部取 0.67、髋外侧取 0.50，ThighTwist_LT 取 0.85。
+
+  这几种都只是把鼓包挪个位置，或者多出一道折痕。
+- **修法**：
+  - 大腿扭转骨回到用她游戏动作拟合的驱动：跟着大腿摆动，自转只跟左 1/3、右一半。
+  - 拟合时不再把膝盖的"自转"当来源。膝盖是铰链，那一项在游戏动作里是噪声（原来拟合出 1.5 倍），动捕里还会被放大。
+  - 新加 `FighterRig.LimitRoll`：动捕动作里，脚着地的那条腿，大腿相对骨盆往里或往外转超过 15° 的部分只保留 30%，小腿和脚跟着腿走，不再往外撇。踢腿时抬起的腿不受影响。
+  - 卡地亚默认打开：建场景时 `-roeLegRoll` 的默认值是 `b10=15:0.3:0`。三个数依次是：
+    - 从多少度开始限制；
+    - 超出的部分保留多少；
+    - 脚怎么放：0 跟着腿走，1 保持原来的高度，2 留在原地。
+  - 别的角色不变；要给谁加，就往表里加一项。
+  - 脚放法选 0 的原因：选 2（脚留在原地）时，膝盖会被拉回原来的位置，W 形又回来了。
+  - 更强的一档 `b10=5:0:0`：左小腿竖直往下，W 形没了，代价是弓步窄一些（见 `out\b10_thigh_root_settings.jpg`）。
+- **检查工具**（`RoeFightProbe`）：
+  - `HipScan`：每个动作里大腿的最大摆动、最大外展、自转范围。
+  - `HipTry`：同一刻按多种办法摆出来对比，`-roeTry` 列出办法，`-roeLegRoll` 临时改限制。
+  - `HipLook`：按权重上色；把底模用它自己的权重摆成同一个姿势；画出两者逐顶点的差。
+  - `HipWeights`：大腿根前后一圈挂在哪些骨上。
+  - `BodyDump`：顶点、权重、关节导出到 `_work\hip_dump`。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.HipScan -Graphics -Extra '-roeChar','b10'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.HipTry -Graphics -Extra '-roeChar','b10','-roeClip','ax_lunge','-roeTimes','0.45','-roeSpeed','1.1','-roeTry','strong','-roeLegRoll','5:0:0'   # → out\hip_try
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics -Extra '-roeLegRoll','b10=5:0:0'   # 换成更强的一档
 ```
 - 视频 `out\b10_axe_strikes.mp4`（四招，每招先实速再半速）；总览图 `out\b10_axe_moves_sheet.jpg`；检查图 `out\b10_axe_check_sheet.jpg`；电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（Kart 对 Inase，120 秒）。
 - 爆衣演示（Inase 打 Kart）`out\clothes_burst_demo_b10_axe.mp4`：第 1 段打掉枪套时，两把枪一起消失；她游戏自带的动作（技能、回合结束）里枪照游戏的样子出现。

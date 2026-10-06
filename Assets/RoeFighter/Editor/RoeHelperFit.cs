@@ -172,6 +172,11 @@ namespace RoeFighter.EditorTools
                 var best = BestSingle(h, map, candidates, tracks);
                 var blend = BestBlend(h, map, tracks);
                 var r = blend != null && blend.error < best.error - 0.5f ? blend : best;
+                // (10-06, "大腿根的权重还是不对呀": a blend between the pelvis and the thigh at the share the ROE PMX export
+                // gives its skin, 0.86 for b10's upper ThighTwist, was tried here in place of the clips' fit and dropped: it
+                // turns the twist bone with 86 % of the thigh's own roll, where the game's clips give the roll back - in her
+                // skill_03 at 1.10 s the game's ThighTwist is 4 degrees from following the thigh without its roll, 55 from
+                // following it with all of it - and with the roll her buttock bulged onto the thigh in the game's own pose.)
                 Position(h, r, map, tracks);
                 results[h.name] = r;
                 sb.Append($"\n[ROE]   {h.name} (parent {h.parent.name}): {r.model} {r.driver}" +
@@ -677,7 +682,10 @@ namespace RoeFighter.EditorTools
                 string prevName = Prev.TryGetValue(name, out var p) ? p : null;
                 if (prevName == "UpperChest" && !map.ContainsKey("UpperChest"))
                     prevName = "Chest";
-                foreach (var sName in new[] { N != null ? nextName : null, prevName })
+                // (not the knee's roll for a thigh twist bone: the knee is a hinge, its "roll" against the thigh is noise in the
+                // game's clips - b10's LThighTwist took 1.5 times it - and the humanoid's leg twist under motion capture)
+                bool hingeNext = LegTwist.IsMatch(h.name) && name.EndsWith("UpperLeg");
+                foreach (var sName in new[] { N != null && !hingeNext ? nextName : null, prevName })
                 {
                     if (sName == null || !map.TryGetValue(sName, out var st))
                         continue;

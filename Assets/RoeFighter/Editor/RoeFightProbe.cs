@@ -730,6 +730,952 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>
+        /// What the skin round the tops of the thighs hangs on, by the bone with the largest weight, front and back (the
+        /// buttock) of each hip: the family's nude base as the game weights it (its own prefab) beside the body the fight
+        /// draws (RoeNudeBody: weights taken from the suit and the outfit over it) - user 10-06: "大腿根的权重还是不对呀".
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.HipWeights -roeChar b10
+        /// </summary>
+        public static void HipWeights()
+        {
+            string id = RoeCapture.Arg("-roeChar", "b10");
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
+            var spec = RoeBurstBuilder.Load(id);
+            var bodies = new List<(string what, SkinnedMeshRenderer smr)>();
+            var fightBody = rig.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault(r => r.name == "nude body");
+            if (fightBody != null)
+                bodies.Add(("the fight's body", fightBody));
+            GameObject baseGo = null;
+            if (spec?.nude != null && !string.IsNullOrEmpty(spec.nude.prefab))
+            {
+                baseGo = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(spec.nude.prefab));
+                var baseBody = baseGo.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault(r => r.name == spec.nude.renderer);
+                if (baseBody != null)
+                    bodies.Add(("the base's own", baseBody));
+            }
+            foreach (var (what, smr) in bodies)
+            {
+                var mesh = smr.sharedMesh;
+                var binds = mesh.bindposes;
+                var bw = mesh.boneWeights;
+                var verts = mesh.vertices;
+                var sb = new System.Text.StringBuilder($"[ROE] hip weights {id}, {what} ({smr.name}, {smr.bones.Length} bones):");
+                foreach (var side in new[] { "L", "R" })
+                {
+                    // the hip joint where the thigh (or its upper twist bone) starts, the knee where the calf does
+                    int hi = System.Array.FindIndex(smr.bones, b => b != null && (b.name == $"Bip001 {side} Thigh" || b.name == $"Bip001 {side}ThighTwist"));
+                    int ki = System.Array.FindIndex(smr.bones, b => b != null && b.name == $"Bip001 {side} Calf");
+                    if (hi < 0 || ki < 0)
+                    {
+                        sb.Append($" {side}: no thigh / calf among its bones;");
+                        continue;
+                    }
+                    Vector3 hip = binds[hi].inverse.MultiplyPoint3x4(Vector3.zero), knee = binds[ki].inverse.MultiplyPoint3x4(Vector3.zero);
+                    var seg = knee - hip;
+                    // the body faces where the two hips' cross with up points (mesh space: y up)
+                    var counts = new Dictionary<string, Dictionary<string, float>> { { "front", new Dictionary<string, float>() }, { "back", new Dictionary<string, float>() } };
+                    int other = System.Array.FindIndex(smr.bones, b => b != null && (b.name == $"Bip001 {(side == "L" ? "R" : "L")} Thigh" || b.name == $"Bip001 {(side == "L" ? "R" : "L")}ThighTwist"));
+                    var across = other >= 0 ? binds[other].inverse.MultiplyPoint3x4(Vector3.zero) - hip : Vector3.right;
+                    var forward = Vector3.Cross(side == "L" ? -across : across, Vector3.up).normalized;
+                    for (int v = 0; v < verts.Length; v++)
+                    {
+                        float s = Vector3.Dot(verts[v] - hip, seg) / seg.sqrMagnitude;
+                        if (s < -0.25f || s > 0.3f || Vector3.Distance(verts[v], hip + seg * Mathf.Max(0f, s)) > 0.17f)
+                            continue;
+                        var w = bw[v];
+                        string where = Vector3.Dot(verts[v] - hip, forward) >= 0f ? "front" : "back";
+                        foreach (var (bi, wt) in new[] { (w.boneIndex0, w.weight0), (w.boneIndex1, w.weight1), (w.boneIndex2, w.weight2), (w.boneIndex3, w.weight3) })
+                        {
+                            if (wt <= 0f || bi >= smr.bones.Length || smr.bones[bi] == null)
+                                continue;
+                            string name = smr.bones[bi].name;
+                            counts[where][name] = (counts[where].TryGetValue(name, out float c) ? c : 0f) + wt;
+                        }
+                    }
+                    foreach (var kv in counts)
+                    {
+                        float total = kv.Value.Values.Sum();
+                        if (total > 0f)
+                            sb.Append($" {side} {kv.Key}: " + string.Join(", ", kv.Value.OrderByDescending(x => x.Value).Take(6).Select(x => $"{x.Key} {x.Value / total * 100f:F0}%")) + ";");
+                    }
+                }
+                Debug.Log(sb.ToString());
+            }
+            if (baseGo != null)
+                Object.DestroyImmediate(baseGo);
+        }
+
+        /// <summary>-roeLegRoll "from:keep" (FighterRig.rollFrom / rollKeep) on the probed fighter, for trying values without a rebuild.</summary>
+        static void LegRollArg(FighterRig rig)
+        {
+            var spec = RoeCapture.Arg("-roeLegRoll", null);
+            if (string.IsNullOrEmpty(spec))
+                return;
+            var p = spec.Split(':');
+            rig.rollFrom = float.Parse(p[0], System.Globalization.CultureInfo.InvariantCulture);
+            rig.rollKeep = p.Length > 1 ? float.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture) : 0.3f;
+            if (p.Length > 2)
+                rig.rollFoot = int.Parse(p[2]);
+            Debug.Log($"[ROE] {rig.id}: planted thighs turned past {rig.rollFrom:F0} deg keep {rig.rollKeep:F2} of it (-roeLegRoll)");
+        }
+
+        /// <summary>Which leg a bone belongs to by its name: 1 left, 2 right, 0 none (the trunk, the arms, the head).</summary>
+        static int LegSide(string name)
+        {
+            if (!System.Text.RegularExpressions.Regex.IsMatch(name, "Thigh|Calf|Knee|knee|Foot|Toe|Leg|leg"))
+                return 0;
+            var m = System.Text.RegularExpressions.Regex.Match(name, @"^Bip001 ([LR])(?: |[A-Z])");
+            if (m.Success)
+                return m.Groups[1].Value == "L" ? 1 : 2;
+            if (System.Text.RegularExpressions.Regex.IsMatch(name, @"(_L|_LT|\.L|Left)\b|^L_|\bL\b"))
+                return 1;
+            if (System.Text.RegularExpressions.Regex.IsMatch(name, @"(_R|_RT|\.R|Right)\b|^R_|\bR\b"))
+                return 2;
+            return 0;
+        }
+
+        /// <summary>
+        /// The hips at moments of a clip, four ways (user 10-06: "大腿根的权重还是不对呀"): "fight" the body the fight draws;
+        /// "weights" the same body coloured by what its skin hangs on (red the trunk, green the left leg, blue the right leg,
+        /// mixed where it is shared); "base" the family's nude base with the game's OWN weights, posed bone for bone like her
+        /// (bones of the base she lacks - buttocks, muscle strands, its own twist bones - follow their parents); "diff" the
+        /// fight's body coloured by how far each vertex stands from where the base's own weights put it (white 0, red 4 cm).
+        /// Same cameras as LegShots -roeAim hips.  Frames to out/hip_look/&lt;id&gt;_&lt;clip&gt;_&lt;t&gt;_&lt;way&gt;_&lt;view&gt;.png.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.HipLook -roeChar b10 -roeClip ax_lunge -roeTimes 0.43 -roeSpeed 1.1
+        /// </summary>
+        public static void HipLook()
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "b10");
+            string clipName = RoeCapture.Arg("-roeClip", "ax_lunge");
+            float speed = float.Parse(RoeCapture.Arg("-roeSpeed", "1"), inv);
+            var times = RoeCapture.Arg("-roeTimes", "0.43").Split(',').Select(s => float.Parse(s, inv)).ToArray();
+            string outDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "out", "hip_look");
+            System.IO.Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
+            rig.gameObject.SetActive(true);
+            LegRollArg(rig);
+            foreach (var other in Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).Where(r => r != rig))
+                other.gameObject.SetActive(false);
+            var hud = Object.FindFirstObjectByType<Canvas>();
+            if (hud != null)
+                hud.gameObject.SetActive(false);
+            var all = rig.GetComponentsInChildren<Renderer>(true).Where(r => r.enabled && r.gameObject.activeInHierarchy).ToList();
+            foreach (var smr in all.OfType<SkinnedMeshRenderer>())
+                smr.forceMatrixRecalculationPerRender = true;
+            var weapons = new HashSet<Renderer>(rig.weaponRenderers ?? new Renderer[0]);
+            var outfit = new HashSet<Renderer>(rig.burst != null ? rig.burst.pieces.Where(p => p.renderer != null).Select(p => (Renderer)p.renderer) : new Renderer[0]);
+            foreach (var r in all.Where(r => r.name.Contains("body2") || r.name.Contains("__stays")))
+                outfit.Add(r);
+            var shown = all.Where(r => !outfit.Contains(r) && !weapons.Contains(r)).ToList();
+            var body = all.OfType<SkinnedMeshRenderer>().First(r => r.name == "nude body");
+            var bones = body.bones;
+            var bodyMesh = body.sharedMesh;
+            var bodyMaterials = body.sharedMaterials;
+
+            // the body coloured by its weights
+            var painted = Object.Instantiate(bodyMesh);
+            var bw = bodyMesh.boneWeights;
+            var paint = new Color[bodyMesh.vertexCount];
+            Color[] sideColour = { new Color(1f, 0.25f, 0.2f), new Color(0.25f, 1f, 0.25f), new Color(0.25f, 0.45f, 1f) };
+            int[] sideOf = bones.Select(b => b != null ? LegSide(b.name) : 0).ToArray();
+            for (int v = 0; v < bw.Length; v++)
+            {
+                var w = bw[v];
+                paint[v] = sideColour[sideOf[w.boneIndex0]] * w.weight0 + sideColour[sideOf[w.boneIndex1]] * w.weight1
+                         + sideColour[sideOf[w.boneIndex2]] * w.weight2 + sideColour[sideOf[w.boneIndex3]] * w.weight3;
+                paint[v].a = 1f;
+            }
+            painted.colors = paint;
+            var paintMaterial = new Material(Shader.Find("Universal Render Pipeline/Particles/Simple Lit")) { hideFlags = HideFlags.DontSave };
+            paintMaterial.SetColor("_BaseColor", Color.white);
+            var paintMaterials = Enumerable.Repeat(paintMaterial, bodyMaterials.Length).ToArray();
+
+            // the base, its body only, placed where its skin lies on hers: its root on her model's root, as RoeNudeBody laid it
+            // (the suit's skin is cut out of this very body - b10: gap 0 mm); its skeleton is NOT hers (b01's spine stands 8 cm
+            // from b10's), so each of its bones moves with her namesake's turn from her bind pose
+            var spec = RoeBurstBuilder.Load(id);
+            var baseGo = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(spec.nude.prefab));
+            var baseBody = baseGo.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r => r.name == spec.nude.renderer);
+            foreach (var r in baseGo.GetComponentsInChildren<Renderer>(true))
+                r.enabled = false;
+            // the prefab carries no materials (the game sets them): hers - the base's body and head submeshes
+            baseBody.sharedMaterials = Enumerable.Range(0, baseBody.sharedMesh.subMeshCount).Select(k => bodyMaterials[Mathf.Min(k, bodyMaterials.Length - 1)]).ToArray();
+            baseBody.forceMatrixRecalculationPerRender = true;
+            baseBody.updateWhenOffscreen = true;
+            var baseBones = baseBody.bones;
+            var baseBind = baseBody.sharedMesh.bindposes;
+            // her bones' bind frames, world, from every skinned renderer she has
+            var bindF = new Dictionary<string, Matrix4x4>();
+            foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null).OrderBy(r => r == body ? 0 : 1))
+            {
+                var bp = smr.sharedMesh.bindposes;
+                for (int b = 0; b < smr.bones.Length && b < bp.Length; b++)
+                    if (smr.bones[b] != null && !bindF.ContainsKey(smr.bones[b].name))
+                        bindF[smr.bones[b].name] = smr.transform.localToWorldMatrix * bp[b].inverse;
+            }
+            var modelRoot = rig.animator.transform;
+            baseGo.transform.SetPositionAndRotation(modelRoot.position, modelRoot.rotation);
+            baseGo.transform.localScale = modelRoot.lossyScale;
+            var P = baseBody.transform.localToWorldMatrix;
+            Debug.Log($"[ROE] hip look {id}: model root {modelRoot.name} scale {modelRoot.lossyScale}, her body's scale {body.transform.lossyScale}, the base body's {baseBody.transform.lossyScale}");
+            var bindB = new Dictionary<string, Matrix4x4>();
+            for (int b = 0; b < baseBones.Length; b++)
+                if (baseBones[b] != null)
+                    bindB[baseBones[b].name] = P * baseBind[b].inverse;
+            // how far apart the two binds stand, bone by bone (they should not)
+            var apart = bindB.Where(kv => bindF.ContainsKey(kv.Key)).Select(kv => (kv.Key, d: Vector3.Distance(kv.Value.GetColumn(3), bindF[kv.Key].GetColumn(3)),
+                                                                                    a: Quaternion.Angle(kv.Value.rotation, bindF[kv.Key].rotation))).OrderByDescending(x => x.d + x.a * 0.001f).ToList();
+            Debug.Log($"[ROE] hip look {id}: base {baseBody.name} {baseBones.Length} bones, {apart.Count} also hers; binds apart at most " +
+                      string.Join(", ", apart.Take(5).Select(x => $"{x.Key} {x.d * 100f:F2} cm {x.a:F1} deg")));
+            // her bones by name: those her renderers are skinned to first (the fighter carries other skeletons with the same
+            // names that do not move), then the rest of her model
+            var fightBones = new Dictionary<string, Transform>();
+            foreach (var x in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true).OrderBy(r => r == body ? 0 : 1).SelectMany(r => r.bones)
+                                 .Concat(rig.animator.GetComponentsInChildren<Transform>(true)))
+                if (x != null && !fightBones.ContainsKey(x.name))
+                    fightBones[x.name] = x;
+            var baseAll = baseGo.GetComponentsInChildren<Transform>(true);
+            var unmatched = baseBones.Where(b => b != null && !fightBones.ContainsKey(b.name)).ToList();
+            Debug.Log($"[ROE] hip look {id}: base bones she lacks ({unmatched.Count}): " + string.Join(", ", unmatched.Select(b => $"{b.name} <- {b.parent?.name}")));
+            // each base vertex's place in her bind pose and the vertex of her body there
+            var baseVerts = baseBody.sharedMesh.vertices;
+            var bodyVerts = bodyMesh.vertices;
+            var cells = new Dictionary<Vector3Int, List<int>>();
+            for (int i = 0; i < baseVerts.Length; i++)
+            {
+                var key = Vector3Int.FloorToInt(P.MultiplyPoint3x4(baseVerts[i]) / 0.002f);
+                if (!cells.TryGetValue(key, out var list))
+                    cells[key] = list = new List<int>();
+                list.Add(i);
+            }
+            var twin = new int[bodyVerts.Length];
+            int found = 0;
+            for (int v = 0; v < bodyVerts.Length; v++)
+            {
+                var q = body.transform.localToWorldMatrix.MultiplyPoint3x4(bodyVerts[v]);
+                var c = Vector3Int.FloorToInt(q / 0.002f);
+                twin[v] = -1;
+                float best = 0.0005f;
+                for (int dx = -1; dx <= 1; dx++)
+                    for (int dy = -1; dy <= 1; dy++)
+                        for (int dz = -1; dz <= 1; dz++)
+                            if (cells.TryGetValue(c + new Vector3Int(dx, dy, dz), out var list))
+                                foreach (int i in list)
+                                {
+                                    float d = Vector3.Distance(P.MultiplyPoint3x4(baseVerts[i]), q);
+                                    if (d < best)
+                                    {
+                                        best = d;
+                                        twin[v] = i;
+                                    }
+                                }
+                if (twin[v] >= 0)
+                    found++;
+            }
+            Debug.Log($"[ROE] hip look {id}: {found} of {bodyVerts.Length} vertices of her body found on the base within 0.5 mm");
+
+            // the base's own limb helpers round the hips she lacks, driven as the ROE PMX export drives them (ripper_tpose
+            // plan_joint_helper_moves + skin_rotation_share + apply_helper_grants): by name (twist / muscle strand), on the
+            // thigh their skin lies on, a share of that thigh's turn against the pelvis - where the skin lies along the thigh,
+            // 0.5 + t / 0.7 clamped, weighted mean - in place on the pelvis.  -roeStrands 0: they follow their parents.
+            bool strandsOn = RoeCapture.Arg("-roeStrands", "1") != "0";
+            var strands = new List<(Transform bone, Transform thigh, float share)>();
+            Transform BaseBone(string n) => baseAll.FirstOrDefault(x => x.name == n);
+            var basePelvis = BaseBone("Bip001 Pelvis");
+            if (strandsOn)
+            {
+                var bbw = baseBody.sharedMesh.boneWeights;
+                foreach (var (b, i) in baseBones.Select((b, i) => (b, i)))
+                {
+                    if (b == null || fightBones.ContainsKey(b.name) || !System.Text.RegularExpressions.Regex.IsMatch(b.name, "twist|muscle strand", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                        continue;
+                    var island = Enumerable.Range(0, bbw.Length).Select(v => (v, w: (bbw[v].boneIndex0 == i ? bbw[v].weight0 : 0f) + (bbw[v].boneIndex1 == i ? bbw[v].weight1 : 0f)
+                                                                                    + (bbw[v].boneIndex2 == i ? bbw[v].weight2 : 0f) + (bbw[v].boneIndex3 == i ? bbw[v].weight3 : 0f)))
+                        .Where(x => x.w > 0.05f).ToList();
+                    if (island.Count == 0)
+                        continue;
+                    var centroid = island.Aggregate(Vector3.zero, (s, x) => s + P.MultiplyPoint3x4(baseVerts[x.v]) * x.w) / island.Sum(x => x.w);
+                    // the nearer thigh, by its segment from hip to knee in the bind pose
+                    (Transform thigh, float t, float d) best = (null, 0f, float.MaxValue);
+                    foreach (var s in new[] { "L", "R" })
+                    {
+                        string thighName = $"Bip001 {s} Thigh", calfName = $"Bip001 {s} Calf";
+                        if (!bindB.ContainsKey(thighName) || !bindB.ContainsKey(calfName))
+                            continue;
+                        Vector3 hip = bindB[thighName].GetColumn(3), knee = bindB[calfName].GetColumn(3), seg = knee - hip;
+                        float t = Vector3.Dot(centroid - hip, seg) / seg.sqrMagnitude;
+                        float d = Vector3.Distance(centroid, hip + seg * Mathf.Clamp01(t));
+                        if (d < best.d)
+                            best = (BaseBone(thighName), t, d);
+                    }
+                    if (best.thigh == null || best.t < -0.5f || best.t > 0.6f || best.d > 0.2f)
+                        continue;
+                    Vector3 h0 = bindB[best.thigh.name].GetColumn(3), k0 = bindB[best.thigh.name.Replace("Thigh", "Calf")].GetColumn(3), sg = k0 - h0;
+                    float share = island.Sum(x => Mathf.Clamp01(0.5f + Vector3.Dot(P.MultiplyPoint3x4(baseVerts[x.v]) - h0, sg) / sg.sqrMagnitude / 0.7f) * x.w) / island.Sum(x => x.w);
+                    // (the PMX export leaves one that takes 97 % or more on the thigh as it is)
+                    if (share < 0.97f)
+                        strands.Add((b, best.thigh, share));
+                    else
+                        Debug.Log($"[ROE] hip look {id}: {b.name} on {best.thigh.name} x{share:F2} - stays on its parent");
+                }
+                Debug.Log($"[ROE] hip look {id}: the base's own hip helpers driven PMX-style: " +
+                          string.Join(", ", strands.Select(s => $"{s.bone.name} on {s.thigh.name} x{s.share:F2}")));
+            }
+
+            var camGo = new GameObject("Hip Camera") { hideFlags = HideFlags.DontSave };
+            var cam = camGo.AddComponent<Camera>();
+            cam.fieldOfView = 34f;
+            cam.nearClipPlane = 0.05f;
+            var a = rig.animator;
+            var bakedF = new Mesh();
+            var bakedB = new Mesh();
+            foreach (float time in times)
+            {
+                rig.Init();
+                rig.Play(clipName, speed, 0f);
+                float t = 0f;
+                const float dt = 1f / 60f;
+                while (t + dt <= time)
+                {
+                    rig.Tick(dt);
+                    t += dt;
+                }
+                // the base's bones: each of hers moves its namesake as it moved from her bind; the rest follow their parents
+                foreach (var tb in baseAll)
+                {
+                    if (!fightBones.TryGetValue(tb.name, out var f) || tb == baseGo.transform)
+                        continue;
+                    var m = bindF.TryGetValue(tb.name, out var bf) && bindB.TryGetValue(tb.name, out var bb)
+                        ? f.localToWorldMatrix * bf.inverse * bb
+                        : f.localToWorldMatrix;
+                    tb.SetPositionAndRotation(m.GetColumn(3), m.rotation);
+                }
+                foreach (var (bone, thigh, share) in strands)
+                {
+                    var dP = basePelvis.localToWorldMatrix * bindB[basePelvis.name].inverse;
+                    var dT = thigh.localToWorldMatrix * bindB[thigh.name].inverse;
+                    var bind = bindB[bone.name];
+                    bone.SetPositionAndRotation(dP.MultiplyPoint3x4(bind.GetColumn(3)), Quaternion.Slerp(dP.rotation, dT.rotation, share) * bind.rotation);
+                }
+                foreach (var name in new[] { "Bip001 Pelvis", "Bip001 L Thigh", "Bip001 L Calf" })
+                {
+                    var tb = baseAll.FirstOrDefault(x => x.name == name);
+                    Debug.Log($"[ROE] hip look {id}: {name} base at {tb?.position} (in its body's bones {System.Array.IndexOf(baseBones, tb)}), hers at {(fightBones.TryGetValue(name, out var f) ? f.position.ToString() : "-")}");
+                }
+                Debug.Log($"[ROE] hip look {id}: base root bone {baseBody.rootBone?.name}, materials {string.Join(", ", baseBody.sharedMaterials.Select(m => m != null ? m.name + " " + m.shader.name : "null"))}; " +
+                          $"animator {baseGo.GetComponentInChildren<Animator>(true)?.name} {baseGo.GetComponentInChildren<Animator>(true)?.hasTransformHierarchy}");
+                // how far her body stands from the base's own skinning, vertex by vertex
+                body.BakeMesh(bakedF, true);
+                baseBody.BakeMesh(bakedB, true);
+                var pf = bakedF.vertices;
+                var pb = bakedB.vertices;
+                Matrix4x4 Rigid(Transform x) => Matrix4x4.TRS(x.position, x.rotation, Vector3.one);
+                var toWorldF = Rigid(body.transform);
+                var toWorldB = Rigid(baseBody.transform);
+                var heat = new Color[pf.Length];
+                var far = new List<float>();
+                for (int v = 0; v < pf.Length; v++)
+                {
+                    if (twin[v] < 0)
+                    {
+                        heat[v] = new Color(0.3f, 0.3f, 0.3f, 1f);
+                        continue;
+                    }
+                    float d = Vector3.Distance(toWorldF.MultiplyPoint3x4(pf[v]), toWorldB.MultiplyPoint3x4(pb[twin[v]]));
+                    far.Add(d);
+                    float k = Mathf.Clamp01(d / 0.04f);
+                    heat[v] = Color.Lerp(Color.white, Color.red, k);
+                    heat[v].a = 1f;
+                }
+                far.Sort();
+                if (far.Count > 0)
+                    Debug.Log($"[ROE] hip look {id} {clipName} t={t:F2}: her body from the base's own skinning: median {far[far.Count / 2] * 100f:F2} cm, " +
+                              $"95% {far[(int)(far.Count * 0.95f)] * 100f:F2} cm, 99% {far[(int)(far.Count * 0.99f)] * 100f:F2} cm, most {far[far.Count - 1] * 100f:F2} cm");
+                var heated = Object.Instantiate(bodyMesh);
+                heated.colors = heat;
+
+                var knees = (a.GetBoneTransform(HumanBodyBones.LeftLowerLeg).position + a.GetBoneTransform(HumanBodyBones.RightLowerLeg).position) * 0.5f;
+                var hips = a.GetBoneTransform(HumanBodyBones.Hips).position;
+                var look = Vector3.Lerp(hips, knees, 0.2f);
+                var fwd = rig.transform.forward;
+                var right = rig.transform.right;
+                foreach (var way in new[] { "fight", "weights", "base", "diff" })
+                {
+                    foreach (var r in all)
+                        r.enabled = way != "base" && shown.Contains(r);
+                    baseBody.enabled = way == "base";
+                    body.sharedMesh = way == "weights" ? painted : way == "diff" ? heated : bodyMesh;
+                    body.sharedMaterials = way == "weights" || way == "diff" ? paintMaterials : bodyMaterials;
+                    foreach (var (view, dir) in new[] { ("right", right), ("front", fwd), ("left", -right), ("back", -fwd) })
+                    {
+                        camGo.transform.position = look + dir * 1.5f + Vector3.up * 0.1f;
+                        camGo.transform.LookAt(look, Vector3.up);
+                        string file = System.IO.Path.Combine(outDir, $"{id}_{clipName}_{t:F2}_{way}_{view}.png");
+                        RoeCapture.Render(cam, 640, 720, file);
+                        RoeCapture.Render(cam, 640, 720, file);
+                    }
+                }
+                body.sharedMesh = bodyMesh;
+                body.sharedMaterials = bodyMaterials;
+                foreach (var r in all)
+                    r.enabled = true;
+                baseBody.enabled = false;
+                Object.DestroyImmediate(heated);
+            }
+            Object.DestroyImmediate(camGo);
+            Object.DestroyImmediate(baseGo);
+            Object.DestroyImmediate(painted);
+            Debug.Log($"[ROE] hip look {id} {clipName}: {times.Length} moments to {outDir}");
+        }
+
+        /// <summary>
+        /// How far each thigh turns from the pelvis in a fighter's clips (user 10-06: "大腿根的权重还是不对呀" - which of her own game
+        /// clips come near the lunge): per clip, every 1/30 s, each thigh's direction in the pelvis' frame (forward, out to its
+        /// side, down; from the bind pose's) and the angle it turned through; the clip's widest moments (most out to the side
+        /// while turned 50+ degrees) and its most turned.  Thighs: the lower twist bones (they follow the thigh's swing).
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.HipScan -roeChar b10 [-roeClips skill_01,skill_02,ax_lunge] [-roeSpeed 1]
+        /// </summary>
+        public static void HipScan()
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "b10");
+            var clipNames = RoeCapture.Arg("-roeClips", "idle_01,idle_02,react_01,react_02,skill_01,skill_02,skill_03,hurt,die,rip,ax_sweep,ax_chop,ax_lunge,ax_slam").Split(',');
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
+            rig.gameObject.SetActive(true);
+            LegRollArg(rig);
+            var body = rig.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r => r.name == "nude body");
+            Matrix4x4 BindOf(string boneName)
+            {
+                int i = System.Array.FindIndex(body.bones, b => b != null && b.name == boneName);
+                return body.transform.localToWorldMatrix * body.sharedMesh.bindposes[i].inverse;
+            }
+            var pelvis = body.bones.First(b => b != null && b.name == "Bip001 Pelvis");
+            var pelvisBind = BindOf("Bip001 Pelvis");
+            var root = rig.animator.transform;
+            // the pelvis' frame at bind: forward and up from her model root, out = to each side
+            Vector3 fwd0 = root.forward, up0 = root.up, right0 = root.right;
+            var legs = new[] { ("L", -1f), ("R", 1f) }.Select(x => (side: x.Item1, sign: x.Item2,
+                bone: body.bones.First(b => b != null && System.Text.RegularExpressions.Regex.IsMatch(b.name, $@"^Bip001 {x.Item1} ?ThighTwist1$")),
+                calf: rig.animator.GetBoneTransform(x.Item1 == "L" ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg))).ToList();
+            // each thigh's roll against the pelvis, as the lower twist bone's drive measures it (thigh axis, pelvis rest)
+            var helperRig = rig.GetComponentInChildren<RoeHelperRig>(true);
+            var rollDrive = legs.ToDictionary(l => l.side, l => helperRig?.drives.FirstOrDefault(d => d.helper == l.bone && d.twistSource != null));
+            float Roll(string side, Transform thigh)
+            {
+                var d = rollDrive[side];
+                return d == null ? 0f : -RoeHelperRig.TwistAngle(Quaternion.Inverse(thigh.rotation) * d.twistSource.rotation * Quaternion.Inverse(d.twistRest), d.twistAxis);
+            }
+            var sb = new System.Text.StringBuilder($"[ROE] hip scan {id}:");
+            foreach (var clipName in clipNames)
+            {
+                rig.Init();
+                float speed = float.Parse(RoeCapture.Arg("-roeSpeed", "1"), inv);
+                float length = rig.Length(clipName) / speed;
+                if (length <= 0f)
+                {
+                    sb.Append($"\n  {clipName}: not hers");
+                    continue;
+                }
+                rig.Play(clipName, speed, 0f);
+                (float t, string side, float angle, Vector3 dir) widest = (0f, "", 0f, Vector3.zero), most = widest;
+                float widestOut = -1f;
+                var rollMin = new Dictionary<string, (float roll, float t)> { { "L", (float.MaxValue, 0f) }, { "R", (float.MaxValue, 0f) } };
+                var rollMax = new Dictionary<string, (float roll, float t)> { { "L", (float.MinValue, 0f) }, { "R", (float.MinValue, 0f) } };
+                const float dt = 1f / 30f;
+                for (float t = 0f; t <= length; t += dt)
+                {
+                    // the pelvis' turn from its bind pose; the thigh's direction (hip -> knee) in the pelvis' bind frame
+                    var dP = (pelvis.localToWorldMatrix * pelvisBind.inverse).rotation;
+                    foreach (var (side, sign, bone, calf) in legs)
+                    {
+                        var thighBone = rig.animator.GetBoneTransform(side == "L" ? HumanBodyBones.LeftUpperLeg : HumanBodyBones.RightUpperLeg);
+                        float roll = Roll(side, thighBone);
+                        if (roll < rollMin[side].roll)
+                            rollMin[side] = (roll, t);
+                        if (roll > rollMax[side].roll)
+                            rollMax[side] = (roll, t);
+                        var dir = Quaternion.Inverse(dP) * (calf.position - bone.position).normalized;
+                        var local = new Vector3(Vector3.Dot(dir, fwd0), Vector3.Dot(dir, right0) * sign, -Vector3.Dot(dir, up0));
+                        float angle = Vector3.Angle(local, Vector3.forward * 0f + new Vector3(0f, 0f, 1f));
+                        // angle from straight down (0, 0, 1 in (forward, out, down))
+                        if (angle > most.angle)
+                            most = (t, side, angle, local);
+                        if (angle >= 50f && local.y > widestOut)
+                        {
+                            widestOut = local.y;
+                            widest = (t, side, angle, local);
+                        }
+                    }
+                    rig.Tick(dt);
+                }
+                string D((float t, string side, float angle, Vector3 dir) x) =>
+                    $"t {x.t:F2} {x.side} thigh {x.angle:F0} deg from down (forward {x.dir.x:F2}, out {x.dir.y:F2}, down {x.dir.z:F2})";
+                sb.Append($"\n  {clipName} ({length:F2} s): most turned {D(most)}; widest {(widestOut >= 0f ? D(widest) : "-")}; " +
+                          $"roll L {rollMin["L"].roll:F0} (t {rollMin["L"].t:F2}) .. {rollMax["L"].roll:F0} (t {rollMax["L"].t:F2}), " +
+                          $"R {rollMin["R"].roll:F0} (t {rollMin["R"].t:F2}) .. {rollMax["R"].roll:F0} (t {rollMax["R"].t:F2})");
+            }
+            Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
+        /// Her body's vertices for a look outside Unity: bind place and posed place (world, at one moment of a clip) and the
+        /// four weights by bone name, to _work/hip_dump/&lt;id&gt;_body.tsv; the joints (each bone's bind and posed head, from
+        /// every skinned renderer she has, and the family base's bind heads placed as RoeNudeBody laid the base) to
+        /// &lt;id&gt;_joints.tsv; her model root's axes at bind to &lt;id&gt;_axes.tsv.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.BodyDump -roeChar b10 -roeClip ax_lunge -roeTimes 0.43 -roeSpeed 1.1
+        /// </summary>
+        public static void BodyDump()
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "b10");
+            string clipName = RoeCapture.Arg("-roeClip", "ax_lunge");
+            float speed = float.Parse(RoeCapture.Arg("-roeSpeed", "1"), inv);
+            float time = float.Parse(RoeCapture.Arg("-roeTimes", "0.43").Split(',')[0], inv);
+            string outDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "_work", "hip_dump");
+            System.IO.Directory.CreateDirectory(outDir);
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
+            rig.gameObject.SetActive(true);
+            LegRollArg(rig);
+            var body = rig.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r => r.name == "nude body");
+            var root = rig.animator.transform;
+            // everything in her model root's frame, so bind and pose compare whatever the root does in the clip
+            Matrix4x4 bindToRoot = root.worldToLocalMatrix * body.transform.localToWorldMatrix;
+            var mesh = body.sharedMesh;
+            var verts = mesh.vertices;
+            var bw = mesh.boneWeights;
+            var bones = body.bones;
+            var joints = new System.Text.StringBuilder("who\tbone\tparent\tbx\tby\tbz\tpx\tpy\tpz\n");
+            var seen = new HashSet<string>();
+            var bindHead = new Dictionary<Transform, Vector3>();
+            foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true).Where(r => r.sharedMesh != null).OrderBy(r => r == body ? 0 : 1))
+            {
+                var bp = smr.sharedMesh.bindposes;
+                var toRoot = root.worldToLocalMatrix * smr.transform.localToWorldMatrix;
+                for (int b = 0; b < smr.bones.Length && b < bp.Length; b++)
+                    if (smr.bones[b] != null && seen.Add(smr.bones[b].name))
+                        bindHead[smr.bones[b]] = toRoot.MultiplyPoint3x4(bp[b].inverse.MultiplyPoint3x4(Vector3.zero));
+            }
+            // the base's bind heads where RoeNudeBody laid the base (its root on her model root)
+            var spec = RoeBurstBuilder.Load(id);
+            var baseGo = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(spec.nude.prefab));
+            baseGo.transform.SetPositionAndRotation(root.position, root.rotation);
+            var baseBody = baseGo.GetComponentsInChildren<SkinnedMeshRenderer>(true).First(r => r.name == spec.nude.renderer);
+            var baseToRoot = root.worldToLocalMatrix * baseBody.transform.localToWorldMatrix;
+            var baseBind = baseBody.sharedMesh.bindposes;
+            for (int b = 0; b < baseBody.bones.Length; b++)
+                if (baseBody.bones[b] != null)
+                {
+                    var h = baseToRoot.MultiplyPoint3x4(baseBind[b].inverse.MultiplyPoint3x4(Vector3.zero));
+                    joints.Append($"base\t{baseBody.bones[b].name}\t{(baseBody.bones[b].parent != null ? baseBody.bones[b].parent.name : "")}\t{h.x.ToString("F4", inv)}\t{h.y.ToString("F4", inv)}\t{h.z.ToString("F4", inv)}\t\t\t\n");
+                }
+            Object.DestroyImmediate(baseGo);
+            var axes = $"right\t{root.InverseTransformDirection(rig.transform.right)}\nforward\t{root.InverseTransformDirection(rig.transform.forward)}\nup\t{root.InverseTransformDirection(Vector3.up)}\n";
+
+            rig.Init();
+            rig.Play(clipName, speed, 0f);
+            float t = 0f;
+            const float dt = 1f / 60f;
+            while (t + dt <= time)
+            {
+                rig.Tick(dt);
+                t += dt;
+            }
+            var baked = new Mesh();
+            body.BakeMesh(baked, true);
+            var posed = baked.vertices;
+            var poseToRoot = root.worldToLocalMatrix * Matrix4x4.TRS(body.transform.position, body.transform.rotation, Vector3.one);
+            foreach (var kv in bindHead)
+            {
+                var p = root.InverseTransformPoint(kv.Key.position);
+                var h = kv.Value;
+                joints.Append($"her\t{kv.Key.name}\t{(kv.Key.parent != null ? kv.Key.parent.name : "")}\t{h.x.ToString("F4", inv)}\t{h.y.ToString("F4", inv)}\t{h.z.ToString("F4", inv)}\t{p.x.ToString("F4", inv)}\t{p.y.ToString("F4", inv)}\t{p.z.ToString("F4", inv)}\n");
+            }
+            // the human bones too (her thighs may carry no skin, so no bind head: their posed head only)
+            foreach (HumanBodyBones hb in new[] { HumanBodyBones.Hips, HumanBodyBones.LeftUpperLeg, HumanBodyBones.RightUpperLeg, HumanBodyBones.LeftLowerLeg, HumanBodyBones.RightLowerLeg, HumanBodyBones.Spine })
+            {
+                var x = rig.animator.GetBoneTransform(hb);
+                var p = root.InverseTransformPoint(x.position);
+                joints.Append($"human\t{x.name}\t{hb}\t\t\t\t{p.x.ToString("F4", inv)}\t{p.y.ToString("F4", inv)}\t{p.z.ToString("F4", inv)}\n");
+            }
+            var sb = new System.Text.StringBuilder("v\tbx\tby\tbz\tpx\tpy\tpz\tb0\tw0\tb1\tw1\tb2\tw2\tb3\tw3\n");
+            string Bn(int i) => i < bones.Length && bones[i] != null ? bones[i].name : "?";
+            for (int v = 0; v < verts.Length; v++)
+            {
+                var b = bindToRoot.MultiplyPoint3x4(verts[v]);
+                var p = poseToRoot.MultiplyPoint3x4(posed[v]);
+                var w = bw[v];
+                sb.Append($"{v}\t{b.x.ToString("F4", inv)}\t{b.y.ToString("F4", inv)}\t{b.z.ToString("F4", inv)}\t{p.x.ToString("F4", inv)}\t{p.y.ToString("F4", inv)}\t{p.z.ToString("F4", inv)}\t" +
+                          $"{Bn(w.boneIndex0)}\t{w.weight0.ToString("F3", inv)}\t{Bn(w.boneIndex1)}\t{w.weight1.ToString("F3", inv)}\t{Bn(w.boneIndex2)}\t{w.weight2.ToString("F3", inv)}\t{Bn(w.boneIndex3)}\t{w.weight3.ToString("F3", inv)}\n");
+            }
+            System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, $"{id}_body.tsv"), sb.ToString());
+            System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, $"{id}_joints.tsv"), joints.ToString());
+            System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, $"{id}_axes.tsv"), axes);
+            // the triangles, to measure stretch
+            System.IO.File.WriteAllText(System.IO.Path.Combine(outDir, $"{id}_tris.txt"), string.Join(" ", mesh.triangles));
+            Debug.Log($"[ROE] body dump {id} {clipName} t={t:F2}: {verts.Length} vertices, {bindHead.Count} bind heads to {outDir}");
+        }
+
+        /// <summary>
+        /// The thigh roots graded several ways (RoeThighRoot), drawn at moments of a clip - tried, not guessed (user 10-06:
+        /// "大腿根的权重还是不对呀").  -roeTry is a "|" list of ways "name" or "name:settings" (RoeThighRoot.Set, e.g.
+        /// "pmx:center=0,blend=0.35"); "now" draws her as the fight does.  Every skinned renderer of hers but the weapons is
+        /// graded (her body and the outfit over it move alike), with the legs of her body.  Two layers: her body alone and
+        /// all of her.  Frames to out/hip_try/&lt;id&gt;_&lt;clip&gt;_&lt;t&gt;_&lt;way&gt;_&lt;layer&gt;_&lt;view&gt;.png; the log says what each way changed.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightProbe.HipTry -roeChar b10 -roeClip ax_lunge -roeTimes 0.43 -roeSpeed 1.1
+        /// </summary>
+        public static void HipTry()
+        {
+            var inv = System.Globalization.CultureInfo.InvariantCulture;
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string id = RoeCapture.Arg("-roeChar", "b10");
+            string clipName = RoeCapture.Arg("-roeClip", "ax_lunge");
+            float speed = float.Parse(RoeCapture.Arg("-roeSpeed", "1"), inv);
+            var times = RoeCapture.Arg("-roeTimes", "0.43").Split(',').Select(s => float.Parse(s, inv)).ToArray();
+            var ways = RoeCapture.Arg("-roeTry", "now|pmx:center=0,blend=0.35|mid:center=0.1,blend=0.25|late:center=0.15,blend=0.15|island:island=1")
+                .Split('|').Select(w => w.Split(new[] { ':' }, 2)).Select(p => (name: p[0], settings: p.Length > 1 ? p[1] : null)).ToList();
+            var views = RoeCapture.Arg("-roeViews", "right,front,left,back").Split(',');
+            var layers = RoeCapture.Arg("-roeLayers", "body,all").Split(',');
+            string outDir = System.IO.Path.Combine(System.IO.Path.GetDirectoryName(Application.dataPath), "out", "hip_try");
+            System.IO.Directory.CreateDirectory(outDir);
+            ShaderUtil.allowAsyncCompilation = false;
+            EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
+            var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
+            rig.gameObject.SetActive(true);
+            LegRollArg(rig);
+            foreach (var other in Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).Where(r => r != rig))
+                other.gameObject.SetActive(false);
+            var hud = Object.FindFirstObjectByType<Canvas>();
+            if (hud != null)
+                hud.gameObject.SetActive(false);
+            var all = rig.GetComponentsInChildren<Renderer>(true).Where(r => r.enabled && r.gameObject.activeInHierarchy).ToList();
+            foreach (var smr in all.OfType<SkinnedMeshRenderer>())
+                smr.forceMatrixRecalculationPerRender = true;
+            var weapons = new HashSet<Renderer>(rig.weaponRenderers ?? new Renderer[0]);
+            var outfit = new HashSet<Renderer>(rig.burst != null ? rig.burst.pieces.Where(p => p.renderer != null).Select(p => (Renderer)p.renderer) : new Renderer[0]);
+            foreach (var r in all.Where(r => r.name.Contains("body2") || r.name.Contains("__stays")))
+                outfit.Add(r);
+            var bodyLayer = all.Where(r => !outfit.Contains(r) && !weapons.Contains(r)).ToList();
+            var body = all.OfType<SkinnedMeshRenderer>().First(r => r.name == "nude body");
+            var a = rig.animator;
+            var hipsBone = a.GetBoneTransform(HumanBodyBones.Hips);
+            string N(Object o) => o != null ? o.name : "-";      // (Unity's missing references are not C# null)
+            var helperRig = rig.GetComponentInChildren<RoeHelperRig>(true);
+            if (helperRig != null)
+                foreach (var d in helperRig.drives.Where(d => d.helper != null && d.helper.name.Contains("ThighTwist")))
+                    Debug.Log($"[ROE] hip try {id}: drive {d.helper.name} <- {N(d.driver)}{(d.driver2 != null ? $" / {d.driver2.name} blend {d.blend:F2}" : "")}, " +
+                              $"twist {N(d.twistSource)} x{d.twistShare:F2} + {d.twistOffset:F1}, back {N(d.twistSource2)} x{d.twistShare2:F2}, at {N(d.positionBone)}, fit {d.fitError:F1} deg");
+
+            // the hip helpers ("helper=1"): one per leg at the hip joint, lying like the pelvis in the bind pose, turned each
+            // frame half way between what the pelvis and the leg's upper twist bone turned from their bind poses
+            var legs = RoeThighRoot.Legs(body, rig.animator.transform);
+            Debug.Log($"[ROE] hip try {id}: legs " + string.Join("; ", legs.Select(l => $"{l.side} hip {l.hip} knee {l.knee} upper {l.upper}")));
+            Matrix4x4 BindOf(string boneName)
+            {
+                int i = System.Array.FindIndex(body.bones, b => b != null && b.name == boneName);
+                return body.transform.localToWorldMatrix * body.sharedMesh.bindposes[i].inverse;
+            }
+            var pelvisBone = body.bones.First(b => b != null && b.name == "Bip001 Pelvis");
+            var pelvisBind = BindOf("Bip001 Pelvis");
+            Vector3 bindUp = rig.animator.transform.up, bindRight = rig.animator.transform.right, bindForward = rig.animator.transform.forward;
+            var hipHelpers = new List<(int side, Transform helper, Transform twist, Matrix4x4 twistBind, Matrix4x4 bind)>();
+            foreach (var leg in legs)
+            {
+                var twist = body.bones.First(b => b != null && b.name == leg.upper);
+                var twistBind = BindOf(leg.upper);
+                var go = new GameObject($"Bip001 {(leg.side == 1 ? "L" : "R")} HipHelper") { hideFlags = HideFlags.DontSave };
+                go.transform.SetParent(rig.transform, true);
+                var bind = Matrix4x4.TRS(twistBind.GetColumn(3), pelvisBind.rotation, Vector3.one);
+                hipHelpers.Add((leg.side, go.transform, twist, twistBind, bind));
+            }
+            void DriveHelpers()
+            {
+                foreach (var (_, helper, twist, twistBind, bind) in hipHelpers)
+                {
+                    var dp = (pelvisBone.localToWorldMatrix * pelvisBind.inverse).rotation;
+                    var dt = (twist.localToWorldMatrix * twistBind.inverse).rotation;
+                    helper.SetPositionAndRotation(twist.position, Quaternion.Slerp(dp, dt, 0.5f) * bind.rotation);
+                }
+            }
+
+            // "roll=k": the upper twist bones follow the thigh but give back k of its roll against the pelvis (Biped's twist
+            // links: the roll spreads down the thigh) - a drive built like the lower twist bone's (same thigh axis, same
+            // pelvis rest), its rest turn in the thigh's frame from the bind poses (the thigh carries no skin: its bind
+            // turn from the lower twist bone's and that one's drive)
+            var rollDrives = new List<(Transform upper, RoeHelperRig.Drive drive)>();
+            if (helperRig != null)
+                foreach (var leg in legs)
+                {
+                    string s = leg.side == 1 ? "L" : "R";
+                    var lowerName = leg.upper + "1";
+                    var d1 = helperRig.drives.FirstOrDefault(d => d.helper != null && d.helper.name == lowerName);
+                    var upper = body.bones.First(b => b != null && b.name == leg.upper);
+                    if (d1 == null || d1.twistSource == null || !body.bones.Any(b => b != null && b.name == lowerName))
+                    {
+                        Debug.Log($"[ROE] hip try {id}: no lower twist drive for {leg.upper} - roll ways leave it as driven");
+                        continue;
+                    }
+                    var thighBind = BindOf(lowerName).rotation * Quaternion.Inverse(d1.rotation) * Quaternion.AngleAxis(-d1.twistOffset, d1.twistAxis);
+                    rollDrives.Add((upper, new RoeHelperRig.Drive
+                    {
+                        helper = upper, driver = d1.driver, rotation = Quaternion.Inverse(thighBind) * BindOf(leg.upper).rotation,
+                        twistAxis = d1.twistAxis, twistSource = d1.twistSource, twistRest = d1.twistRest,
+                    }));
+                    Debug.Log($"[ROE] hip try {id}: roll drive for {leg.upper} from {lowerName}'s ({N(d1.driver)}, axis {d1.twistAxis}, back from {N(d1.twistSource)})");
+                }
+
+            // each way's meshes (and bones, with the hip helpers): every skinned renderer of hers but the weapons and the
+            // rigid pieces, graded with her body's legs
+            var skinned = all.OfType<SkinnedMeshRenderer>().Where(r => !weapons.Contains(r) && r.sharedMesh != null).ToList();
+            var own = skinned.ToDictionary(r => r, r => (mesh: r.sharedMesh, bones: r.bones));
+            var meshes = new Dictionary<string, Dictionary<SkinnedMeshRenderer, (Mesh mesh, Transform[] bones)>>();
+            var rollOf = new Dictionary<string, float>();
+            var driveOf = new HashSet<string>();
+            var spreadOf = new Dictionary<string, (float share, float from)>();
+            var unrollOf = new Dictionary<string, float>();
+            var thighs = new[] { (a.GetBoneTransform(HumanBodyBones.LeftUpperLeg), a.GetBoneTransform(HumanBodyBones.LeftLowerLeg), -1f),
+                                 (a.GetBoneTransform(HumanBodyBones.RightUpperLeg), a.GetBoneTransform(HumanBodyBones.RightLowerLeg), 1f) };
+            foreach (var (name, settings) in ways)
+            {
+                if (settings == null)
+                    continue;
+                RoeThighRoot.Reset();
+                string described = RoeThighRoot.Set(settings);
+                rollOf[name] = RoeThighRoot.RollBack;
+                if (RoeThighRoot.ForceDrive)
+                    driveOf.Add(name);
+                if (RoeThighRoot.Spread < 1f)
+                    spreadOf[name] = (RoeThighRoot.Spread, RoeThighRoot.SpreadFrom);
+                if (RoeThighRoot.Unroll > 0f)
+                    unrollOf[name] = RoeThighRoot.Unroll;
+                if (!RoeThighRoot.GradeOn && !RoeThighRoot.Helper && !RoeThighRoot.ButtOn)
+                {
+                    Debug.Log($"[ROE] hip try {id} {name}: weights as they are, roll given back {RoeThighRoot.RollBack:F2}");
+                    continue;
+                }
+                var set = new Dictionary<SkinnedMeshRenderer, (Mesh, Transform[])>();
+                var notes = new List<string>();
+                foreach (var r in skinned)
+                {
+                    var legsHere = RoeThighRoot.Moved(legs, body, r);
+                    if (r != body && !RoeThighRoot.IsSoft(own[r].mesh, own[r].bones, legsHere, out float soft))
+                    {
+                        if (soft > 0f)
+                            notes.Add($"{r.name}: rigid ({soft:P0} of it round the hips partly on a leg), left alone");
+                        continue;
+                    }
+                    var copy = Object.Instantiate(own[r].mesh);
+                    var bones = own[r].bones;
+                    int n = 0;
+                    var note = new System.Text.StringBuilder();
+                    if (RoeThighRoot.GradeOn)
+                    {
+                        n += RoeThighRoot.Grade(copy, bones, legsHere, out string graded);
+                        note.Append(graded);
+                    }
+                    if (RoeThighRoot.ButtOn)
+                    {
+                        n += RoeThighRoot.Butt(copy, bones, legsHere, out string butt);
+                        note.Append((note.Length > 0 ? ", " : "") + butt);
+                    }
+                    if (RoeThighRoot.Helper)
+                    {
+                        var rootIndex = new Dictionary<int, int>();
+                        var bindposes = copy.bindposes.ToList();
+                        var list = bones.ToList();
+                        foreach (var (side, helper, _, _, bind) in hipHelpers)
+                        {
+                            rootIndex[side] = list.Count;
+                            list.Add(helper);
+                            bindposes.Add(bind.inverse * r.transform.localToWorldMatrix);
+                        }
+                        copy.bindposes = bindposes.ToArray();
+                        int split = RoeThighRoot.Split(copy, list.ToArray(), legsHere, rootIndex, out string hung);
+                        if (split > 0)
+                        {
+                            bones = list.ToArray();
+                            n += split;
+                            note.Append((note.Length > 0 ? ", " : "") + hung);
+                        }
+                        else
+                            copy.bindposes = own[r].mesh.bindposes;
+                    }
+                    if (n > 0)
+                    {
+                        set[r] = (copy, bones);
+                        notes.Add($"{r.name}: {note}");
+                    }
+                    else
+                        Object.DestroyImmediate(copy);
+                }
+                meshes[name] = set;
+                Debug.Log($"[ROE] hip try {id} {name} ({described}): " + string.Join("; ", notes));
+            }
+            RoeThighRoot.Reset();
+
+            var camGo = new GameObject("Hip Camera") { hideFlags = HideFlags.DontSave };
+            var cam = camGo.AddComponent<Camera>();
+            cam.fieldOfView = 34f;
+            cam.nearClipPlane = 0.05f;
+            foreach (float time in times)
+            {
+                rig.Init();
+                rig.Play(clipName, speed, 0f);
+                float t = 0f;
+                const float dt = 1f / 60f;
+                while (t + dt <= time)
+                {
+                    rig.Tick(dt);
+                    t += dt;
+                }
+                Debug.Log($"[ROE] hip try {id} t={t:F2}: thighs turned against the pelvis L {rig.Roll[0].x:F0} -> {rig.Roll[0].y:F0} deg, R {rig.Roll[1].x:F0} -> {rig.Roll[1].y:F0} deg");
+                {
+                    // each thigh's direction in the pelvis' frame: forward (her model root's at bind, turned as the pelvis turned),
+                    // out to its side (hip to hip), down
+                    var dP = (pelvisBone.localToWorldMatrix * pelvisBind.inverse).rotation;
+                    var sbDir = new System.Text.StringBuilder($"[ROE] hip try {id} t={t:F2}: thigh directions in the pelvis' frame");
+                    foreach (var (thigh, calf, sign) in thighs)
+                    {
+                        var other = thighs.First(x => x.Item1 != thigh).Item1;
+                        var sideAxis = (thigh.position - other.position).normalized;
+                        var fwdAxis = (dP * bindForward).normalized;
+                        var downAxis = (dP * -bindUp).normalized;
+                        var dd = (calf.position - thigh.position).normalized;
+                        sbDir.Append($"; {thigh.name}: forward {Vector3.Dot(dd, fwdAxis):F2}, out {Vector3.Dot(dd, sideAxis):F2}, down {Vector3.Dot(dd, downAxis):F2}");
+                    }
+                    Debug.Log(sbDir.ToString());
+                }
+                var asDriven = rollDrives.ToDictionary(x => x.upper, x => x.upper.rotation);
+                foreach (var (upper, drive) in rollDrives)
+                {
+                    foreach (float k in new[] { 0f, 1f })
+                    {
+                        drive.twistShare = k;
+                        Debug.Log($"[ROE] hip try {id} t={t:F2}: {upper.name} as driven is {Quaternion.Angle(asDriven[upper], RoeHelperRig.Rotation(drive)):F0} deg from following the thigh with {(k == 0f ? "all" : "none")} of its roll");
+                    }
+                }
+                DriveHelpers();
+                foreach (var (side, helper, twist, _, _) in hipHelpers)
+                    Debug.Log($"[ROE] hip try {id} t={t:F2}: hip helper {side} {Quaternion.Angle(helper.rotation, pelvisBone.rotation * Quaternion.Inverse(pelvisBind.rotation) * hipHelpers.First(h => h.side == side).bind.rotation):F0} deg off the pelvis, " +
+                              $"{Quaternion.Angle((pelvisBone.localToWorldMatrix * pelvisBind.inverse).rotation, (twist.localToWorldMatrix * hipHelpers.First(h => h.side == side).twistBind.inverse).rotation):F0} deg between the pelvis and the leg");
+                var knees = (a.GetBoneTransform(HumanBodyBones.LeftLowerLeg).position + a.GetBoneTransform(HumanBodyBones.RightLowerLeg).position) * 0.5f;
+                var look = Vector3.Lerp(hipsBone.position, knees, 0.2f);
+                var fwd = rig.transform.forward;
+                var right = rig.transform.right;
+                var dirs = new Dictionary<string, Vector3> { { "right", right }, { "front", fwd }, { "left", -right }, { "back", -fwd } };
+                // every helper as the clip left it (a game clip keys them), to start each way from
+                var keyed = helperRig != null ? helperRig.drives.Where(d => d.helper != null).Select(d => (d.helper, d.helper.position, d.helper.rotation)).ToList()
+                                              : new List<(Transform, Vector3, Quaternion)>();
+                var thighPose = thighs.Select(x => x.Item1.rotation).ToArray();
+                foreach (var (name, _) in ways)
+                {
+                    for (int k = 0; k < thighs.Length; k++)
+                        thighs[k].Item1.rotation = thighPose[k];
+                    foreach (var (h, p, q) in keyed)
+                        h.SetPositionAndRotation(p, q);
+                    // "spread=k": a thigh's swing out to its side past "spreadfrom" degrees from down (in the pelvis' front
+                    // plane) kept at k; its twist bones follow (the helper rig)
+                    // "unroll=k": the thigh (and so the leg below it) turned back about its own axis by k of its roll against
+                    // the pelvis (the lower twist bone's drive measures it: thigh axis, pelvis rest)
+                    bool unroll = unrollOf.TryGetValue(name, out float uk);
+                    if (unroll)
+                    {
+                        foreach (var (_, drive) in rollDrives)
+                        {
+                            var thigh = drive.driver;
+                            float tau = RoeHelperRig.TwistAngle(Quaternion.Inverse(thigh.rotation) * drive.twistSource.rotation * Quaternion.Inverse(drive.twistRest), drive.twistAxis);
+                            thigh.rotation = thigh.rotation * Quaternion.AngleAxis(uk * tau, drive.twistAxis);
+                            Debug.Log($"[ROE] hip try {id} t={t:F2} {name}: {thigh.name} rolled {-tau:F0} deg against the pelvis, {-(1f - uk) * tau:F0} left");
+                        }
+                        helperRig?.Apply(1f);
+                    }
+                    bool spread = spreadOf.TryGetValue(name, out var sp);
+                    if (spread)
+                    {
+                        var dP = (pelvisBone.localToWorldMatrix * pelvisBind.inverse).rotation;
+                        foreach (var (thigh, calf, sign) in thighs)
+                        {
+                            // down and out to this side in the bind pose (her model root's, when the bind frames were read),
+                            // turned as the pelvis turned since
+                            Vector3 down = (dP * -bindUp).normalized, outw = (dP * (bindRight * sign)).normalized;
+                            var d = (calf.position - thigh.position).normalized;
+                            float alpha = Mathf.Atan2(Vector3.Dot(d, outw), Vector3.Dot(d, down)) * Mathf.Rad2Deg;
+                            if (alpha <= sp.from)
+                                continue;
+                            float target = sp.from + (alpha - sp.from) * sp.share;
+                            Vector3 Front(float deg) => down * Mathf.Cos(deg * Mathf.Deg2Rad) + outw * Mathf.Sin(deg * Mathf.Deg2Rad);
+                            thigh.rotation = Quaternion.FromToRotation(Front(alpha), Front(target)) * thigh.rotation;
+                            Debug.Log($"[ROE] hip try {id} t={t:F2} {name}: {thigh.name} out {alpha:F0} -> {target:F0} deg");
+                        }
+                        helperRig?.Apply(1f);
+                    }
+                    // "drive=1": the helper rig drives them as it does under motion capture
+                    if ((driveOf.Contains(name) || spread || unroll) && helperRig != null)
+                    {
+                        helperRig.Apply(1f);
+                        foreach (var (upper, _) in rollDrives)
+                            asDriven[upper] = upper.rotation;
+                    }
+                    else
+                        foreach (var (upper, _) in rollDrives)
+                            asDriven[upper] = keyed.First(x => x.Item1 == upper).Item3;
+                    // the upper twist bones as driven, or giving back part of the roll; then the hip helpers from them
+                    foreach (var (upper, drive) in rollDrives)
+                    {
+                        upper.rotation = asDriven[upper];
+                        if (rollOf.TryGetValue(name, out float k) && k >= 0f)
+                        {
+                            drive.twistShare = k;
+                            upper.rotation = RoeHelperRig.Rotation(drive);
+                        }
+                    }
+                    DriveHelpers();
+                    foreach (var r in skinned)
+                    {
+                        var (m, bones) = meshes.TryGetValue(name, out var set) && set.TryGetValue(r, out var x) ? x : own[r];
+                        r.sharedMesh = m;
+                        r.bones = bones;
+                    }
+                    foreach (var layer in layers)
+                    {
+                        foreach (var r in all)
+                            r.enabled = layer == "all" ? !weapons.Contains(r) : bodyLayer.Contains(r);
+                        foreach (var view in views.Where(dirs.ContainsKey))
+                        {
+                            camGo.transform.position = look + dirs[view] * 1.5f + Vector3.up * 0.1f;
+                            camGo.transform.LookAt(look, Vector3.up);
+                            string file = System.IO.Path.Combine(outDir, $"{id}_{clipName}_{t:F2}_{name}_{layer}_{view}.png");
+                            RoeCapture.Render(cam, 640, 720, file);
+                            RoeCapture.Render(cam, 640, 720, file);
+                        }
+                    }
+                    foreach (var r in all)
+                        r.enabled = true;
+                }
+                foreach (var r in skinned)
+                {
+                    r.sharedMesh = own[r].mesh;
+                    r.bones = own[r].bones;
+                }
+            }
+            Object.DestroyImmediate(camGo);
+            foreach (var h in hipHelpers)
+                Object.DestroyImmediate(h.helper.gameObject);
+            foreach (var set in meshes.Values)
+                foreach (var m in set.Values)
+                    Object.DestroyImmediate(m.mesh);
+            Debug.Log($"[ROE] hip try {id} {clipName}: {times.Length} moments x {ways.Count} ways to {outDir}");
+        }
+
+        /// <summary>
         /// Close views of a fighter's legs at moments of a clip as the fight drives her (motion capture, helper rig, grips): all
         /// of her, her body alone (skin, nude base, head), her outfit alone (the burst's pieces and what stays); from her right,
         /// the front and her left (user 10-06: "卡地亚的膝盖和小腿是不是有问题").  Frames to out/leg_shots/&lt;id&gt;_&lt;clip&gt;_&lt;t&gt;_&lt;layer&gt;_&lt;view&gt;.png;
@@ -749,6 +1695,7 @@ namespace RoeFighter.EditorTools
             EditorSceneManager.OpenScene(RoeFightScene.ScenePath(stage), OpenSceneMode.Single);
             var rig = Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).First(r => r.id == id);
             rig.gameObject.SetActive(true);
+            LegRollArg(rig);
             foreach (var other in Object.FindObjectsByType<FighterRig>(FindObjectsInactive.Include, FindObjectsSortMode.None).Where(r => r != rig))
                 other.gameObject.SetActive(false);
             var hud = Object.FindFirstObjectByType<Canvas>();
@@ -804,6 +1751,46 @@ namespace RoeFighter.EditorTools
                 }
                 if (report.Length > 0)
                     Debug.Log($"[ROE] leg shots {id} {smr.name}:{report}");
+                // how much of the hip each leg twist bone's skin should take, the way the ROE PMX export grades it
+                // (ripper_tpose export_character_model_blender.skin_rotation_share: each vertex projected on the thigh,
+                // 0.5 + t / 0.7 clamped to 0..1, weighted mean)
+                var shares = new System.Text.StringBuilder();
+                for (int b = 0; b < smr.bones.Length; b++)
+                {
+                    var bone = smr.bones[b];
+                    if (bone == null || !System.Text.RegularExpressions.Regex.IsMatch(bone.name, "ThighTwist"))
+                        continue;
+                    bool left = bone.name.Contains(" L") || bone.name.Contains("LThigh");
+                    // the thigh bone itself may carry no skin (b10: the whole thigh is on its two twist bones), so the hip is
+                    // where the upper twist bone starts (on the hip joint) and the knee where the calf does
+                    string upperName = System.Text.RegularExpressions.Regex.Replace(bone.name, @"1$", "");
+                    int ui = System.Array.FindIndex(smr.bones, x => x != null && x.name == upperName);
+                    int li = System.Array.IndexOf(smr.bones, rig.animator.GetBoneTransform(left ? HumanBodyBones.LeftLowerLeg : HumanBodyBones.RightLowerLeg));
+                    if (ui < 0 || li < 0)
+                        continue;
+                    Vector3 hip = binds[ui].inverse.MultiplyPoint3x4(Vector3.zero), knee = binds[li].inverse.MultiplyPoint3x4(Vector3.zero);
+                    var seg = knee - hip;
+                    float taken = 0f, total = 0f;
+                    int n = 0, above = 0;
+                    var verts = mesh.vertices;
+                    for (int v = 0; v < bw.Length; v++)
+                    {
+                        var w = bw[v];
+                        float wt = (w.boneIndex0 == b ? w.weight0 : 0f) + (w.boneIndex1 == b ? w.weight1 : 0f) + (w.boneIndex2 == b ? w.weight2 : 0f) + (w.boneIndex3 == b ? w.weight3 : 0f);
+                        if (wt <= 0.05f)
+                            continue;
+                        float t = Vector3.Dot(verts[v] - hip, seg) / seg.sqrMagnitude;
+                        taken += Mathf.Clamp01(0.5f + t / 0.7f) * wt;
+                        total += wt;
+                        n++;
+                        if (t < 0.15f)
+                            above++;
+                    }
+                    if (n > 0)
+                        shares.Append($" {bone.name}: {n} vertices, share {taken / total:F2}, {above} of them within 0.15 of the hip;");
+                }
+                if (shares.Length > 0)
+                    Debug.Log($"[ROE] leg shots {id} {smr.name} twist shares:{shares}");
             }
             var camGo = new GameObject("Leg Camera") { hideFlags = HideFlags.DontSave };
             var cam = camGo.AddComponent<Camera>();
@@ -834,18 +1821,22 @@ namespace RoeFighter.EditorTools
                 Debug.Log(log.ToString());
                 var knees = (a.GetBoneTransform(HumanBodyBones.LeftLowerLeg).position + a.GetBoneTransform(HumanBodyBones.RightLowerLeg).position) * 0.5f;
                 var hips = a.GetBoneTransform(HumanBodyBones.Hips).position;
-                var look = Vector3.Lerp(knees, hips, 0.25f);
+                // -roeAim hips: the tops of the thighs and the buttocks, closer
+                bool atHips = RoeCapture.Arg("-roeAim", "knees") == "hips";
+                var look = atHips ? Vector3.Lerp(hips, knees, 0.2f) : Vector3.Lerp(knees, hips, 0.25f);
+                float distance = atHips ? 1.5f : 2.2f;
                 var fwd = rig.transform.forward;
                 var right = rig.transform.right;
                 foreach (var (layer, show) in new[] { ("all", all), ("body", body), ("outfit", all.Where(r => outfit.Contains(r)).ToList()) })
                 {
                     foreach (var r in all)
                         r.enabled = show.Contains(r);
-                    foreach (var (view, dir) in new[] { ("right", right), ("front", fwd), ("left", -right) })
+                    foreach (var (view, dir) in atHips ? new[] { ("right", right), ("front", fwd), ("left", -right), ("back", -fwd) }
+                                                       : new[] { ("right", right), ("front", fwd), ("left", -right) })
                     {
-                        camGo.transform.position = look + dir * 2.2f + Vector3.up * 0.25f;
+                        camGo.transform.position = look + dir * distance + Vector3.up * (atHips ? 0.1f : 0.25f);
                         camGo.transform.LookAt(look, Vector3.up);
-                        string file = System.IO.Path.Combine(outDir, $"{id}_{clipName}_{t:F2}_{layer}_{view}.png");
+                        string file = System.IO.Path.Combine(outDir, $"{id}_{clipName}_{t:F2}_{layer}_{view}{(atHips ? "_hips" : "")}.png");
                         RoeCapture.Render(cam, 640, 720, file);
                         RoeCapture.Render(cam, 640, 720, file);
                     }

@@ -11,7 +11,8 @@ import shutil
 import sys
 
 AB = r'D:\Program Files (x86)\Steam\steamapps\common\Rise of Eros\RiseOfEros_Data\StreamingAssets\AssetBundles'
-CACHE = r'D:\roe_exports\_hq_materials'
+# the per-character bundle lists of ripper_tpose's HQ-material cache (D:\roe_exports was deleted 10-06; its lists kept here)
+CACHE = r'E:\game_export\RiseOfEros\_meta\roe_exports_leftovers_20261006\_hq_materials'
 
 
 def patterns(cid):

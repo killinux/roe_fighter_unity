@@ -63,6 +63,21 @@ namespace RoeFighter.Fight
         public TextAsset skillSheetJson;
         public Renderer[] weaponRenderers;           // shown only during skills (a08's sword) - always while she holds them (Holds)
 
+        /// <summary>
+        /// Under motion capture a thigh whose foot is on the floor turns about its own axis against the pelvis (in or out) as
+        /// the clip has it up to rollFrom degrees; past that it keeps rollKeep of the rest (1: all of it), the leg below
+        /// turning with it (rollFoot: where the foot goes then).  Kart's strikes (motion capture on her) turn her planted,
+        /// bent thigh in 45-60 degrees (ax_lunge, ax_chop, ax_slam; her own game clips at most 36): the shin swings out, the
+        /// leg stands like a W and the buttock looks as if it hung down onto the thigh - every weighting tried only moved
+        /// that (user 10-06: "大腿根的权重还是不对呀"; README).  A lifted leg (a kick) keeps its turn.  Set per fighter when
+        /// the scene is built (RoeFightScene -roeLegRoll).
+        /// </summary>
+        public float rollFrom = 15f;
+        public float rollKeep = 1f;
+        public int rollFoot = 0;    // the foot after the turn: 0 where the turned leg puts it, 1 at the clip's height, 2 where the clip put it
+                                    // (2 turns the knee back with it: the leg stands as the clip had it, the thigh's roll is gone
+                                    // but the knee twists - and the W-shaped leg is back)
+
         /// <summary>She holds her weapons in her hands through the basic moves (RoeGrips on her model: a08's greatsword) when
         /// her own strikes are made for it (MotionPack.grip: sword strikes); her weapons then show all the time.</summary>
         public bool Holds => Grips != null && Grips.grips.Length > 0 && strikePack != null && strikePack.grip;
@@ -594,6 +609,7 @@ namespace RoeFighter.Fight
                     w.localScale *= weaponScale;
             StepLinger(dt);
             float mocap = 1f - gameWeight;
+            LimitRoll(mocap);
             // (IgnoreSkirtKeys: the skirt as under motion capture in the game's own clips too, its keys kept to measure against)
             // (a solver over the game's clips too - magica_full - takes their skirt the same way)
             bool overGame = IgnoreSkirtKeys || (backend != null && backend.overGameClips);
@@ -835,6 +851,65 @@ namespace RoeFighter.Fight
 
         /// <summary>The cloth backend in use (and whether the skirt follows the legs).</summary>
         public string ClothTitle => backend == null ? "" : backend.title + (skirtRig != null ? ", skirt follows the legs" : "");
+
+        // ---- a planted thigh turned about its own axis no further than the skin was weighted for (rollFrom, rollKeep)
+
+        /// <summary>The last Tick's turn of each thigh about its axis against the pelvis as the clip had it and as it stands (degrees), for the probes.</summary>
+        public Vector2[] Roll { get; } = new Vector2[2];
+
+        // per leg: a drive of a helper on the thigh that reads its roll against the pelvis (RoeHelperFit: the thigh's axis in
+        // its own frame, the pelvis' rest turn in the thigh's frame) - the same for every helper the thigh drives
+        (Vector3 axis, Quaternion rest)?[] rollRefs;
+
+        void LimitRoll(float mocap)
+        {
+            if (legs == null || helpers == null || hips == null)
+                return;
+            if (rollRefs == null)
+                rollRefs = legs.Select(l =>
+                {
+                    foreach (var d in helpers.drives)
+                        if (d.driver == l.upper)
+                        {
+                            if (d.twistSource == hips)
+                                return ((Vector3 axis, Quaternion rest)?)(d.twistAxis, d.twistRest);
+                            if (d.twistSource2 == hips)
+                                return (d.twistAxis, d.twistRest2);
+                        }
+                    return null;
+                }).ToArray();
+            float lowest = Mathf.Min(legs[0].foot.position.y, legs[1].foot.position.y);
+            for (int i = 0; i < 2; i++)
+            {
+                var r = rollRefs[i];
+                if (r == null)
+                    continue;
+                var l = legs[i];
+                var (axis, rest) = r.Value;
+                float tau = RoeHelperRig.TwistAngle(Quaternion.Inverse(l.upper.rotation) * hips.rotation * Quaternion.Inverse(rest), axis);
+                float roll = -tau;
+                Roll[i] = new Vector2(roll, roll);
+                if (rollKeep >= 1f || mocap <= 0f || !grounded || Mathf.Abs(roll) <= rollFrom)
+                    continue;
+                // a foot off the floor (above the other one's: a kick, a step) keeps its turn
+                float above = l.foot.position.y - lowest;
+                float w = (1f - Mathf.SmoothStep(0f, 1f, Mathf.InverseLerp(0.05f, 0.2f, above))) * mocap;
+                if (w <= 0f)
+                    continue;
+                float held = Mathf.Lerp(roll, Mathf.Sign(roll) * (rollFrom + (Mathf.Abs(roll) - rollFrom) * rollKeep), w);
+                var ankle = l.foot.position;
+                var footRotation = l.foot.rotation;
+                l.upper.rotation = l.upper.rotation * Quaternion.AngleAxis(tau + held, axis);      // its roll is now "held"
+                // the foot: where the turned leg puts it (it stands on the floor by the usual rules after this), at the
+                // clip's height, or back where the clip had it (the knee then turns back with it - and so does the bulge)
+                if (rollFoot == 2)
+                    TwoBoneIK(l.upper, l.lower, l.foot, ankle, transform.forward);
+                else if (rollFoot == 1)
+                    TwoBoneIK(l.upper, l.lower, l.foot, new Vector3(l.foot.position.x, ankle.y, l.foot.position.z), transform.forward);
+                l.foot.rotation = footRotation;
+                Roll[i] = new Vector2(roll, -RoeHelperRig.TwistAngle(Quaternion.Inverse(l.upper.rotation) * hips.rotation * Quaternion.Inverse(rest), axis));
+            }
+        }
 
         // ---- walking: a foot the clip puts down stays where it landed (two-bone IK)
 
