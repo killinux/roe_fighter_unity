@@ -342,6 +342,28 @@ python tools\vdf_rig_sheet.py _work\vdf\rig out\fio005_rig.jpg
     新旧镜头并排 `out/fight_camera_compare.mp4`（[`fight-camera.md`](fight-camera.md)）。
 - 前臂扭转骨的对比特写 `out/fio005_twist.jpg`：左边不驱动、右边按位置分滚转，第一刀的 0.18、0.30、0.45 秒。
 
+### 肘部检查（10-06 晚）
+
+用户 10-06 晚（试玩 exe 时）："fiona模型的肘部是否有问题"。
+
+- **弯多深**（`VdfAnims.ElbowSurvey`：她全部 108 段动作，每 1/30 秒量上臂和前臂的夹角，0 = 伸直）：
+  - 战斗站架左肘（拿盾的手）一直弯 93° 左右，右肘（拿剑）26°；
+  - 四个普通攻击 120–135°；
+  - 最深的是技能和重受击：技能 1 右肘 143°，ActiveSkill05 左肘 150°，从背后的重受击右肘 155°；
+  - 往反方向弯（和站架的弯曲方向相反）的几乎没有：只有 Attack02 右肘 5°。
+- **权重**：源模型（`PCF_005.blend`）每个顶点最多就 4 根骨骼，Unity 按 4 根导入，没有截掉任何权重。
+- **特写**（`VdfAnims.RigStills`，从肘的外侧、正对两根骨所在的平面看，弯曲的轮廓最清楚；左：修正骨不驱动，右：现在的游戏规则）：
+  - `out\fio005_elbow.jpg`：站架、前进、四个攻击、三个技能、倒地、重受击；左肘那几张被盾挡住了；
+  - `out\fio005_elbow_left.jpg`：同样的时刻把盾藏起来（`-roeHide shield`），另加 150° 和 148° 两个最深的左肘、站架和两个攻击的右肘。
+- **结论**：没看出毛病。肘窝的折痕和肘尖都正常，护臂上沿没有插进上臂；游戏规则比不驱动略饱满一点，差别很小。
+  弯到 148–150° 时肘尖会变细一些，这是线性蒙皮本身的样子，游戏用同一套蒙皮和规则，应该也是这样。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.ElbowSurvey -Name fio_elbow_survey      # 日志里每段动作的最深弯曲和可直接用的 -roeShots
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfAnims.RigStills -Graphics -Extra '-roeModes','Off,Game','-roeHide','shield','-roeShots','skill_01@0.47@elbow_r,...','-roeOut','_work\vdf\rig_elbow2'
+python tools\vdf_rig_sheet.py _work\vdf\rig_elbow2 out\fio005_elbow_left.jpg --tile 360
+```
+
 ## 5. 爆衣（10-06）
 
 用户 10-06："fiona的爆衣先做这个吧，对战的是inase"。演示的对手是 Inase（a08）。

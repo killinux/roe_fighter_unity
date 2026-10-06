@@ -13,7 +13,9 @@ FONT = r'C:\Windows\Fonts\msyh.ttc'
 MODES = [('Off', '不驱动（都在绑定姿势）'), ('ByPosition', '上一版：扭转骨按位置分'), ('Game', '游戏的程序化骨骼')]
 JOINTS = {'elbow': '肘', 'knee': '膝', 'forearm': '前臂', 'shoulder': '肩'}
 CLIPS = {'Guard_Counter': '举盾反击', 'Attack01': '转身斩', 'HeavyStander_During': '重装防御架势', 'Attack_Strong04': '踢加斩',
-         'Attack_Strong03': '盾后突刺', 'Cheering_Evy': '胜利欢呼', 'battle_idle': '战斗站架'}
+         'Attack_Strong03': '盾后突刺', 'Cheering_Evy': '胜利欢呼', 'battle_idle': '战斗站架', 'Battle_Idle': '战斗站架',
+         'Walk_Loop': '前进', 'Damage_Strong_Back_Begin': '重受击（从背后）', 'skill_01': '技能 1', 'skill_02': '技能 2',
+         'skill_03': '技能 3', 'die': '被 KO 倒地'}
 
 
 def label(clip, time, joint):

@@ -50,6 +50,7 @@
 | Inase 拿巨剑打普通攻击：ROE 和 UFE 2 都没有现成的拿剑普通攻击，从 Vindictus 的剑招和她自己的技能 1 里挑了四招；剑一直握在右手（握法从她游戏自己的技能动作里量出来），按剑身判定 | 完成（10-06），见"Inase 拿巨剑的普通攻击"一节；13 招候选 `out\a08_sword_candidates.mp4`、`out\a08_sword_candidates_sheet.jpg`，定下的四招 `out\a08_sword_strikes.mp4`、`out\a08_sword_moves_sheet.jpg`、`out\a08_sword_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（对 Fiona）；换招改 `tools/motionpacks/a08_sword.json` |
 | 卡地亚（Kart，b10，红色短夹克）拿斧头打普通攻击：她 10-03 就在战斗里，但以前用拳脚；现在照她游戏的站架，小斧头握在右手、两把枪插在大腿枪套里（枪套被爆衣打掉时枪一起消失），四个普通攻击用斧头；枪还是在技能里自己飞出来开火，和游戏一样 | 完成（10-06），见"卡地亚（Kart，b10）拿斧头打普通攻击"一节；14 招候选 `out\b10_axe_candidates.mp4`，定下的四招 `out\b10_axe_strikes.mp4`、`out\b10_axe_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（对 Inase）；换招改 `tools/motionpacks/b10_axe.json`。大腿根（10-06 晚）：屁股坠到大腿上是这几招把着地的腿往里转了 45–60°（游戏自己最多 36°），限制住了，对比 `out\b10_thigh_root.jpg`、`out\b10_axe_strikes_compare.mp4` |
 | 两个 Luf 的裙子和飘带：四种物理并排比（我们的骨骼布料、Magica Cloth 2 用我们的参数、Magica Cloth 2 用插件预设、关），出招和选人展示动作都录了 | 完成（10-06 晚），见"Luf 的裙子：四种物理对比"一节；结论是两人都留在骨骼布料（不改默认）。对比视频 `out\luf_skirt_front.mp4`、`out\luf_skirt_back.mp4`、`out\luf_showcase.mp4`，静帧 `out\luf_skirt_compare.jpg` |
+| Fiona 的肘部检查：她全部 108 段动作里肘弯多深、有没有反弯，最深的时刻拍肘部特写（修正骨不驱动 / 游戏规则） | 完成（10-06 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)"肘部检查"；没看出毛病。特写 `out\fio005_elbow.jpg`、`out\fio005_elbow_left.jpg`（藏起盾看左肘） |
 
 ## 目录
 

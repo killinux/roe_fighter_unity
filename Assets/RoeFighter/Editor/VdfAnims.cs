@@ -528,6 +528,7 @@ namespace RoeFighter.EditorTools
         /// forearm from the side.  Stills to &lt;out&gt;/rig_&lt;n&gt;_&lt;mode&gt;.png and shots.tsv for tools/vdf_rig_sheet.py.
         ///   -executeMethod RoeFighter.EditorTools.VdfAnims.RigStills -Graphics [-roeVdf fio005] [-roeModes Off,ByPosition,Game]
         ///   [-roeShots clip@seconds@joint,...]  (joint: elbow_l elbow_r knee_l knee_r forearm_l forearm_r shoulder_l shoulder_r)
+        ///   [-roeHide shield,longsword]  (props not drawn; the clip may be a fight clip in clips/ too: skill_01, die, ...)
         /// </summary>
         public static void RigStills()
         {
@@ -548,6 +549,11 @@ namespace RoeFighter.EditorTools
             var ue = go.GetComponent<RoeUeRig>();
             ue?.Build();
             var bones = go.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).ToDictionary(g => g.Key, g => g.First());
+            // -roeHide shield,longsword: props left out of the stills (her left elbow is behind the shield in every clip)
+            var hide = new HashSet<string>(RoeCapture.Arg("-roeHide", "").Split(new[] { ',' }, StringSplitOptions.RemoveEmptyEntries));
+            foreach (var r in go.GetComponentsInChildren<MeshRenderer>(true))
+                if (hide.Contains(r.gameObject.name))
+                    r.enabled = false;
             studio.LightFrom(Vector3.forward);
             studio.SetFocus(0f, 0f, 0f);
             bool warmed = false;
@@ -555,7 +561,8 @@ namespace RoeFighter.EditorTools
             for (int n = 0; n < shots.Length; n++)
             {
                 var parts = shots[n].Split('@');
-                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>($"{ClipDir(id)}/{parts[0]}.anim");
+                var clip = AssetDatabase.LoadAssetAtPath<AnimationClip>($"{ClipDir(id)}/{parts[0]}.anim")
+                           ?? AssetDatabase.LoadAssetAtPath<AnimationClip>($"Assets/VDF/{id}/clips/{parts[0]}.anim");   // the fight's game actions
                 if (clip == null || parts.Length < 3)
                     continue;
                 float time = float.Parse(parts[1], System.Globalization.CultureInfo.InvariantCulture);
@@ -618,6 +625,71 @@ namespace RoeFighter.EditorTools
             RoeCapture.EndPosing();
             Object.DestroyImmediate(go);
             Debug.Log($"[ROE] {id}: rig stills ({string.Join(", ", modes)}) to {outDir}; game rig: {ue?.GameLimbCount} limbs, {ue?.HalfJointCount} finger half joints");
+        }
+
+        /// <summary>
+        /// How her elbows bend in all her clips (the converted moves in ClipDir and the fight's game actions in clips/), every
+        /// 1/30 s: the angle between the upper arm and the forearm (0 = straight), and whether the forearm bends the wrong way
+        /// (against the bend of her battle idle, in the upper arm's frame).  Logs each clip's deepest bend per side and the deepest moments overall as RigStills shots
+        /// (clip@seconds@elbow_x).  User 10-06: "fiona模型的肘部是否有问题".
+        ///   -executeMethod RoeFighter.EditorTools.VdfAnims.ElbowSurvey [-roeVdf fio005] [-roeTop 12] [-roeIdle AS_pc_fiona_battle_idle]
+        /// </summary>
+        public static void ElbowSurvey()
+        {
+            string id = RoeCapture.Arg("-roeVdf", "fio005");
+            int top = int.Parse(RoeCapture.Arg("-roeTop", "12"));
+            var go = (GameObject)PrefabUtility.InstantiatePrefab(AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id)));
+            go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
+            go.GetComponent<RoeUeRig>()?.Build();
+            var bones = go.GetComponentsInChildren<Transform>(true).GroupBy(t => t.name).ToDictionary(g => g.Key, g => g.First());
+            // her clips: the converted moves and the fight's game actions (hurt, die, skills, ...)
+            var clips = new[] { ClipDir(id), $"Assets/VDF/{id}/clips" }.Where(AssetDatabase.IsValidFolder)
+                .SelectMany(dir => AssetDatabase.FindAssets("t:AnimationClip", new[] { dir }))
+                .Select(g => AssetDatabase.LoadAssetAtPath<AnimationClip>(AssetDatabase.GUIDToAssetPath(g)))
+                .Where(c => c != null).Distinct().OrderBy(c => c.name).ToList();
+            var sides = new[] { "l", "r" };
+            // the way an elbow bends: its bend plane's normal in the upper arm's frame, in the battle idle
+            var idle = AssetDatabase.LoadAssetAtPath<AnimationClip>($"{ClipDir(id)}/{RoeCapture.Arg("-roeIdle", "AS_pc_fiona_battle_idle")}.anim");
+            var hinge = new Dictionary<string, Vector3>();
+            if (idle != null)
+            {
+                RoeCapture.Pose(go, idle, 0f);
+                foreach (var s in sides)
+                {
+                    Transform a = bones[$"upperarm_{s}"], b = bones[$"lowerarm_{s}"], c = bones[$"hand_{s}"];
+                    hinge[s] = Quaternion.Inverse(a.rotation) * Vector3.Cross(b.position - a.position, c.position - b.position).normalized;
+                }
+            }
+            var deepest = new List<(string clip, float t, string side, float bend)>();
+            var sb = new StringBuilder($"[ROE] {id}: elbow bend in her {clips.Count} clips, degrees (0 = straight; \"wrong way\" = bent against the battle idle's bend, deepest):");
+            foreach (var clip in clips)
+            {
+                var best = sides.ToDictionary(s => s, s => (t: 0f, bend: 0f));
+                var wrong = sides.ToDictionary(s => s, s => 0f);
+                for (float t = 0f; t <= clip.length + 1e-4f; t += 1f / 30f)
+                {
+                    RoeCapture.Pose(go, clip, Mathf.Min(t, clip.length));
+                    foreach (var s in sides)
+                    {
+                        Transform a = bones[$"upperarm_{s}"], b = bones[$"lowerarm_{s}"], c = bones[$"hand_{s}"];
+                        Vector3 upper = b.position - a.position, fore = c.position - b.position;
+                        float bend = Vector3.Angle(upper, fore);
+                        if (bend > best[s].bend)
+                            best[s] = (t, bend);
+                        if (hinge.TryGetValue(s, out var h) && Vector3.Dot(Vector3.Cross(upper, fore), a.rotation * h) < 0f)
+                            wrong[s] = Mathf.Max(wrong[s], bend);
+                    }
+                }
+                foreach (var s in sides)
+                    deepest.Add((clip.name, best[s].t, s, best[s].bend));
+                sb.Append($"\n[ROE]   {clip.name} ({clip.length:F2} s): left {best["l"].bend:F0} at {best["l"].t:F2} s, right {best["r"].bend:F0} at {best["r"].t:F2} s" +
+                          (wrong.Values.Any(w => w > 5f) ? $"; wrong way left {wrong["l"]:F0}, right {wrong["r"]:F0}" : ""));
+            }
+            sb.Append($"\n[ROE]   deepest: " + string.Join(",", deepest.OrderByDescending(d => d.bend).Take(top)
+                .Select(d => FormattableString.Invariant($"{d.clip}@{d.t:F2}@elbow_{d.side}"))));
+            RoeCapture.EndPosing();
+            Object.DestroyImmediate(go);
+            Debug.Log(sb.ToString());
         }
 
         /// <summary>
