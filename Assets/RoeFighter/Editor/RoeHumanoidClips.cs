@@ -435,6 +435,7 @@ namespace RoeFighter.EditorTools
             foreach (var c in manifest.Chosen())
             {
                 var fighterPrefab = keep ? AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(c.id)) : null;
+                bool rebuilt = fighterPrefab == null;
                 if (fighterPrefab == null)
                     fighterPrefab = RoeHumanoid.BuildFighter(c);    // always rebuilt otherwise: the clips depend on the avatar
                 if (fighterPrefab == null)
@@ -461,6 +462,9 @@ namespace RoeFighter.EditorTools
                 Object.DestroyImmediate(original);
                 Object.DestroyImmediate(worker);
                 Object.DestroyImmediate(player);
+                // her weapon in her hand again (a08's greatsword: RoeWeaponGrip), which the rebuilt prefab lost
+                if (rebuilt && RoeWeaponGrip.HasGameGrips(c.id))
+                    Debug.Log(RoeWeaponGrip.Attach(c.id, picture: false));
             }
             AssetDatabase.SaveAssets();
         }

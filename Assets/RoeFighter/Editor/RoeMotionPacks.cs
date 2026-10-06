@@ -146,6 +146,9 @@ namespace RoeFighter.EditorTools
             public string name, title, source, license, folder;
             public bool humanoid = true;
             public bool strikesOnly;            // a character's own strikes only (no stance or walks; not in the F3 list)
+            public bool grip;                   // strikes with the weapon in her hand: she holds it through the basic moves (a08's sword)
+            public float bladeShare;            // a blade cuts while its tip moves at this share of its fastest or more (0: BladeSpeed
+                                                // only); a08's 1.3 m greatsword passes 5 m/s with any move of the arm
             public string measureOn;            // the fighter the strikes are measured on (reach, when they hit); default a08
             public float walkSpeed, backSpeed;  // m/s; 0: the fight's own (MotionPack)
             public RoeMocap.Source bvh;         // motion capture to convert first (its segments become the clips)
@@ -257,6 +260,7 @@ namespace RoeFighter.EditorTools
             pack.walkSpeed = spec.walkSpeed;
             pack.backSpeed = spec.backSpeed;
             pack.strikesOnly = spec.strikesOnly;
+            pack.grip = spec.grip;
             foreach (var (role, key) in new[] { ("guard", spec.roles.guard), ("walk", spec.roles.walk), ("walk_back", spec.roles.walk_back), ("run", spec.roles.run) })
             {
                 bool backwards = key != null && key.StartsWith("-");
@@ -275,7 +279,8 @@ namespace RoeFighter.EditorTools
                 // the part asked for; measured as it is (reach and timing with its own step), then copied - in place if asked
                 if (s.from > 0f || s.to > 0f)
                     src = Trim(src, s.from, s.to);
-                var info = Measure(src, model, name, s.bone, s.hit != null && s.hit.Length == 2 ? new Vector2(s.hit[0], s.hit[1]) : (Vector2?)null);
+                var info = Measure(src, model, name, s.bone, s.hit != null && s.hit.Length == 2 ? new Vector2(s.hit[0], s.hit[1]) : (Vector2?)null, spec.grip,
+                                   spec.bladeShare);
                 var clip = Copy(src, $"{outDir}/{name}.anim", loop: false, inPlace: s.inPlace);
                 Add(pack, name, clip, false);
                 var d = ButtonDefaults.TryGetValue(s.button, out var v) ? v : ButtonDefaults["B"];
@@ -336,6 +341,8 @@ namespace RoeFighter.EditorTools
                 {
                     float time = clip.length * i / Mathf.Max(1, shots - 1);
                     RoeCapture.Pose(go, clip, time);
+                    if (pack.grip)
+                        go.GetComponent<RoeGrips>()?.Apply(animator);      // her weapon in her hand (a08's greatsword)
                     var hips = animator.GetBoneTransform(HumanBodyBones.Hips).position;
                     // from her front-right, far enough for a kick at full stretch
                     studio.Aim(new Vector3(hips.x, 0.95f, hips.z + 0.35f), Vector3.forward, 55f, 6f, 4.6f, 30f);
@@ -559,16 +566,19 @@ namespace RoeFighter.EditorTools
         /// it is within 85% of that.  window (clip seconds): the source's own active frames - the hand or foot
         /// farthest out within them, and they are when it can hit.
         /// </summary>
-        public static RoeMocap.StrikeInfo Measure(AnimationClip clip, GameObject model, string name, string bone = null, Vector2? window = null)
+        public static RoeMocap.StrikeInfo Measure(AnimationClip clip, GameObject model, string name, string bone = null, Vector2? window = null, bool grip = false,
+                                                  float bladeShare = 0f)
         {
             var go = (GameObject)PrefabUtility.InstantiatePrefab(model);
             go.transform.SetPositionAndRotation(Vector3.zero, Quaternion.identity);
             var animator = go.GetComponent<Animator>();
+            // a weapon held by a grip (a08's greatsword): in her hand only for strikes made for it (MotionPack.grip)
+            var held = go.GetComponent<RoeGrips>();
             var bones = string.IsNullOrEmpty(bone)
                 ? new[] { HumanBodyBones.LeftHand, HumanBodyBones.RightHand, HumanBodyBones.LeftFoot, HumanBodyBones.RightFoot }
                 : new[] { (HumanBodyBones)Enum.Parse(typeof(HumanBodyBones), bone, true) };
             // a blade in the striking hand reaches with its tip
-            var blade = go.GetComponentInChildren<RoeBlade>(true);
+            var blade = held != null && !grip ? null : go.GetComponentInChildren<RoeBlade>(true);
             var bladeHand = blade != null ? blade.hand : (HumanBodyBones?)null;     // (the instance is gone when the window is found)
             int frames = Mathf.Max(2, Mathf.CeilToInt(clip.length * 60f) + 1);
             var reach = new float[bones.Length, frames];
@@ -578,6 +588,8 @@ namespace RoeFighter.EditorTools
             for (int f = 0; f < frames; f++)
             {
                 RoeCapture.Pose(go, clip, Mathf.Min(clip.length, f / 60f));
+                if (held != null && grip)
+                    held.Apply(animator);
                 if (f == 0)
                     hips0 = animator.GetBoneTransform(HumanBodyBones.Hips).position;
                 if (f == frames - 1)
@@ -593,6 +605,18 @@ namespace RoeFighter.EditorTools
             }
             RoeCapture.EndPosing();
             UnityEngine.Object.DestroyImmediate(go);
+            // -roeTips dir: the blade's tip frame by frame (<dir>/<name>_tip.tsv: seconds, metres ahead of the hips' start, to the
+            // side, up, m/s) - to pick a sword strike's "hit" seconds (tools/motionpacks/a08_sword.json)
+            string tipsDir = RoeCapture.Arg("-roeTips", null);
+            if (tipsDir != null && bladeHand.HasValue)
+            {
+                Directory.CreateDirectory(tipsDir);
+                var tsv = new System.Text.StringBuilder("t\tahead\tside\tup\tspeed\n");
+                for (int f = 0; f < frames; f++)
+                    tsv.Append(FormattableString.Invariant(
+                        $"{f / 60f:F3}\t{tips[f].z - hips0.z:F3}\t{tips[f].x - hips0.x:F3}\t{tips[f].y:F3}\t{(f > 0 ? (tips[f] - tips[f - 1]).magnitude * 60f : 0f):F2}\n"));
+                File.WriteAllText(Path.Combine(tipsDir, $"{name}_tip.tsv"), tsv.ToString());
+            }
             // the frames searched: all, or the source's active ones
             int lo = 0, hi = frames - 1;
             if (window.HasValue)
@@ -626,18 +650,19 @@ namespace RoeFighter.EditorTools
             // tests where the blade is, Fighter.ActiveHit) - a spinning cut is far out only for a moment
             if (bladeHand == bones[best] && !window.HasValue)
             {
+                float fastest = 0f;
+                for (int f = 1; f < frames; f++)
+                    fastest = Mathf.Max(fastest, (tips[f] - tips[f - 1]).magnitude * 60f);
+                float cutting = Mathf.Max(BladeSpeed, bladeShare * fastest);
                 int first = -1, last = -1;
                 for (int f = 1; f < frames; f++)
-                    if ((tips[f] - tips[f - 1]).magnitude * 60f >= BladeSpeed)
+                    if ((tips[f] - tips[f - 1]).magnitude * 60f >= cutting)
                     {
                         if (first < 0)
                             first = f;
                         last = f;
                     }
-                float fastest = 0f;
-                for (int f = 1; f < frames; f++)
-                    fastest = Mathf.Max(fastest, (tips[f] - tips[f - 1]).magnitude * 60f);
-                Debug.Log($"[ROE] {name}: blade tip at most {fastest:F1} m/s, cutting {first / 60f:F2}-{last / 60f:F2} s (farthest reach {a / 60f:F2}-{b / 60f:F2} s)");
+                Debug.Log($"[ROE] {name}: blade tip at most {fastest:F1} m/s, cutting (from {cutting:F1} m/s) {first / 60f:F2}-{last / 60f:F2} s (farthest reach {a / 60f:F2}-{b / 60f:F2} s)");
                 if (first >= 0)
                 {
                     a = Mathf.Min(a, first);

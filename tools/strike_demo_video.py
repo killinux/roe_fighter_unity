@@ -1,5 +1,5 @@
 # A video of a fighter doing every strike of a pack, one after the other, from RoeClothDemo.StrikeTakes: each take in
-# real time, then the strike again at half speed.  The label says whose move it is (the pack JSON's "who" / "ufe" / "zh"),
+# real time, then the strike again at half speed.  The label says whose move it is (the pack JSON's "who" / "ufe" or "src" / "zh"),
 # what RoeMotionPacks measured (hand or foot, how far it reaches) and lights up while the strike can hit.
 #   python tools/strike_demo_video.py [takes dir] [out.mp4] [--pack tools/motionpacks/ufe_normals.json] [--id a08] [--slow 2]
 #   python tools/strike_demo_video.py _work\strike_takes out\a08_ufe_normals.mp4
@@ -48,8 +48,10 @@ def main():
         hit0 = press + float(r['hitStart']) / speed
         hit1 = press + float(r['hitEnd']) / speed
         who = s.get('who', '')
-        title = f"{NAMES.get(a.id, a.id)}　{n + 1}/{len(rows)}　{who}：{s.get('zh') or r['strike']}"
-        info = (f"UFE 2 {s.get('ufe', r['strike'])}　×{speed:g}　{BONES.get(r['bone'], r['bone'])}，够到 {float(r['reach']):.2f} 米，"
+        title = f"{NAMES.get(a.id, a.id)}　{n + 1}/{len(rows)}　{who + '：' if who else ''}{s.get('zh') or r['strike']}"
+        # where the move is from: UFE 2's move name, or the pack's own "src" (a08_sword: Vindictus' clip names)
+        origin = f"UFE 2 {s['ufe']}" if 'ufe' in s else s.get('src', r['strike'])
+        info = (f"{origin}　×{speed:g}　{BONES.get(r['bone'], r['bone'])}，够到 {float(r['reach']):.2f} 米，"
                 f"{LEVELS.get(r['level'], r['level'])}" + ('，击倒' if r['knockdown'] == 'True' else ''))
         # real time (every second frame of the 60-a-second take), then the strike again slowly (each frame slow/2 times)
         plan = [(k, '实时') for k in range(0, len(frames), 2)]

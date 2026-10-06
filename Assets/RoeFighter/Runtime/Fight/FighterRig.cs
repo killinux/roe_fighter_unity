@@ -61,7 +61,13 @@ namespace RoeFighter.Fight
         public List<NamedDirector> directors = new List<NamedDirector>();
         public List<NamedSound> sounds = new List<NamedSound>();
         public TextAsset skillSheetJson;
-        public Renderer[] weaponRenderers;           // shown only during skills (a08's sword)
+        public Renderer[] weaponRenderers;           // shown only during skills (a08's sword) - always while she holds them (Holds)
+
+        /// <summary>She holds her weapons in her hands through the basic moves (RoeGrips on her model: a08's greatsword) when
+        /// her own strikes are made for it (MotionPack.grip: sword strikes); her weapons then show all the time.</summary>
+        public bool Holds => Grips != null && Grips.grips.Length > 0 && strikePack != null && strikePack.grip;
+        RoeGrips Grips => grips != null ? grips : grips = animator != null ? animator.GetComponentInChildren<RoeGrips>(true) : null;
+        [NonSerialized] RoeGrips grips;
         public AudioSource audioSource;
         public Transform unitRoot;
         public RoeClothesBurst burst;                // the outfit's pieces that come off (爆衣), on the model; null: none
@@ -714,6 +720,10 @@ namespace RoeFighter.Fight
             }
             // an Unreal body's twist bones (Vindictus: the humanoid does not move them), on the legs' final pose
             ueRig?.DriveTwists();
+            // her weapon in her hand under the motion capture (Holds), before the cloth swings its chain; the game's own
+            // clips key it themselves (thrown, two-handed, the other hand)
+            if (Holds && mocap > 0f)
+                Grips.Apply(animator, mocap);
             // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
             // game's animators key it, then hung on the body (the skin, posed with the helpers above); the
             // cloth swings from there.  On the legs' final pose.
@@ -1217,6 +1227,7 @@ namespace RoeFighter.Fight
 
         public void ShowWeapons(bool show)
         {
+            show |= Holds;
             if (show == weaponsShown || weaponRenderers == null)
                 return;
             foreach (var r in weaponRenderers)
@@ -1227,8 +1238,9 @@ namespace RoeFighter.Fight
 
         public Transform Bone(HumanBodyBones bone) => animator.GetBoneTransform(bone);
 
-        /// <summary>A blade in one of her hands (RoeBlade: Fiona's longsword), or null.</summary>
-        public RoeBlade Blade => blade != null ? blade : blade = animator != null ? animator.GetComponentInChildren<RoeBlade>(true) : null;
+        /// <summary>A blade in one of her hands (RoeBlade: Fiona's longsword; a08's greatsword while she holds it - Holds), or null.</summary>
+        public RoeBlade Blade => (blade != null ? blade : blade = animator != null ? animator.GetComponentInChildren<RoeBlade>(true) : null) is RoeBlade b &&
+                                 (Grips == null || Grips.grips.Length == 0 || Holds) ? b : null;
         [NonSerialized] RoeBlade blade;
 
         public void Sound(string name, float volume = 1f)

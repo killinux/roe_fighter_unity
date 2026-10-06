@@ -47,6 +47,7 @@
 | 身体检查：10 个角色的爆衣、乳摇、身体权重，Inase 的头发和衣服（`RoeBodyCheck`、`RoeClothPlayDemo` 的胸 / 头发视角和读数）；修了 Inase 的胸（Magica 弹簧太软，胸甲滑开） | 完成（10-05），见 [`docs/body-check.md`](docs/body-check.md)；视频 `out\body_check_roe_jiggle.mp4`、`out\body_check_others_jiggle.mp4`、`out\a08_breast_springs.mp4`、`out\a08_hair_check.mp4` |
 | Eve 两套（eve09、eve37）也能爆衣：剑星的裸体 mod 当衣服下面的身体，被衣服盖住的地方等那件掉了再画 | 完成（10-05），见"Eve 也能爆衣"一节；检查图 `out\clothes_burst\unity\eve09_sheet.png`、`eve37_sheet.png`，演示 `out\clothes_burst_demo_eve.mp4` |
 | Fiona（fio005）也能爆衣：衣服下面用游戏自己的素体（以前没导出过），在 Blender 里贴到 PCF_005 的皮肤上；四段掉到全身，高跟鞋留着 | 完成（10-06），见"Fiona 也能爆衣"一节；检查图 `out\clothes_burst\unity\fio005_sheet.png`，演示（对 Inase）`out\clothes_burst_demo_fio005.mp4` |
+| Inase 拿巨剑打普通攻击：ROE 和 UFE 2 都没有现成的拿剑普通攻击，从 Vindictus 的剑招和她自己的技能 1 里挑了四招；剑一直握在右手（握法从她游戏自己的技能动作里量出来），按剑身判定 | 完成（10-06），见"Inase 拿巨剑的普通攻击"一节；13 招候选 `out\a08_sword_candidates.mp4`、`out\a08_sword_candidates_sheet.jpg`，定下的四招 `out\a08_sword_strikes.mp4`、`out\a08_sword_moves_sheet.jpg`、`out\a08_sword_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（对 Fiona）；换招改 `tools/motionpacks/a08_sword.json` |
 
 ## 目录
 
@@ -847,7 +848,7 @@ python tools\strike_demo_video.py _work\strike_takes out\a08_ufe_normals.mp4
 
 用户看完上面的视频说："inase用mecanim bot的动作"。
 
-- 她自己的招式包 `tools/motionpacks/ufe_bot_inase.json`（`strikesOnly`，像 g04 的不知火舞），建场景时默认给 a08（`-roeOwnStrikes` 的默认值加了 `a08=ufe_bot_inase`）。
+- 她自己的招式包 `tools/motionpacks/ufe_bot_inase.json`（`strikesOnly`，像 g04 的不知火舞），建场景时默认给 a08（`-roeOwnStrikes` 的默认值加了 `a08=ufe_bot_inase`）。10-06 起默认换成拿巨剑的四招（下一节），这套还在，换回的写法见下一节。
 - Bot 有 6 个站立普通攻击，按键只有 4 个：
   - A 轻拳：刺拳，0.17 秒，够到 0.55 米；
   - B 中脚：中段前踢，0.80 米；
@@ -863,6 +864,88 @@ python tools\strike_demo_video.py _work\strike_takes out\a08_ufe_normals.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','ufe_bot_inase','-roeChars','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_bot'
 python tools\strike_demo_video.py _work\strike_takes_bot out\a08_bot_strikes.mp4 --pack tools/motionpacks/ufe_bot_inase.json --id a08
+```
+
+#### Inase 拿巨剑的普通攻击（10-06）
+
+用户问："动作有拿巨剑的普通攻击么，给inase拿着长剑的找一些普通攻击，可以看roe中是否有现成的，或者Universal Fighting Engine 2 Source v2.7.0a 里是否有"。
+
+**现成的有没有**：两边都没有。
+
+- ROE 没有普通攻击：每套服装只有站架、三个技能、受击、倒地、躺地（`idle_01/02`、`react_01/02`、`skill_01..03`、`hurt`、`die`、`rip`）。
+- UFE 2 的 3D 演示角色（Kyle、Ethan、Mecanim Bot、Mike）都是空手；Ellen 是 2D 精灵图，没有骨骼。
+- 能用的：Vindictus 里 Fiona 的剑招（单手长剑，右手），加上 Inase 自己技能里的挥砍。
+
+**她的剑**：其实是两把巨剑（各 1.59 米）。
+
+- `wp_a08_l` 的骨骼是 `Point007_L`，带一条 4 节的布料链；`wp_a08_r` 的骨骼是 `Point007_R`。两根都挂在 `Root` 下。
+- 站架 `idle_01` 里两把重合成一把：剑尖拄地，右手握着剑柄末端。
+- 技能 1 第 58–111 帧：`Point007_L` 在右手里，是砍的握法（剑身从拇指一侧伸出）；`Point007_R` 在左手里。
+- 人形模型里这两根骨骼挂在骨盆上，所以以前动捕动作里剑留在原地，只在她游戏自己的动作（技能、开场、胜利）里显示。
+
+**握剑**：`RoeGrips`（运行时组件）每帧把剑的骨骼放进手里：位置 = 手 + 手的旋转 × 偏移，在 `ueRig.DriveTwists` 之后、布料之前。
+
+- 握法从游戏自己的动作数据里量：`tools/roe_grip.py` 读 ripper_tpose 解码的技能 1（第 58–111 帧），剑在右手里最多晃 7.6 厘米 / 3°（剑的骨骼原点在剑尖，离手 1.25 米）。结果在 `tools/roe/a08_grip.json`。
+- 为什么不在 Unity 里量：在导入的骨架上采样同一段站架，右手的朝向和游戏里差几度，到剑尖就差 15 厘米。
+- 两把剑当一把用：`--pair Point007_R=Point007_L --pair-clip <idle_01.json>`，第二把按站架里两把的相对位置跟着第一把。
+- `RoeWeaponGrip.Build` 把握法和剑身（`RoeBlade`：右手，剑身 1.28 米）装到 `a08_fighter.prefab` 上。检查图 `out\weapon_grip\a08_0..2.png`：站架、握上、抬手。
+- 重建 a08 的人形预制体（`ConvertAll` 不带 `-roeKeepPrefab 1`）时会自动重新装。建场景时如果招式要握剑、预制体上却没有握法，会出警告。
+- 只有招式包要握剑时（`MotionPack.grip`）才握着：这时剑一直显示，招式按剑身判定。换回别的招式包，剑还和以前一样只在技能里出现。
+
+**挑招**：13 个候选（`tools/motionpacks/a08_sword_candidates.json`）。
+
+- 候选：Fiona 的连击 1–4、重击 1–4、冲刺重击、格挡反击、霸体反击、终结技，加上 Inase 技能 1 的大挥砍（2.1–3.4 秒）。
+- 都放到 a08 身上，握着她的巨剑，在真实的对战逻辑里拍。
+- 视频 `out\a08_sword_candidates.mp4`：每招先按实际速度放，再半速慢放。
+- 总览图 `out\a08_sword_candidates_sheet.jpg`（`tools/takes_sheet.py`）：按键后每 0.1 秒一格，红条是能打中的时间。
+- 检查图 `out\a08_sword_candidates_moves_sheet.jpg`（`RoeMotionPacks.Sheet` + `tools/strike_sheet.py`）：在影棚里每招从头到尾 8 格，握法照样生效。整段放时最后几格是 Vindictus 收招回站姿，所以定下的招要裁短。
+
+**默认四招**：`tools/motionpacks/a08_sword.json`（`strikesOnly` + `grip`）。时间都是按键之后、按招式的速度算的。
+
+| 键 | 招式 | 出处 | 出手 | 够到 |
+|---|---|---|---|---|
+| A | 斜劈 | Vindictus 连击 2（Attack02） | 0.25 秒 | 2.38 米 |
+| B | 低位横扫 | Vindictus 连击 3（Attack03） | 0.25 秒 | 2.26 米 |
+| C | 举剑砸地 | Vindictus 连击 4（Attack04） | 0.44 秒 | 2.73 米 |
+| D | 大回旋斩（击倒） | Inase 技能 1 | 0.60 秒 | 2.31 米 |
+
+- 挑法：
+  - 不用 Fiona 自己的四招（连击 1、重击 3、格挡反击、重击 4），两人对打时动作不重样；
+  - 格挡反击、霸体反击会跳出原地；
+  - 冲刺重击几乎不挥剑；
+  - 终结技 0.9 秒才出手。
+- 每招裁到挥完、停住的地方（`to`）；Vindictus 的招后面还有 2 秒收招回站姿。
+- 能打中的时间（`hit`）按剑尖定：
+  - 导入时加 `-roeTips <目录>`，每招写出剑尖每帧在身前多远、多高、多快（`<招式名>_tip.tsv`）；
+  - 取剑尖扫过身前的那几帧。
+  - 自动量的不准：1.3 米的剑，手臂随便一动剑尖就超过 5 m/s，从头到尾都算"在砍"。
+- 四招都是中段。C、D 是手动设的（`level`）：自动量取剑尖最远那一帧的高度，砸地那一下剑落在地上会判成下段，回旋斩会判成上段，其实都该站着防。
+- 换招：改这个 JSON（候选里的任何一招，或别的人形动作），重新导入、重建场景。
+- 视频：`out\a08_sword_strikes.mp4`（四招，每招先实速再半速）；电脑对电脑 `out\fight_cpu_match_a08_sword.mp4`（Fiona 对 Inase，120 秒：第一回合时间到 Fiona 赢，第二回合 Inase 把 Fiona KO）。
+- 图：总览图 `out\a08_sword_moves_sheet.jpg`（对战里拍的，按键后每 0.1 秒一格）；检查图 `out\a08_sword_check_sheet.jpg`（影棚里每招 10 格）。
+- 建场景时默认给 a08 这套（`-roeOwnStrikes` 的默认值改成 `a08=a08_sword`）。参数会替换整张表，换回 Mecanim Bot 的拳脚要写全：`-roeOwnStrikes g04=doa6_mai,g05=doa6_mai,a08=ufe_bot_inase`。
+
+```powershell
+python tools\roe_grip.py E:\game_export\RiseOfEros\Inase\vmd\pc_a08_hd\_clips\skill_01.json a08 --frames 58-111 --slack 0.08 --turn 4 --pair Point007_R=Point007_L --pair-clip E:\game_export\RiseOfEros\Inase\vmd\pc_a08_hd\_clips\idle_01.json
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeaponGrip.Build -Graphics -Extra '-roeChars','a08'
+# 候选：导入、拍、视频、总览图
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/a08_sword_candidates.json','-roeTips','E:\code\othercode\roe_fighter_unity\_work\sword_tips'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','a08_sword_candidates','-roeChars','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_sword'
+python tools\strike_demo_video.py _work\strike_takes_sword out\a08_sword_candidates.mp4 --pack tools/motionpacks/a08_sword_candidates.json --id a08
+python tools\takes_sheet.py _work\strike_takes_sword out\a08_sword_candidates_sheet.jpg --pack tools\motionpacks\a08_sword_candidates.json
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','a08_sword_candidates','-roeChars','a08'
+python tools\strike_sheet.py out\motion_sheets\a08_sword_candidates out\a08_sword_candidates_moves_sheet.jpg --pack tools\motionpacks\a08_sword_candidates.json
+# 定下的四招
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/a08_sword.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','a08_sword','-roeChars','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_a08_sword'
+python tools\strike_demo_video.py _work\strike_takes_a08_sword out\a08_sword_strikes.mp4 --pack tools/motionpacks/a08_sword.json --id a08
+python tools\takes_sheet.py _work\strike_takes_a08_sword out\a08_sword_moves_sheet.jpg --pack tools\motionpacks\a08_sword.json --cols 12 --tile 200
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','a08_sword','-roeChars','a08','-roeShots','10'
+python tools\strike_sheet.py out\motion_sheets\a08_sword out\a08_sword_check_sheet.jpg --pack tools\motionpacks\a08_sword.json --cols 10
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','fio005','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_a08_sword'
+python tools\make_video.py _work\fight_a08_sword out\fight_cpu_match_a08_sword.mp4
 ```
 
 ### 爆衣：衣服按件掉，掉完是全身（10-03）

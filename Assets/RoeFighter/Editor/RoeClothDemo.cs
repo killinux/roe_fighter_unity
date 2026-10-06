@@ -181,6 +181,7 @@ namespace RoeFighter.EditorTools
                 one.name = $"{name}_{m.name}";
                 one.title = $"{source.title}: {m.name}";
                 one.strikesOnly = true;
+                one.grip = source.grip;
                 one.clips.Add(new MotionPack.Clip { role = m.clip, clip = source.Get(m.clip), loop = false });
                 var move = JsonUtility.FromJson<Move>(JsonUtility.ToJson(m));
                 move.button = "A";

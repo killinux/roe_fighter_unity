@@ -601,10 +601,17 @@ namespace RoeFighter.EditorTools
             rig.weaponRenderers = model.GetComponentsInChildren<Renderer>(true)
                 .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_"))).ToArray();
             // her own strikes instead of the motion pack's (user 10-03: g04 strikes like Mai Shiranui, from DOA6; 10-05 "inase用
-            // mecanim bot的动作": a08 strikes like UFE 2's Mecanim Bot; -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her
-            // weapon (user 10-03: a smaller fan; -roeWeaponScale g04=0.7)
-            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=ufe_bot_inase").TryGetValue(c.id, out var own))
+            // mecanim bot的动作": a08 strikes like UFE 2's Mecanim Bot - a08=ufe_bot_inase; since 10-06 "给inase拿着长剑的找一些普通
+            // 攻击" her greatsword's, a08_sword; -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her weapon (user 10-03: a
+            // smaller fan; -roeWeaponScale g04=0.7)
+            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=a08_sword").TryGetValue(c.id, out var own))
+            {
                 rig.strikePack = OwnStrikes(own);
+                // strikes with the weapon in her hand need her grip on the fighter prefab (RoeWeaponGrip)
+                if (rig.strikePack != null && rig.strikePack.grip && model.GetComponentInChildren<RoeGrips>(true) == null)
+                    Debug.LogWarning($"[ROE] {c.id}: her strikes ({own}) hold her weapon, but {RoeHumanoid.FighterPath(c.id)} has no RoeGrips - " +
+                                     "run RoeFighter.EditorTools.RoeWeaponGrip.Build");
+            }
             if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
                 rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
             // heels or flat feet (user 10-03: "有的角色是有高跟鞋的，有的角色是没有的，得区分一下"): measured on her own standing
