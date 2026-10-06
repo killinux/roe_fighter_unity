@@ -64,6 +64,12 @@
 现在每块会掉的部件，压在别的部件上的那块 AO 会提到周围的水平（`RoeBurstBuilder.CleanOcclusion`），只改下面那块的材质副本。
 排查过程、数字和新加的检查开关见 README"Eve 也能爆衣"一节。
 
+**10-06 Fiona（fio005）**（用户："fiona的爆衣先做这个吧，对战的是inase"）：
+- 衣服下面用 Vindictus 自己的素体 `SM_Fiona_Body01`：以前没导出过的静态网格，在 Blender 里摆成 PCF_005 的姿势、贴到它自己的皮肤上（`tools\vdf_nude.py`）。
+- 规则表新加：素体几个子网格各自的材质（`nude.submeshes` / `nude.materials`）；衣服条目按材质名选子网格（`material`）。
+- 镂空材质按三角形算挡不挡身体（覆盖的像素 90% 以上不透明才算，`RoeNudeBody.SolidTriangles`）：Vindictus 的衣服全是镂空材质。
+- 做法和数字见 README"Fiona 也能爆衣"一节和 [`vindictus-fiona.md`](vindictus-fiona.md) 第 5 节。
+
 **下一步**（还没定）：
 - 第三步打哪破哪；
 - 烧边；

@@ -50,6 +50,11 @@ namespace RoeFighter.EditorTools
     ///                 most), blended back to its own shape at 4 cm.  The suit's feet were made for its shoes, the base's
     ///                 flat bare feet were not: its toes came out through the shoes and between the straps its ankles
     ///                 were either through them or (left out) missing.
+    ///
+    /// Vindictus' Fiona (10-06): her base is the game's own SM_Fiona_Body01 laid on PCF_005's skin in Blender (tools/vdf_nude.py),
+    /// with two textures - body, and hands and feet: "submeshes" + "materials" in place of "submesh" + "material".  All of her
+    /// outfit is cut out by its alpha, so what hides the body is read per triangle (SolidTriangles: at least 90 % of its texels
+    /// solid): her dress does, the net of her lace cuffs does not.
     /// </summary>
     public static class RoeNudeBody
     {
@@ -163,13 +168,22 @@ namespace RoeFighter.EditorTools
             var target = renderers.FirstOrDefault(r => r.name == n.attachTo);
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(n.prefab);
             var nudeRenderer = prefab != null ? prefab.GetComponentsInChildren<SkinnedMeshRenderer>(true).FirstOrDefault(r => r.name == n.renderer) : null;
-            var material = AssetDatabase.LoadAssetAtPath<Material>(n.material);
-            if (target == null || nudeRenderer == null || nudeRenderer.sharedMesh == null || material == null)
+            // the body's submeshes and their materials: one ("submesh", "material") or several ("submeshes", "materials")
+            var bodySubs = n.submeshes != null && n.submeshes.Length > 0 ? n.submeshes : new[] { n.submesh };
+            var matPaths = n.materials != null && n.materials.Length > 0 ? n.materials : new[] { n.material };
+            var materials = matPaths.Select(p => AssetDatabase.LoadAssetAtPath<Material>(p)).ToArray();
+            bool subsOk = nudeRenderer != null && nudeRenderer.sharedMesh != null && bodySubs.All(s => s >= 0 && s < nudeRenderer.sharedMesh.subMeshCount);
+            if (target == null || nudeRenderer == null || nudeRenderer.sharedMesh == null || !subsOk || materials.Length != bodySubs.Length || materials.Any(m => m == null))
             {
                 Debug.LogWarning($"[ROE] nude body {id}: missing - suit renderer '{n.attachTo}' {(target != null)}, base prefab {n.prefab} {(prefab != null)}, " +
-                                 $"its renderer '{n.renderer}' {(nudeRenderer != null)}, material {n.material} {(material != null)}");
+                                 $"its renderer '{n.renderer}' {(nudeRenderer != null)}, submeshes {string.Join(",", bodySubs)} {subsOk}, " +
+                                 $"materials {string.Join(", ", matPaths.Zip(materials, (p, m) => $"{p} {(m != null)}"))} ({materials.Length} for {bodySubs.Length} submeshes)");
                 return null;
             }
+            var own = nudeRenderer.sharedMaterials;
+            for (int k = 0; k < bodySubs.Length; k++)
+                if (bodySubs[k] < own.Length && own[bodySubs[k]] != null && own[bodySubs[k]].name != materials[k].name)
+                    Debug.LogWarning($"[ROE] nude body {id}: the base's submesh {bodySubs[k]} has {own[bodySubs[k]].name}, the rules put {materials[k].name} on it");
             var mesh = nudeRenderer.sharedMesh;
             Matrix4x4 ToModel(Transform t) => root.worldToLocalMatrix * t.localToWorldMatrix;
             var nudeToModel = prefab.transform.worldToLocalMatrix * nudeRenderer.transform.localToWorldMatrix;
@@ -228,8 +242,7 @@ namespace RoeFighter.EditorTools
                 var r = renderers.FirstOrDefault(x => x.name == s.renderer);
                 if (r == null)
                     continue;
-                var subs = s.submesh >= 0 ? new[] { s.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
-                Add(r, subs.SelectMany(k => r.sharedMesh.GetIndices(k)).Distinct(), true, _ => false);
+                Add(r, RoeBurstBuilder.Subs(s, r).SelectMany(k => r.sharedMesh.GetIndices(k)).Distinct(), true, _ => false);
             }
             var fills = (n.fill ?? new RoeBurstBuilder.Fill[0]).Where(f => f.missingFrom != null && f.missingFrom.Length > 0).ToList();
             foreach (var o in fills.SelectMany(f => f.missingFrom))
@@ -238,11 +251,18 @@ namespace RoeFighter.EditorTools
                 var r = renderers.FirstOrDefault(x => x.name == o.renderer);
                 if (r == null)
                     continue;
-                var subs = o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
-                Add(r, subs.SelectMany(k => r.sharedMesh.GetIndices(k)).Distinct(), true, _ => false);
+                Add(r, RoeBurstBuilder.Subs(o, r).SelectMany(k => r.sharedMesh.GetIndices(k)).Distinct(), true, _ => false);
             }
-            // ---- the body's own vertices (the base's body submesh)
-            var tris = mesh.GetTriangles(n.submesh);
+            // ---- the body's own vertices (the base's body submeshes; triSub: which of them each triangle is from)
+            var triList = new List<int>();
+            var triSub = new List<int>();
+            for (int k = 0; k < bodySubs.Length; k++)
+            {
+                var t = mesh.GetTriangles(bodySubs[k]);
+                triList.AddRange(t);
+                triSub.AddRange(Enumerable.Repeat(k, t.Length / 3));
+            }
+            var tris = triList.ToArray();
             var nv = mesh.vertices;
             var nn0 = mesh.HasVertexAttribute(VertexAttribute.Normal) ? mesh.normals : new Vector3[nv.Length];
             // ---- more of the base where the suit has nothing (Fill): the triangles of another base submesh that the
@@ -267,7 +287,9 @@ namespace RoeFighter.EditorTools
                     }
                     var toModel = ToModel(r.transform);
                     var rv = r.sharedMesh.vertices;
-                    var subs = o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
+                    var subs = RoeBurstBuilder.Subs(o, r);
+                    if (subs.Length == 0)
+                        continue;
                     if (fillMaterial == null)
                         fillMaterial = r.sharedMaterials[Mathf.Clamp(subs[0], 0, r.sharedMaterials.Length - 1)];
                     foreach (int sub in subs)
@@ -338,6 +360,9 @@ namespace RoeFighter.EditorTools
                 var mats = r.sharedMaterials;
                 var subTris = new Dictionary<int, int[]>();
                 int[] Tris(int sub) => subTris.TryGetValue(sub, out var t) ? t : subTris[sub] = r.sharedMesh.GetTriangles(sub);
+                var subSolid = new Dictionary<int, bool[]>();
+                bool[] Solid(int sub) => subSolid.TryGetValue(sub, out var s) ? s
+                    : subSolid[sub] = SolidTriangles(mats[Mathf.Clamp(sub, 0, mats.Length - 1)], r.sharedMesh, sub);
                 foreach (var part in g)
                 {
                     bool forever = part.group == null || part.group.stage <= 0;
@@ -359,11 +384,14 @@ namespace RoeFighter.EditorTools
                                                             // piece (a skirt) does not hide what shows under its hem
                         foreach (var kv in part.triangles)
                         {
-                            if (!Opaque(mats[Mathf.Clamp(kv.Key, 0, mats.Length - 1)]))
+                            var solid = Solid(kv.Key);
+                            if (solid == null)
                                 continue;
                             var t = Tris(kv.Key);
                             foreach (int tri in kv.Value)
                             {
+                                if (!solid[tri])
+                                    continue;
                                 int i0 = t[tri * 3], i1 = t[tri * 3 + 1], i2 = t[tri * 3 + 2];
                                 Vector3 a = toModel.MultiplyPoint3x4(rv[i0]), b = toModel.MultiplyPoint3x4(rv[i1]), c = toModel.MultiplyPoint3x4(rv[i2]);
                                 var fn = Vector3.Cross(b - a, c - a);
@@ -552,6 +580,7 @@ namespace RoeFighter.EditorTools
             // with reveal each with the stage it is drawn from
             var keep = new List<int>();
             var keepStage = new List<int>();
+            var keepSub = new List<int>();          // the body submesh (index into bodySubs) each kept triangle is from
             int dropped = 0;
             for (int t = 0; t + 2 < tris.Length; t += 3)
             {
@@ -567,6 +596,7 @@ namespace RoeFighter.EditorTools
                 keep.Add(b);
                 keep.Add(c);
                 keepStage.Add(stage);
+                keepSub.Add(triSub[t / 3]);
             }
             var keepFill = new List<int>();
             for (int t = 0; t + 2 < fillTris.Count; t += 3)
@@ -640,33 +670,44 @@ namespace RoeFighter.EditorTools
             outMesh.SetBoneWeights(counts, weights);
             counts.Dispose();
             weights.Dispose();
-            var byStage = new Dictionary<int, List<int>>();     // reveal: the triangles drawn from each stage (0: always)
+            // the triangles by stage (reveal: drawn from that stage on; 0 always) and body submesh, as the new mesh numbers them
+            int nb = bodySubs.Length;
+            List<int>[] PerSub() => Enumerable.Range(0, nb).Select(_ => new List<int>()).ToArray();
+            var byStage = new Dictionary<int, List<int>[]>();
+            var bySub = PerSub();
             for (int k = 0; k < keepStage.Count; k++)
             {
-                if (!byStage.TryGetValue(keepStage[k], out var list))
-                    byStage[keepStage[k]] = list = new List<int>();
-                list.Add(map[keep[k * 3]]);
-                list.Add(map[keep[k * 3 + 1]]);
-                list.Add(map[keep[k * 3 + 2]]);
+                if (!byStage.TryGetValue(keepStage[k], out var lists))
+                    byStage[keepStage[k]] = lists = PerSub();
+                for (int c = 0; c < 3; c++)
+                {
+                    lists[keepSub[k]].Add(map[keep[k * 3 + c]]);
+                    bySub[keepSub[k]].Add(map[keep[k * 3 + c]]);
+                }
             }
+            int Count(List<int>[] lists) => lists.Sum(l => l.Count) / 3;
             var fillMapped = keepFill.Select(i => map[i]).ToList();
-            outMesh.subMeshCount = keepFill.Count > 0 ? 2 : 1;
-            outMesh.SetTriangles(keep.Select(i => map[i]).ToArray(), 0, false);
+            outMesh.subMeshCount = nb + (keepFill.Count > 0 ? 1 : 0);
+            for (int k = 0; k < nb; k++)
+                outMesh.SetTriangles(bySub[k].ToArray(), k, false);
             if (keepFill.Count > 0)
-                outMesh.SetTriangles(fillMapped.ToArray(), 1, false);
+                outMesh.SetTriangles(fillMapped.ToArray(), nb, false);
             outMesh.RecalculateBounds();
             Mesh asset;
-            var stageAssets = new Dictionary<int, Mesh>();
+            var stageAssets = new Dictionary<int, (Mesh mesh, Material[] materials)>();
             if (split)
             {
-                // the whole body cut by stage: what is always drawn, then a mesh per stage (the same vertices, weights, bind poses)
-                var always = byStage.TryGetValue(0, out var l0) ? l0 : new List<int>();
-                var lists0 = keepFill.Count > 0 ? new[] { always, fillMapped } : new[] { always };
+                // the whole body cut by stage: what is always drawn (every body submesh, then the fill), then a mesh per stage with
+                // the body submeshes it has triangles of (the same vertices, weights, bind poses)
+                var always = byStage.TryGetValue(0, out var l0) ? l0 : PerSub();
+                var lists0 = keepFill.Count > 0 ? always.Append(fillMapped).ToArray() : always;
                 asset = RoeBurstBuilder.Commit(RoeBurstBuilder.Subset(outMesh, lists0, RoeBurstBuilder.MeshAsset(meshPath)), meshPath);
                 foreach (int s in stagesShown)
                 {
                     string path = $"{dir}/nude_{RoeBurstBuilder.Safe(n.renderer)}_stage{s}.asset";
-                    stageAssets[s] = RoeBurstBuilder.Commit(RoeBurstBuilder.Subset(outMesh, new[] { byStage[s] }, RoeBurstBuilder.MeshAsset(path)), path);
+                    var has = Enumerable.Range(0, nb).Where(k => byStage[s][k].Count > 0).ToArray();
+                    stageAssets[s] = (RoeBurstBuilder.Commit(RoeBurstBuilder.Subset(outMesh, has.Select(k => byStage[s][k]).ToArray(), RoeBurstBuilder.MeshAsset(path)), path),
+                                      has.Select(k => materials[k]).ToArray());
                 }
                 Object.DestroyImmediate(outMesh);
             }
@@ -699,28 +740,29 @@ namespace RoeFighter.EditorTools
                 r.renderingLayerMask = target.renderingLayerMask;
                 return r;
             }
-            var smr = Renderer("nude body", asset, keepFill.Count > 0 ? new[] { material, fillMaterial } : new[] { material });
+            var smr = Renderer("nude body", asset, keepFill.Count > 0 ? materials.Append(fillMaterial).ToArray() : materials);
             var revealNote = new StringBuilder();
             foreach (var kv in stageAssets)
             {
-                var r = Renderer($"nude body (stage {kv.Key})", kv.Value, new[] { material });
+                var r = Renderer($"nude body (stage {kv.Key})", kv.Value.mesh, kv.Value.materials);
                 r.enabled = false;                  // RoeClothesBurst switches it on once that stage is off
-                int count = byStage[kv.Key].Count / 3;
+                int count = Count(byStage[kv.Key]);
                 reveals?.Add(new RoeClothesBurst.Reveal { stage = kv.Key, renderer = r, triangles = count });
                 revealNote.Append($"{(revealNote.Length > 0 ? ", " : "")}{count} after stage {kv.Key}");
             }
 
             skinGap.Sort();
             float Pct(float q) => skinGap.Count > 0 ? skinGap[Mathf.Clamp(Mathf.RoundToInt(q * (skinGap.Count - 1)), 0, skinGap.Count - 1)] * 1000f : -1f;
-            log.Append($"\n[ROE]   nude body from {Path.GetFileName(n.prefab)} {n.renderer}[{n.submesh}]: {used.Count} vertices, " +
+            log.Append($"\n[ROE]   nude body from {Path.GetFileName(n.prefab)} {n.renderer}[{string.Join(",", bodySubs)}]: {used.Count} vertices, " +
                        $"{fromSkin} take the suit's skin (gap median {Pct(0.5f):F2} mm, p95 {Pct(0.95f):F2} mm), {fromOutfit} the outfit over them, " +
                        (fromRound > 0 ? $"{fromRound} the skin round a piece that follows the body, " : "") +
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
                        $"outfit pieces on the body {tightParts}, hanging away {looseParts}; " +
-                       $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material {material.name} ({material.shader.name})" +
+                       $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material{(nb > 1 ? "s" : "")} " +
+                       string.Join(", ", materials.Select(m => $"{m.name} ({m.shader.name})")) +
                        (place != null ? $"; placed by its bones: {placeNote}" : "") +
                        (n.fit ? $"; fit: {fitNote}" : "") +
-                       (n.reveal ? $"; reveal: {(byStage.TryGetValue(0, out var shown0) ? shown0.Count / 3 : 0)} triangles always drawn, " +
+                       (n.reveal ? $"; reveal: {(byStage.TryGetValue(0, out var shown0) ? Count(shown0) : 0)} triangles always drawn, " +
                                    (revealNote.Length > 0 ? revealNote.ToString() : "nothing covered") +
                                    $" ({cover.Count} opaque triangles on the body; the suit's skin shows at {skinShown} points, {skinHidden} under pieces; " +
                                    $"{outside} vertices under none and off the skin that shows wait for the pieces round them)" : "") +
@@ -747,8 +789,7 @@ namespace RoeFighter.EditorTools
                 var toModel = ToModelOf(r.transform);
                 var v = r.sharedMesh.vertices;
                 var vn = r.sharedMesh.normals;
-                var subs = s.submesh >= 0 ? new[] { s.submesh } : Enumerable.Range(0, r.sharedMesh.subMeshCount).ToArray();
-                foreach (int sub in subs)
+                foreach (int sub in RoeBurstBuilder.Subs(s, r))
                 {
                     var t = r.sharedMesh.GetTriangles(sub);
                     for (int k = 0; k + 2 < t.Length; k += 3)
@@ -808,9 +849,110 @@ namespace RoeFighter.EditorTools
                    $"{FitReach * 100f:F0} cm (left as they are); moved at most {moved * 100f:F1} cm";
         }
 
-        /// <summary>A material that hides what is behind it (lace cut out by its alpha and see-through plastic do not).</summary>
-        internal static bool Opaque(Material m) => m != null && !(m.HasProperty("_Surface") && m.GetFloat("_Surface") > 0.5f) &&
-                                          !(m.HasProperty("_AlphaClip") && m.GetFloat("_AlphaClip") > 0.5f);
+        /// <summary>
+        /// Which triangles of a submesh hide what is behind them: none of a blended material (see-through plastic), all of an
+        /// opaque one; of one cut out by its alpha, those with at least SolidShare of their texels at or over its cutoff (the
+        /// albedo's alpha times the colour's) - lace is full of holes (Eve's), but Vindictus cuts out all of an outfit: Fiona's
+        /// PCF_005 dress, cuffs, shoes and tiara are one "pbr cutout" material each, the dress solid, its hem and the cuffs lace.
+        /// A triangle smaller than a texel is read at its centre.  Null: none of them.
+        /// </summary>
+        internal static bool[] SolidTriangles(Material m, Mesh mesh, int sub)
+        {
+            if (m == null || (m.HasProperty("_Surface") && m.GetFloat("_Surface") > 0.5f))
+                return null;
+            var tris = mesh.GetTriangles(sub);
+            var solid = new bool[tris.Length / 3];
+            bool clip = m.HasProperty("_AlphaClip") && m.GetFloat("_AlphaClip") > 0.5f;
+            if (!clip)
+            {
+                for (int k = 0; k < solid.Length; k++)
+                    solid[k] = true;
+                return solid;
+            }
+            float cutoff = m.HasProperty("_Cutoff") ? m.GetFloat("_Cutoff") : 0.5f;
+            float tint = m.HasProperty("_BaseColor") ? m.GetColor("_BaseColor").a : 1f;
+            var map = m.HasProperty("_BaseMap") ? m.GetTexture("_BaseMap") as Texture2D : null;
+            var alpha = map != null ? Alpha(map) : null;
+            var uv = mesh.uv;
+            if (alpha == null || uv.Length != mesh.vertexCount)
+            {
+                for (int k = 0; k < solid.Length; k++)
+                    solid[k] = tint >= cutoff;
+                return solid;
+            }
+            var (a8, w, h) = alpha.Value;
+            // a texel is solid when its alpha times the colour's reaches the cutoff
+            int cut = tint > 0f ? Mathf.CeilToInt(cutoff / tint * 255f - 1e-3f) : 256;
+            bool At(float x, float y)
+            {
+                int ix = Mathf.Clamp(Mathf.FloorToInt(x), 0, w - 1), iy = Mathf.Clamp(Mathf.FloorToInt(y), 0, h - 1);
+                return a8[iy * w + ix] >= cut;
+            }
+            for (int k = 0; k < solid.Length; k++)
+            {
+                Vector2 a = uv[tris[k * 3]], b = uv[tris[k * 3 + 1]], c = uv[tris[k * 3 + 2]];
+                var tile = new Vector2(Mathf.Floor((a.x + b.x + c.x) / 3f), Mathf.Floor((a.y + b.y + c.y) / 3f));
+                a = Vector2.Scale(a - tile, new Vector2(w, h));
+                b = Vector2.Scale(b - tile, new Vector2(w, h));
+                c = Vector2.Scale(c - tile, new Vector2(w, h));
+                float area = (b.x - a.x) * (c.y - a.y) - (c.x - a.x) * (b.y - a.y);
+                int all = 0, on = 0;
+                if (Mathf.Abs(area) > 1e-6f)
+                {
+                    int x0 = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(a.x, Mathf.Min(b.x, c.x)))), x1 = Mathf.Min(w - 1, Mathf.CeilToInt(Mathf.Max(a.x, Mathf.Max(b.x, c.x))));
+                    int y0 = Mathf.Max(0, Mathf.FloorToInt(Mathf.Min(a.y, Mathf.Min(b.y, c.y)))), y1 = Mathf.Min(h - 1, Mathf.CeilToInt(Mathf.Max(a.y, Mathf.Max(b.y, c.y))));
+                    for (int y = y0; y <= y1; y++)
+                        for (int x = x0; x <= x1; x++)
+                        {
+                            float px = x + 0.5f, py = y + 0.5f;
+                            float w0 = ((b.x - px) * (c.y - py) - (c.x - px) * (b.y - py)) / area;
+                            float w1 = ((c.x - px) * (a.y - py) - (a.x - px) * (c.y - py)) / area;
+                            if (w0 < -1e-4f || w1 < -1e-4f || 1f - w0 - w1 < -1e-4f)
+                                continue;
+                            all++;
+                            if (a8[y * w + x] >= cut)
+                                on++;
+                        }
+                }
+                solid[k] = all > 0 ? on >= SolidShare * all : At((a.x + b.x + c.x) / 3f, (a.y + b.y + c.y) / 3f);
+            }
+            return solid;
+        }
+
+        const float SolidShare = 0.9f;      // SolidTriangles: a cut-out triangle hides what is behind it with this share of its texels solid
+
+        static readonly Dictionary<string, (DateTime stamp, (byte[] a, int w, int h) alpha)> alphas = new Dictionary<string, (DateTime, (byte[], int, int))>();
+
+        /// <summary>A texture's alpha as its file has it (png or jpg; cached by path and file time), null if unreadable.</summary>
+        static (byte[] a, int w, int h)? Alpha(Texture2D tex)
+        {
+            string path = AssetDatabase.GetAssetPath(tex);
+            if (string.IsNullOrEmpty(path))
+                return null;
+            string full = Path.Combine(Path.GetDirectoryName(Application.dataPath), path);
+            if (!File.Exists(full))
+                return null;
+            var stamp = File.GetLastWriteTimeUtc(full);
+            if (alphas.TryGetValue(path, out var hit) && hit.stamp == stamp)
+                return hit.alpha;
+            var img = new Texture2D(2, 2, TextureFormat.RGBA32, false, true);
+            try
+            {
+                if (!img.LoadImage(File.ReadAllBytes(full)))
+                    return null;
+                var px = img.GetPixels32();
+                var a = new byte[px.Length];
+                for (int i = 0; i < px.Length; i++)
+                    a[i] = px[i].a;
+                var entry = (a, img.width, img.height);
+                alphas[path] = (stamp, entry);
+                return entry;
+            }
+            finally
+            {
+                Object.DestroyImmediate(img);
+            }
+        }
 
         /// <summary>
         /// Per vertex of the base, the matrix (model space to model space) that carries it from the base's bind pose to the

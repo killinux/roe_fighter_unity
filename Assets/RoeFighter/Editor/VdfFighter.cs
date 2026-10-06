@@ -60,6 +60,23 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>
+        /// A model that is no fighter, only its maps, materials and import settings (BuildMaterials): Fiona's nude base for the
+        /// clothes burst, Assets/VDF/fio_nude - the game's own base body (SM_Fiona_Body01) fitted onto PCF_005 by tools/vdf_nude.py,
+        /// then tools/vdf_fbx.py and vdf_textures.py - which Editor/Burst/fio005.json puts under her outfit (RoeNudeBody).
+        ///   -executeMethod RoeFighter.EditorTools.VdfFighter.BuildBase [-roeVdf fio_nude]
+        /// </summary>
+        public static void BuildBase()
+        {
+            foreach (var raw in RoeCapture.Arg("-roeVdf", "fio_nude").Split(','))
+            {
+                string id = raw.Trim();
+                var model = BuildMaterials(id, Dir(id), out int made, out int set);
+                Debug.Log($"[ROE] {id}: base model {(model != null ? AssetDatabase.GetAssetPath(model) : "FAILED")}, {made} materials, {set} texture importers set");
+            }
+            AssetDatabase.SaveAssets();
+        }
+
+        /// <summary>
         /// A character exported from an Unreal game (tools/vdf_fbx.py + vdf_textures.py, tools/sb_fbx.py + sb_textures.py):
         /// &lt;dir&gt;/unity.json's maps and materials (URP Lit, with emission when it has an emission map) on &lt;dir&gt;/&lt;fbx&gt;, the
         /// Generic prefab and the humanoid fighter saved (DoaFighter.SavePrefabs).  Returns the fighter prefab (null: failed).

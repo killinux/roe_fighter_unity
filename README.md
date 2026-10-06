@@ -46,6 +46,7 @@
 | Inase 完全用 Magica Cloth 2（`magica_full`）：所有部件用插件自带的预设，技能里也由它来动；装了插件时她在游戏里默认就用它（F4 可切换） | 完成（10-05），见 [`docs/inase-skirt.md`](docs/inase-skirt.md) 第 6 节；对比视频 `out\a08_magica_full_front.mp4`、`out\a08_magica_full_backright.mp4` |
 | 身体检查：10 个角色的爆衣、乳摇、身体权重，Inase 的头发和衣服（`RoeBodyCheck`、`RoeClothPlayDemo` 的胸 / 头发视角和读数）；修了 Inase 的胸（Magica 弹簧太软，胸甲滑开） | 完成（10-05），见 [`docs/body-check.md`](docs/body-check.md)；视频 `out\body_check_roe_jiggle.mp4`、`out\body_check_others_jiggle.mp4`、`out\a08_breast_springs.mp4`、`out\a08_hair_check.mp4` |
 | Eve 两套（eve09、eve37）也能爆衣：剑星的裸体 mod 当衣服下面的身体，被衣服盖住的地方等那件掉了再画 | 完成（10-05），见"Eve 也能爆衣"一节；检查图 `out\clothes_burst\unity\eve09_sheet.png`、`eve37_sheet.png`，演示 `out\clothes_burst_demo_eve.mp4` |
+| Fiona（fio005）也能爆衣：衣服下面用游戏自己的素体（以前没导出过），在 Blender 里贴到 PCF_005 的皮肤上；四段掉到全身，高跟鞋留着 | 完成（10-06），见"Fiona 也能爆衣"一节；检查图 `out\clothes_burst\unity\fio005_sheet.png`，演示（对 Inase）`out\clothes_burst_demo_fio005.mp4` |
 
 ## 目录
 
@@ -1059,6 +1060,49 @@ python tools\burst_video.py                                                     
 - 现在腿用的是底模的皮肤，穿着衣服时也是正常的腿。
 
 演示 `out\clothes_burst_demo_eve.mp4`：做法和上面"爆衣"一节的演示一样，对手先走近放超必杀，然后打到 KO，打两局。
+
+### Fiona 也能爆衣（10-06）
+
+用户 10-06："fiona的爆衣先做这个吧，对战的是inase"。Fiona 是 Vindictus 的白羽礼服（PCF_005，`fio005`），演示的对手是 Inase（a08）。
+全部细节、数字和一路上看到的问题见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md) 第 5 节。
+
+**衣服下面的身体：游戏自己的素体**
+- PCF_005 的皮肤在衣服下面都删了；别的服装也补不全（没有一套露出乳头）。
+- 游戏里有一个完整的素体 `SM_Fiona_Body01`，是静态网格，以前的导出清单只认骨骼网格，所以没导出过。
+  `tools\vdf_nude_export.ps1` 用 UE Viewer 导出（密钥只经临时文件传，用完删除）。
+- `tools\vdf_nude.py`（Blender）把它摆成 PCF_005 的姿势、贴到 PCF_005 自己的皮肤上：和它的皮肤中位差 0.3 mm。
+  脖子缝到脸部护领下沿，和护领齐平；肤色加上脸的色调，接缝两侧颜色一样；护领下沿的法线渐变到 PCF_005 皮肤的，接缝不显。
+- `tools\vdf_fbx.py`、`vdf_textures.py` 导出到 `Assets\VDF\fio_nude`（不入库），`VdfFighter.BuildBase` 建材质。
+
+**爆衣系统新加的**（通用，别的角色也能用）：
+- 素体可以有几个子网格、各自的材质：规则表 `nude` 里写 `submeshes` + `materials`。Fiona 的身体和手脚是两张贴图。
+- 衣服条目可以按材质名选子网格（`material`，正则），不写编号：FBX 导进来以后子网格的顺序不一定和 Blender 里一样。
+- 镂空衣服挡不挡身体按三角形看（`RoeNudeBody.SolidTriangles`）：三角形覆盖的贴图像素 90% 以上不透明才算挡。
+  Vindictus 的衣服全是镂空材质，以前一律算不挡；现在礼服主体算挡，蕾丝护腕的网眼不算（身体从网眼里看得见）。
+  - 对 Eve 的影响：两套的身体什么时候画，和以前完全一样。eve09 蕾丝上实心的花纹现在也算"压在下面那块上"，
+    蕾丝掉了以后，花纹烘在紧身衣和金属甲片上的影子也提亮（紧身衣多 285 个三角形，甲片多 262 个）。
+
+分段（`Assets\RoeFighter\Editor\Burst\fio005.json`）：
+
+| 第一段 | 第二段 | 第三段 | 第四段 | 一直留着 |
+|---|---|---|---|---|
+| 羽毛头饰、上臂的羽饰：14,282 个三角形 | 蕾丝护腕（连臂环、手链、戒指）、背后的羽饰：17,706 个 | 裙子：5,860 个 | 上衣（连下面的连体裤）：11,621 个 | 高跟鞋 |
+
+- 礼服的后背就是那一片羽饰，所以第二段掉了以后后背全露。
+- 检查图 `out\clothes_burst\unity\fio005_sheet.png`：穿着时和拆之前比 7.7% 的像素不一样，是全身皮肤换成了素体的贴图（腿比原来稍亮：PCF_005 的腿调得更深）。
+- 演示 `out\clothes_burst_demo_fio005.mp4`：和 Eve 的一样，对手先走近放超必杀，然后打到 KO，打两局。
+
+```powershell
+& "D:\Program Files\blender-3.6.15-windows-x64\blender.exe" -b --factory-startup E:\game_export\Vindictus\Fiona\blend\Fiona_BaseBody\Fiona_BaseBody.blend --python tools\vdf_nude.py -- <输出目录>
+& "D:\Program Files\blender-3.6.15-windows-x64\blender.exe" -b --factory-startup <输出目录>\fio_nude.blend --python tools\vdf_fbx.py -- Assets\VDF\fio_nude fio_nude
+python tools\vdf_textures.py Assets\VDF\fio_nude
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.VdfFighter.BuildBase -Extra '-roeVdf','fio_nude'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','fio005','-roeFaces','1'
+python tools\burst_sheet.py --chars fio005
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','fio005','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_fio005'
+python tools\burst_video.py _work\burst_demo_fio005 out\clothes_burst_demo_fio005.mp4
+```
 
 ### 不知火舞的普通攻击（g04 自己的四招，10-03）
 

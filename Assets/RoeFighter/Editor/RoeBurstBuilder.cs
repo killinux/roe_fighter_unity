@@ -56,6 +56,8 @@ namespace RoeFighter.EditorTools
             public string prefab, renderer;         // the nude base and its body renderer
             public int submesh;                     // the body (the base's other submeshes are the head, eyes, lashes)
             public string material;
+            public int[] submeshes;                 // or several, each with its material (materials, in the same order): Fiona's
+            public string[] materials;              // body and her hands and feet are two textures
             public string attachTo;                 // the suit renderer it goes next to (its space, bones and settings)
             public Outfit[] replace;                // the suit's skin it replaces (renderer + submesh)
             public Fill[] fill;                     // more of the base where the suit has nothing (the neck under a collar)
@@ -84,6 +86,20 @@ namespace RoeFighter.EditorTools
         {
             public string renderer;
             public int submesh = -1;
+            public string material;                 // or the submeshes whose material's name matches (regex): an FBX keeps its own
+                                                    // submesh order, the names stay
+        }
+
+        /// <summary>The submeshes of r an outfit entry names: by material when it has one, else its submesh, else all.</summary>
+        internal static int[] Subs(Outfit o, SkinnedMeshRenderer r)
+        {
+            int count = r.sharedMesh.subMeshCount;
+            if (!string.IsNullOrEmpty(o.material))
+            {
+                var mats = r.sharedMaterials;
+                return Enumerable.Range(0, count).Where(s => s < mats.Length && mats[s] != null && Regex.IsMatch(mats[s].name, o.material)).ToArray();
+            }
+            return o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, count).ToArray();
         }
 
         [Serializable]
@@ -197,10 +213,11 @@ namespace RoeFighter.EditorTools
                         x = parent[x] = parent[parent[x]];
                     return x;
                 }
-                var subs = o.submesh >= 0 ? new[] { o.submesh } : Enumerable.Range(0, mesh.subMeshCount).ToArray();
-                if (subs.Any(s => s >= mesh.subMeshCount))
+                var subs = Subs(o, r);
+                if (subs.Length == 0 || subs.Any(s => s >= mesh.subMeshCount))
                 {
-                    Debug.LogWarning($"[ROE] burst {rules.id}: '{o.renderer}' has {mesh.subMeshCount} submeshes, no {o.submesh}");
+                    Debug.LogWarning($"[ROE] burst {rules.id}: '{o.renderer}' has {mesh.subMeshCount} submeshes, no {o.submesh}" +
+                                     (string.IsNullOrEmpty(o.material) ? "" : $" / none with a material like '{o.material}'"));
                     continue;
                 }
                 var tris = subs.ToDictionary(s => s, s => mesh.GetTriangles(s));
@@ -328,10 +345,7 @@ namespace RoeFighter.EditorTools
                         continue;
                     if (!replaced.TryGetValue(r, out var set))
                         replaced[r] = set = new HashSet<int>();
-                    if (s.submesh >= 0)
-                        set.Add(s.submesh);
-                    else
-                        set.UnionWith(Enumerable.Range(0, r.sharedMesh.subMeshCount));
+                    set.UnionWith(Subs(s, r));
                 }
 
             // the pieces of one group on one side of one renderer come off together
@@ -456,7 +470,8 @@ namespace RoeFighter.EditorTools
                 if (r == null || r.sharedMesh == null)
                     continue;
                 // the opaque triangles of the pieces that come off before it, model space as modelled (lace and see-through
-                // plastic cast no solid shadow, and what is under them shows through them while they are on)
+                // plastic cast no solid shadow, and what is under them shows through them while they are on; of a cut-out
+                // material the triangles that are solid: RoeNudeBody.SolidTriangles)
                 var over = new List<(Vector3 a, Vector3 b, Vector3 c, Vector3 n, int stage)>();
                 foreach (var q in burst.pieces.Where(x => x.stage < p.stage && x.renderer != null && x.renderer.sharedMesh != null))
                 {
@@ -467,11 +482,14 @@ namespace RoeFighter.EditorTools
                     var toModelQ = ToModel(q.renderer.transform);
                     for (int qs = 0; qs < qm.subMeshCount; qs++)
                     {
-                        if (!RoeNudeBody.Opaque(qmats[Mathf.Min(qs, qmats.Length - 1)]))
+                        var solid = RoeNudeBody.SolidTriangles(qmats[Mathf.Min(qs, qmats.Length - 1)], qm, qs);
+                        if (solid == null)
                             continue;
                         var qt = qm.GetTriangles(qs);
                         for (int k = 0; k + 2 < qt.Length; k += 3)
                         {
+                            if (!solid[k / 3])
+                                continue;
                             Vector3 a = toModelQ.MultiplyPoint3x4(qv[qt[k]]), b = toModelQ.MultiplyPoint3x4(qv[qt[k + 1]]), c = toModelQ.MultiplyPoint3x4(qv[qt[k + 2]]);
                             var fn = Vector3.Cross(b - a, c - a);
                             if (fn.sqrMagnitude < 1e-14f)
