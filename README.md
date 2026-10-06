@@ -29,7 +29,7 @@
 | g04 的普通攻击换成不知火舞（DOA6）的四招；扇子缩到 0.7 倍 | 完成（10-03），见"不知火舞的普通攻击"一节；对比视频 `out\g04_mai_strikes.mp4`，扇子 `out\weapon_size\g04_fan_sizes.png` |
 | UFE 2（用户 10-04 下载的 Source v2.7.0a） | 框架没换，格斗逻辑还是自己的；它演示角色的动作做成三个动作包 `ufe_kyle`、`ufe_ethan`、`ufe_bot`（F3），Fiona 的受击、倒地、起身、开场、胜利、三个技能也用它的。见"动作包 > 第三组：UFE 2 的演示角色"；对比视频 `out\ufe_packs_demo.mp4`。10-05：全部 20 个站立普通攻击放到 a08 身上给你挑，逐招视频 `out\a08_ufe_normals.mp4`，检查图 `out\a08_ufe_moves_sheet.jpg`；出招判定时间改用 UFE 自己的有效帧 |
 | b10（Kart）、g05（Luf 女神）加入战斗：模型、动作、技能和特效、音效，都能爆衣到全身 | 完成（10-03 晚），见"新角色：b10 和 g05"一节；爆衣演示 `out\clothes_burst_demo_b10_g05.mp4`，电脑对电脑整场 `out\fight_cpu_match_b10_g05.mp4`，检查图 `out\clothes_burst\unity\b10_sheet.png`、`g05_sheet.png`。之后（10-03 晚第二轮）：g05 受击、倒地时落到地上，放技能时慢慢升空，飘带在游戏动作里也交给布料，对比 `out\g05_hover_fix.mp4`；a08、g04 的动作按新的肢体重算重转了。10-04 第三轮：g05 的脚和游戏对齐（后脚不再朝后站），对比图 `out\g05_feet_1004.jpg` |
-| 选人界面：四个角色的头像卡片，选中的两人站在场上；两边选同一个角色时复制一份 | 完成（10-03 晚），见"选人界面"一节；演示 `out\select_screen_demo.mp4` |
+| 选人界面：四个角色的头像卡片，选中的两人站在场上；两边选同一个角色时复制一份 | 完成（10-03 晚），见"选人界面"一节；演示 `out\select_screen_demo.mp4`。10-06 晚：选人时播 ROE 菜单里的展示动画——转向镜头循环 `idle_02`，确认时播 `react_01` 加她的台词 |
 | Luffee（g04、g05）的站架也换成不知火舞的（DOA6 00000） | 完成（10-03 晚），对比视频 `out\luffee_mai_stance.mp4`（左：动作包的拳击架势；右：不知火舞的架势和四招） |
 | 爆衣（比赛中把衣服打掉） | 完成到第二步（10-03）：超必杀的最后一下打中、被 KO，各掉一段（每人四段），决胜的 KO 把剩下的全打掉，整场比赛不回来，F6 开关；衣服下面换成家族的裸体底模，所以能掉到全身（g04 留着鞋），见"爆衣"一节；演示 `out\clothes_burst_demo.mp4`，检查图 `out\clothes_burst\unity\a08_sheet.png`、`g04_sheet.png`，电脑对电脑整场 `out\fight_cpu_match_burst.mp4`。调研和后面几步（补身体、打哪破哪）见 [`docs/clothes-burst.md`](docs/clothes-burst.md) |
 | DOA6 的霞加入战斗；调研 DOA6、DOA5LR 的胸、头发、衣服物理；物理做成可插拔（F4 换方案，以后可接 Magica Cloth 2） | 完成（10-04），见"霞（DOA6）和可插拔物理"一节和 [`docs/doa-physics.md`](docs/doa-physics.md)；对比视频 `out\kas_physics_body.mp4`、`out\kas_physics_chest.mp4`（左：骨骼布料，中：DOA6 的物理，右：关），电脑对电脑 `out\kas_fight_test.mp4` |
@@ -1686,6 +1686,43 @@ python tools\vdf_rig_sheet.py _work\vdf\rig out\fio005_rig.jpg
 - `ROEFighter.exe -roeP1 b10 -roeP2 g05` 预先选好这两人；`-roeSelect 0` 跳过选人直接开打。
 - 演示 `out\select_screen_demo.mp4`（`RoeFightScene.SelectDemo`：批处理里没有键盘，用脚本按同样的步骤换卡片）：1P 从 INASE 换到 LUF（两边都是 LUF 时复制了一份）再到 KART、确认，替电脑从 LUF 换到 INASE 再到 GODDESS LUF、确认，开打。
 - 坑：拍头像时开了景深，而影棚的后期设置文件（`Settings\RoeStudioVolume.asset`）比赛场景也在用，焦点 1.45 米的景深就留在了比赛里，exe 整个画面是虚的（批处理录像没受影响）。现在头像不开景深。
+
+#### 选人时播 ROE 自己的展示动画（10-06 晚）
+
+用户说："选人环节也做个动画，ROE里面标准的动画"。
+
+- **ROE 菜单里怎么展示角色**（从游戏包里读出来的）：
+  - 每套服装的高模包（`chara_armor_pc_<id>_hd & ld_hd.ab`，菜单里显示的就是这个模型）只带三段动作：`idle_02`（展示待机，循环）、`react_01`、`react_02`。战斗用的动作在另一个包里。
+  - 同一个包里有两条 Timeline：`idle02_react01`、`idle02_react02`。每条一个动作轨（播 `react_01` / `react_02`）加一个语音轨（一句台词）。玩家点角色时播其中一条，播完回到 `idle_02`。
+  - 台词是按语言换的：`meta_armor_pc_<id>` 把 Timeline 里的占位名（卡地亚是 `Kart_affim`、`Kart_happy_1`）对应到本地化资源（`pc_b10_jp`、`pc_b10_02_jp`），`meta_armor_localize_audio_pc_<id>` 再指向语音包里的音频。游戏的包清单（`Manifest.ab`）写着去哪个语音包找：卡地亚 b10 和 Inase a08 用的是同家族旧服装的语音包（`voice_meta3d_japanese_pc_b03` / `pc_a07`）。
+  - 菜单里还有一套 Cinemachine 镜头（9 个虚拟相机），这次没用，比赛镜头不变。
+- **四套服装的对应**：
+
+  | 角色 | `idle02_react01` | `idle02_react02` |
+  |---|---|---|
+  | Inase（a08） | `react_01` 2.57 秒 + Ines EMO_JP_01 | `react_02` 2.48 秒 + EMO_JP_04 |
+  | Luf（g04） | `react_01` 3.00 秒 + Luf EMO_JP_10（第 0.13 秒起） | `react_02` 3.00 秒 + EMO_JP_01 |
+  | 卡地亚（b10） | `react_01` 3.00 秒 + Kart EMO_JP_04 | `react_02` 3.00 秒 + EMO_JP_03 |
+  | 女神 Luf（g05） | `react_01` 3.17 秒 + Luf EMO_JP_01 | `react_02` 3.00 秒 + EMO_JP_29 |
+
+- **选人界面现在这样**：
+  - 卡片停在谁身上，谁就在场上转向镜头（从面对面转过来 80%，`FightGame.selectFaceCamera`），循环 `idle_02`。
+  - 确认选她时，播她的 `idle02_react01`（`react_01` 加那句"好"一类的应答台词，`selectReaction` 可以换成 `idle02_react02`），播完回到 `idle_02`。
+  - 两边都确认后，等反应播完再开打（最多等 3.5 秒，`selectWait`）。
+  - 开打后两人照旧面对面，开场姿势照旧是 `react_02`（不带台词）。
+  - 霞、Eve、Fiona 不是 ROE 的角色，没有这套展示动画，确认时没有反应，只播待机。
+- **做法**：
+  - `tools/roe_showcase.py <id>` 从游戏包里读出两条 Timeline 和台词，台词导成 `Assets\ROE\<id>\showcase_voice\*.wav`（游戏素材，不进仓库），名字和时间写进 `tools/roe/<id>_showcase.json`。
+  - 建场景时读这个文件，存进 `FighterRig.showcase`，台词加进她的声音表。
+  - 选人的逻辑放在每一步模拟里（`FightGame.SelectStep`），所以批处理录的选人画面也有，台词也录进了视频的音轨。
+- 演示 `out\select_screen_demo.mp4`（旧的留作 `out\select_screen_demo_before_showcase.mp4`）。
+
+```powershell
+python tools\roe_showcase.py a08 g04 b10 g05
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.SelectDemo -Graphics -Extra '-roeOut','E:\code\othercode\roe_fighter_unity\_work\select_demo'
+python tools\make_video.py _work\select_demo out\select_screen_demo.mp4
+```
 
 ### 镜头：不跑到场地外面（10-05）
 

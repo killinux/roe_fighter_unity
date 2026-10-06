@@ -72,6 +72,24 @@ namespace RoeFighter.Fight
         /// that (user 10-06: "大腿根的权重还是不对呀"; README).  A lifted leg (a kick) keeps its turn.  Set per fighter when
         /// the scene is built (RoeFightScene -roeLegRoll).
         /// </summary>
+        /// <summary>
+        /// What ROE's menus play when a heroine is touched (user 10-06: "选人环节也做个动画，ROE里面标准的动画"): every outfit's
+        /// hd bundle - the model the menus show - carries idle_02 (looping) and two timelines, idle02_react01 and
+        /// idle02_react02, each a react clip with one voice line (meta_armor_pc_&lt;id&gt; maps the line to a localized clip).
+        /// Read by tools/roe_showcase.py into tools/roe/&lt;id&gt;_showcase.json, set when the scene is built; the select screen
+        /// plays them (FightGame.ShowPicked).
+        /// </summary>
+        [Serializable]
+        public class ShowReaction
+        {
+            public string timeline;     // the game's timeline (idle02_react01)
+            public string clip;         // its react clip (react_01)
+            public string sound;        // its voice line among the sounds ("": none)
+            public float voiceAt;       // seconds into the clip
+        }
+
+        public List<ShowReaction> showcase = new List<ShowReaction>();
+
         public float rollFrom = 15f;
         public float rollKeep = 1f;
         public int rollFoot = 0;    // the foot after the turn: 0 where the turned leg puts it, 1 at the clip's height, 2 where the clip put it

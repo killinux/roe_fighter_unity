@@ -663,6 +663,7 @@ namespace RoeFighter.EditorTools
                 .FirstOrDefault();
             if (hit.p != null)
                 rig.sounds.Add(new FighterRig.NamedSound { name = "hit", clip = AssetDatabase.LoadAssetAtPath<AudioClip>(hit.p) });
+            string showNote = Showcase(rig, c.id);
             rig.audioSource = root.AddComponent<AudioSource>();
             rig.audioSource.playOnAwake = false;
             rig.audioSource.spatialBlend = 0f;
@@ -670,7 +671,7 @@ namespace RoeFighter.EditorTools
             Debug.Log($"[ROE] fighter {c.id}: {standing}; unit {sheet.unit} ({stripped} game scripts stripped, {hidden} ghost renderers hidden, " +
                       $"{rig.directors.Count} timelines: {string.Join(" ", rig.directors.Select(d => d.action))}), " +
                       $"{rig.clips.Count} clips, {rig.weaponRenderers.Length} weapon renderers, {rig.sounds.Count} sounds, " +
-                      $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")}, " +
+                      $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")}, {showNote}, " +
                       $"own strikes {(rig.strikePack != null ? $"{rig.strikePack.name} ({string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}"))})" : "none")}, " +
                       $"weapon size {rig.weaponScale:F2}{feetNote} " +
                       $"(hit sound {(hit.p != null ? Path.GetFileName(hit.p) : "none")}; sfx: {string.Join(" ", c.sfx.Take(12).Select(Path.GetFileNameWithoutExtension))})");
@@ -678,6 +679,54 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>"g04=doa6_mai,a08=x" (the argument, else the fallback) as a table.</summary>
+        [Serializable]
+        class ShowcaseSpec
+        {
+            public string id;
+            public ShowcaseEntry[] reactions;
+        }
+
+        [Serializable]
+        class ShowcaseEntry
+        {
+            public string timeline, clip, voice, audio;
+            public float length, voiceAt;
+        }
+
+        /// <summary>
+        /// Her outfit's showcase reactions - ROE's menus: idle02_react01 / idle02_react02, a react clip and a voice line each
+        /// (tools/roe_showcase.py -> tools/roe/&lt;id&gt;_showcase.json, the lines extracted to Assets/ROE/&lt;id&gt;/showcase_voice)
+        /// - for the select screen (user 10-06: "选人环节也做个动画，ROE里面标准的动画").  Returns a note for the log.
+        /// </summary>
+        static string Showcase(FighterRig rig, string id)
+        {
+            rig.showcase.Clear();
+            string path = Path.Combine(ProjectDir, "tools", "roe", id + "_showcase.json");
+            if (!File.Exists(path))
+                return "no showcase";
+            var spec = JsonUtility.FromJson<ShowcaseSpec>(File.ReadAllText(path));
+            var notes = new List<string>();
+            foreach (var r in spec.reactions ?? new ShowcaseEntry[0])
+            {
+                // (her clips by name: FighterRig.Has reads an index Init builds when the game runs)
+                if (!rig.clips.Any(x => x.name == r.clip && x.clip != null))
+                {
+                    notes.Add($"{r.timeline}: no clip {r.clip}");
+                    continue;
+                }
+                string sound = "";
+                var audio = string.IsNullOrEmpty(r.audio) ? null : AssetDatabase.LoadAssetAtPath<AudioClip>(r.audio);
+                if (audio != null)
+                {
+                    sound = "showcase " + r.timeline;
+                    rig.sounds.Add(new FighterRig.NamedSound { name = sound, clip = audio });
+                }
+                rig.showcase.Add(new FighterRig.ShowReaction { timeline = r.timeline, clip = r.clip, sound = sound, voiceAt = r.voiceAt });
+                notes.Add($"{r.timeline} {r.clip}{(audio != null ? $" + {audio.name} at {r.voiceAt:F2} s" : $" (no voice: {r.audio})")}");
+            }
+            return "showcase " + string.Join(", ", notes);
+        }
+
         static Dictionary<string, string> Table(string arg, string fallback) =>
             RoeCapture.Arg(arg, fallback).Split(',').Select(p => p.Split('='))
                 .Where(p => p.Length == 2 && p[0].Trim().Length > 0 && p[1].Trim().Length > 0)
@@ -975,7 +1024,9 @@ namespace RoeFighter.EditorTools
         /// <summary>
         /// The select screen filmed (batch mode has no keys: the cards are moved by script the way the keys move
         /// them): 1P goes from INASE over LUF to KART and confirms, picks GODDESS LUF for the computer, confirms, and
-        /// the match begins.  Frames and timeline.json (music) for tools/make_video.py.
+        /// the match begins.  On the cards the fighters turn to the camera in their showcase idle; a confirmed pick plays
+        /// her showcase reaction with its line (FightGame.ShowPicked).  Frames and timeline.json (music, the lines) for
+        /// tools/make_video.py.
         ///   -executeMethod RoeFighter.EditorTools.RoeFightScene.SelectDemo [-roeOut dir] [-roeSize 1280x720]
         /// </summary>
         [MenuItem("ROE Fighter/Fight/Film the select screen")]
@@ -1006,6 +1057,10 @@ namespace RoeFighter.EditorTools
             Directory.CreateDirectory(frameDir);
             int shot = 0;
             var log = new StringBuilder("[ROE] select demo:");
+            // the voices of the picks (the showcase reactions) for the video's sound, by the video frame they start on (the
+            // match's start clears the game's own log)
+            var sounds = new List<string>();
+            int seen = 0;
             void Film(float seconds, string what)
             {
                 log.Append($"\n[ROE]   {shot / 30f,5:F1}s {what}");
@@ -1013,6 +1068,16 @@ namespace RoeFighter.EditorTools
                 for (int s = 0; s < steps; s++)
                 {
                     game.Step(null);
+                    if (game.soundLog.Count < seen)
+                        seen = 0;
+                    for (; seen < game.soundLog.Count; seen++)
+                    {
+                        var e = game.soundLog[seen];
+                        var clip = game.rigs.FirstOrDefault(r => r.id == e.fighter)?.sounds.FirstOrDefault(x => x.name == e.name)?.clip;
+                        if (clip != null)
+                            sounds.Add($"{{\"path\":\"{AssetDatabase.GetAssetPath(clip)}\",\"frame\":{shot},\"volume\":{e.volume.ToString("F2", CultureInfo.InvariantCulture)}}}");
+                        log.Append($"\n[ROE]   {shot / 30f,5:F1}s sound {e.fighter} {e.name}{(clip == null ? " (no clip)" : "")}");
+                    }
                     game.UpdateCamera(FightGame.Dt);
                     if (s % 2 != 0)
                         continue;
@@ -1041,19 +1106,19 @@ namespace RoeFighter.EditorTools
             Film(1.2f, "1P moves to KART");
             game.picked[0] = true;
             game.choosing = 1;
-            Film(1.0f, "1P confirms; now the computer's fighter");
+            Film(3.2f, "1P confirms: her showcase reaction (react_01 and its line); now the computer's fighter");
             Move(1, "a08");
             Film(0.8f, "the computer's card to INASE");
             Move(1, "g05");
             Film(1.2f, "and to GODDESS LUF");
             game.picked[1] = true;
-            Film(0.8f, "confirmed: READY");
+            Film(3.4f, "confirmed: her reaction, READY");
             game.BeginMatch();
             Film(3.2f, "the match begins");
             string music = game.music != null
                 ? $",\"music\":{{\"path\":\"{AssetDatabase.GetAssetPath(game.music)}\",\"volume\":{game.musicVolume.ToString("F2", CultureInfo.InvariantCulture)}}}"
                 : "";
-            File.WriteAllText(Path.Combine(outDir, "timeline.json"), $"{{\"fps\":30,\"frames\":{shot}{music},\"sounds\":[]}}\n");
+            File.WriteAllText(Path.Combine(outDir, "timeline.json"), $"{{\"fps\":30,\"frames\":{shot}{music},\"sounds\":[\n  {string.Join(",\n  ", sounds)}\n]}}\n");
             Debug.Log(log.Append($"\n[ROE]   {shot} frames to {frameDir}").ToString());
         }
 

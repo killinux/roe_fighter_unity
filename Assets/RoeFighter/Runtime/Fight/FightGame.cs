@@ -259,6 +259,19 @@ namespace RoeFighter.Fight
 
         // ---- the select screen: who fights (KOF-like: a card per fighter, the two picked stand on the stage)
 
+        /// <summary>
+        /// The select screen as ROE's own menus show a heroine (user 10-06: "选人环节也做个动画，ROE里面标准的动画"): the fighter of
+        /// a card turns from facing the other this far towards the camera (0..1) and loops her outfit's showcase idle
+        /// (idle_02); a confirmed pick plays her showcase reaction - the game's idle02_react01, react_01 with its "yes" line
+        /// (FighterRig.showcase) - and the match starts once both have played out (at most selectWait s after the second pick).
+        /// </summary>
+        public float selectFaceCamera = 0.8f;
+        public string selectReaction = "idle02_react01";
+        public float selectWait = 3.5f;
+        readonly float[] reactUntil = new float[2];      // phaseTime at which a pick's reaction is over (0: none)
+        readonly bool[] showingReact = new bool[2];
+        readonly bool[] wasPicked = new bool[2];
+
         /// <summary>To the select screen; the cards start on the current picks.</summary>
         public void EnterSelect()
         {
@@ -267,22 +280,109 @@ namespace RoeFighter.Fight
             phaseTime = 0f;
             message = "";
             picked[0] = picked[1] = false;
+            wasPicked[0] = wasPicked[1] = false;
             choosing = cpu[0] && !cpu[1] ? 1 : 0;
             StandForSelect();
             PlayMusic();
             if (hud != null)
                 hud.Build(this);
             SnapCamera();
+            TurnForSelect(true);
         }
 
-        void StandForSelect()
+        /// <summary>The fighters of the cards on their marks, in their showcase idle (one side: only that one).</summary>
+        void StandForSelect(int only = -1)
         {
             var a = centre - axis * (startGap * 0.5f);
             var b = centre + axis * (startGap * 0.5f);
-            f[0].Reset(a, Yaw(b - a));
-            f[1].Reset(b, Yaw(a - b));
-            foreach (var x in f)
-                x.rig.Play(x.rig.Has("idle_02") ? "idle_02" : "guard", 1f, 0.2f);
+            for (int i = 0; i < 2; i++)
+            {
+                if (only >= 0 && i != only)
+                    continue;
+                var me = i == 0 ? a : b;
+                var other = i == 0 ? b : a;
+                f[i].Reset(me, Yaw(other - me));
+                reactUntil[i] = 0f;
+                showingReact[i] = false;
+                ShowIdle(i, 0.2f);
+            }
+            TurnForSelect(true);
+        }
+
+        void ShowIdle(int i, float fade) => f[i].rig.Play(f[i].rig.Has("idle_02") ? "idle_02" : "guard", 1f, fade);
+
+        /// <summary>One step of the select screen (in Step, so a filmed select screen has it too): picks shown, turned to the camera.</summary>
+        void SelectStep(float dt)
+        {
+            ShowPicks();
+            TurnForSelect(false, dt);
+        }
+
+        /// <summary>Each fighter of the select screen turned from facing the other towards the camera (selectFaceCamera).</summary>
+        void TurnForSelect(bool snap, float dt = 0f)
+        {
+            if (f[0] == null || f[1] == null)
+                return;
+            for (int i = 0; i < 2; i++)
+            {
+                var me = f[i];
+                float target = Yaw(me.foe != null ? me.foe.pos - me.pos : f[1 - i].pos - me.pos);
+                if (cam != null)
+                {
+                    var toCam = cam.transform.position - me.pos;
+                    toCam.y = 0f;
+                    if (toCam.sqrMagnitude > 1e-4f)
+                        target = Mathf.LerpAngle(target, Yaw(toCam), selectFaceCamera);
+                }
+                me.yaw = snap ? target : Mathf.MoveTowardsAngle(me.yaw, target, 240f * dt);
+                me.Place();
+            }
+        }
+
+        /// <summary>A confirmed pick: her showcase reaction (the game's timeline: its react clip, its voice line).</summary>
+        void ShowPicked(int i)
+        {
+            var rig = f[i].rig;
+            var show = rig.showcase.FirstOrDefault(s => s.timeline == selectReaction) ?? rig.showcase.FirstOrDefault();
+            if (show == null || !rig.Has(show.clip))
+            {
+                reactUntil[i] = 0f;
+                return;
+            }
+            rig.Play(show.clip, 1f, 0.15f);
+            showingReact[i] = true;
+            reactUntil[i] = phaseTime + rig.Length(show.clip);
+            if (!string.IsNullOrEmpty(show.sound))
+            {
+                var who = f[i];
+                At(clock + show.voiceAt, () =>
+                {
+                    if (phase == Phase.Select && f[i] == who)
+                        PlaySound(who, show.sound, 1f);
+                });
+            }
+        }
+
+        /// <summary>Picks confirmed or taken back since the last frame: the reaction, or back to the idle; a reaction played out: the idle.</summary>
+        void ShowPicks()
+        {
+            for (int i = 0; i < 2; i++)
+            {
+                if (picked[i] && !wasPicked[i])
+                    ShowPicked(i);
+                else if (!picked[i] && wasPicked[i])
+                {
+                    reactUntil[i] = 0f;
+                    showingReact[i] = false;
+                    ShowIdle(i, 0.25f);
+                }
+                else if (showingReact[i] && phaseTime >= reactUntil[i])
+                {
+                    showingReact[i] = false;
+                    ShowIdle(i, 0.3f);
+                }
+                wasPicked[i] = picked[i];
+            }
         }
 
         /// <summary>Keys on the select screen: left / right move a card, the first attack button confirms, the second goes back.</summary>
@@ -310,7 +410,9 @@ namespace RoeFighter.Fight
             {
                 if (selectDone < 0f)
                     selectDone = phaseTime;
-                if (phaseTime - selectDone > 0.6f)
+                // her reaction plays out first
+                float reacted = Mathf.Min(Mathf.Max(reactUntil[0], reactUntil[1]), selectDone + selectWait);
+                if (phaseTime - selectDone > 0.6f && phaseTime >= reacted)
                 {
                     selectDone = -1f;
                     StartMatch();
@@ -323,21 +425,30 @@ namespace RoeFighter.Fight
         /// <summary>After a card moved on the select screen: the new fighter comes out on the stage.</summary>
         public void PicksChanged(int[] before)
         {
-            bool any = false;
+            var changed = new bool[2];
             for (int i = 0; i < 2; i++)
                 if (pick[i] != before[i])
                 {
-                    any = true;
+                    changed[i] = true;
                     ApplyPicks();
                     PrepareSide(i);
                     if (pick[1 - i] == before[1 - i] && rigs[1 - i] != f[1 - i].rig)
+                    {
                         PrepareSide(1 - i);      // a twin came or went on the other side
+                        changed[1 - i] = true;
+                    }
                 }
-            if (!any)
+            if (!changed[0] && !changed[1])
                 return;
             f[0].foe = f[1];
             f[1].foe = f[0];
-            StandForSelect();
+            // the one who came out stands in her showcase idle; the other goes on with what she was doing
+            for (int i = 0; i < 2; i++)
+                if (changed[i])
+                {
+                    StandForSelect(i);
+                    wasPicked[i] = false;
+                }
             if (hud != null)
                 hud.Build(this);
         }
@@ -580,6 +691,9 @@ namespace RoeFighter.Fight
                     break;
                 case Phase.Fight:
                     timer = Mathf.Max(0f, timer - dt);
+                    break;
+                case Phase.Select:
+                    SelectStep(Dt);
                     break;
             }
 
