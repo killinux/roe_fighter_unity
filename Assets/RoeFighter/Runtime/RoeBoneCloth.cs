@@ -144,6 +144,15 @@ namespace RoeFighter
             particleLimit = 2f, backstop = false, edge = false, floor = false, stabilize = legacy ? 0f : 0.1f,
         };
 
+        /// <summary>The kind of cloth a ROE bone's name says it is (skirt, hair, ribbon ...), or null (for checks: FighterRig.MeasureKeyKinds).</summary>
+        public static string RoeKindOf(string bone)
+        {
+            foreach (var (kind, name) in Kinds)
+                if (name.IsMatch(bone))
+                    return kind;
+            return null;
+        }
+
         static readonly (string kind, Regex name)[] Kinds =
         {
             ("chain", new Regex(@"skirt_chain|^chain\d|chain_arm|dec_wrist", RegexOptions.IgnoreCase)),

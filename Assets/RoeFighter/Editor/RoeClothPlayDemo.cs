@@ -26,7 +26,10 @@ namespace RoeFighter.EditorTools
     /// take is named after them.  Every take is also measured the same way whatever moves the cloth (Meter): the numbers
     /// per part of the script go to the log and metrics.txt.  -roeNoFrames: numbers only, nothing rendered.
     /// -roeScript skills and -roeSkirtKeys off as RoeClothDemo has them (her game clips, the skirt left to the solver and
-    /// measured against the keys).
+    /// measured against the keys).  The setup word "keys" ("off:keys") keeps the game's keys for that take - the game's own
+    /// look, the reference column; -roeMeasureKeys ribbon,hair measures those chains against the keys too (after Magica has
+    /// written its bones: FighterRig.MeasureKeysLate); -roeView follow is the front view rising with her hips (user 10-11:
+    /// "再看看游戏里的效果是什么，看看差异" - the two Lufs against their game's hand keys, README "Luf 的衣服：和游戏里比").
     /// Body checks (user 10-05: "爆衣，乳摇，都身体权重，inase的头发也衣服，这些都检查一下"): -roeView chest (close in front of
     /// her chest) or hair (behind her head and shoulders); the setup word "nude" ("auto:nude") takes every outfit piece that
     /// can come off away before the take (RoeClothesBurst); every take also measures the breasts (BreastMeter: how far each
@@ -43,6 +46,7 @@ namespace RoeFighter.EditorTools
             public string outDir, view, stage, script;
             public int width, height;
             public bool done, noFrames, ignoreKeys;
+            public string measureKinds = "";       // -roeMeasureKeys ribbon,hair (FighterRig.MeasureKeyKinds)
         }
 
         const string Key = "RoeFighter.RoeClothPlayDemo";
@@ -66,6 +70,7 @@ namespace RoeFighter.EditorTools
                 noFrames = Environment.GetCommandLineArgs().Contains("-roeNoFrames"),
                 script = RoeCapture.Arg("-roeScript", "moves"),
                 ignoreKeys = RoeCapture.Arg("-roeSkirtKeys", "on") == "off",
+                measureKinds = RoeCapture.Arg("-roeMeasureKeys", ""),
             };
             SessionState.SetString(Key, JsonUtility.ToJson(job));
             ShaderUtil.allowAsyncCompilation = false;
@@ -131,6 +136,11 @@ namespace RoeFighter.EditorTools
                 game.hud.gameObject.SetActive(false);
             Time.captureFramerate = 60;
             FighterRig.IgnoreSkirtKeys = job.ignoreKeys;
+            FighterRig.MeasureKeysLate = true;     // Magica writes its bones after the step: measured in OnCapture
+            FighterRig.MeasureKeyKinds.Clear();
+            foreach (var kind in (job.measureKinds ?? "").Split(','))
+                if (kind.Trim().Length > 0)
+                    FighterRig.MeasureKeyKinds.Add(kind.Trim());
             Directory.CreateDirectory(job.outDir);
             take = -1;
             running = true;
@@ -191,6 +201,9 @@ namespace RoeFighter.EditorTools
             FighterRig.NoHipCloth = words.Remove("nohip");
             // "nude": every outfit piece that can come off is off for the take (the body under them, burst or not)
             nude = words.Remove("nude");
+            // "keys": this take keeps the game's keys in her game clips although the run leaves them to the solver
+            // (-roeSkirtKeys off) - "off:keys" is the game's own look, the reference column of a comparison
+            FighterRig.IgnoreSkirtKeys = current.ignoreKeys && !words.Remove("keys");
             tuning = string.Join(";", words);
 #if MAGICACLOTH2
             RoeMagicaCloth.Tuning = tuning;
@@ -217,7 +230,10 @@ namespace RoeFighter.EditorTools
                 me.rig.burst.Show(me.rig.burst.stages);
             me.rig.ResetCloth();
             foreach (var rig in game.rigs)
+            {
                 rig.ResetSkirtKeyError();
+                rig.ResetChainKeyError();
+            }
             string about = $"{me.rig.ClothTitle}; {me.rig.ClothReport}";
             takes.Add($"{id}\t{label}\t{about}\t" + string.Join("|", (me.moves ?? game.moves).Select(m => $"{m.button}={m.name}")));
             log.Append($"\n[ROE]   {id} {label}: {about}");
@@ -268,6 +284,8 @@ namespace RoeFighter.EditorTools
             running = false;
             Time.captureFramerate = 0;
             FighterRig.IgnoreSkirtKeys = false;
+            FighterRig.MeasureKeysLate = false;
+            FighterRig.MeasureKeyKinds.Clear();
             Hook(false);
             if (current != null)
             {
@@ -304,8 +322,13 @@ namespace RoeFighter.EditorTools
                 var neck = animator.GetBoneTransform(HumanBodyBones.Neck) ?? head;
                 return (head.position + neck.position) * 0.5f - Vector3.up * 0.12f;
             }
+            if (FollowView)
+                return new Vector3(me.pos.x, Mathf.Max(me.pos.y + 0.95f, hips.position.y), me.pos.z);
             return Close ? new Vector3(me.pos.x, hips.position.y - 0.12f, me.pos.z) : me.pos + Vector3.up * 0.95f;
         }
+
+        /// <summary>-roeView follow: the front view, its aim rising with her hips (Goddess Luf flies up in her skills).</summary>
+        static bool FollowView => current.view == "follow";
 
         /// <summary>After Update: one step of the fight, then the camera (in front of her, a little to the side, following softly; or behind her at the hips).</summary>
         static void OnStep()
@@ -352,7 +375,8 @@ namespace RoeFighter.EditorTools
             if (t > Length)
             {
                 log.Append($"\n[ROE]   {me.rig.id} {label}: {shot} frames to {dir}; after: {me.rig.ClothReport}" +
-                           (FighterRig.IgnoreSkirtKeys ? $"; skirt against the game's keys: {me.rig.SkirtKeyError}" : ""));
+                           (FighterRig.IgnoreSkirtKeys ? $"; skirt against the game's keys: {me.rig.SkirtKeyError}" : "") +
+                           (FighterRig.MeasureKeyKinds.Count > 0 ? $"; {string.Join("+", FighterRig.MeasureKeyKinds)} against the game's keys: {me.rig.ChainKeyError}" : ""));
                 if (meter != null)
                 {
                     log.Append(meter.Report($"[ROE]     {me.rig.id} {label}"));
@@ -399,7 +423,7 @@ namespace RoeFighter.EditorTools
                 ? look + (-fwd * 0.8f + side * (0.6f * sideways)).normalized * 1.9f + Vector3.up * 0.1f
                 : ChestView ? look + (fwd * 0.9f - side * 0.35f).normalized * 1.45f + Vector3.up * 0.06f
                 : HairView ? look + (-fwd * 0.85f + side * 0.45f).normalized * 1.7f + Vector3.up * 0.3f
-                : look + (fwd * 0.8f - side * 0.6f).normalized * 3.6f + Vector3.up * 0.2f;
+                : look + (fwd * 0.8f - side * 0.6f).normalized * (FollowView ? 4.2f : 3.6f) + Vector3.up * 0.2f;
             cam.transform.LookAt(look, Vector3.up);
             captureNow = step % 2 == 0;
             step++;
@@ -410,6 +434,9 @@ namespace RoeFighter.EditorTools
         {
             if (!running || building || me == null)
                 return;
+            // the skirt and chains against the game's keys, on the pose Magica left (FighterRig.MeasureKeysLate)
+            if (step > 0)
+                me.rig.MeasureKeysNow();
             // every step measured (the frame's pose: the step before the counter moved on)
             if (meter != null && step > 0)
             {

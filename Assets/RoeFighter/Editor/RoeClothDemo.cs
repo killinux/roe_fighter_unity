@@ -105,6 +105,10 @@ namespace RoeFighter.EditorTools
             // skirt's animation pose that follows the legs (RoeSkirtRig) with the bone cloth at weight 0 - no simulation
             // -roeSkirtKeys off: the game's own clips leave their skirt keys to the solver (with -roeScript skills)
             FighterRig.IgnoreSkirtKeys = RoeCapture.Arg("-roeSkirtKeys", "on") == "off";
+            // -roeMeasureKeys ribbon,hair: those chains against the game's keys too (FighterRig.MeasureKeyKinds)
+            FighterRig.MeasureKeyKinds.Clear();
+            foreach (var kind in RoeCapture.Arg("-roeMeasureKeys", "").Split(',').Where(k => k.Trim().Length > 0))
+                FighterRig.MeasureKeyKinds.Add(kind.Trim());
             var chosen = Chosen();
             Film(outDir, RoeCapture.Arg("-roeCloths", "legacy,magica_style").Split(','), (game, variant) =>
             {
@@ -115,12 +119,15 @@ namespace RoeFighter.EditorTools
                     rig.useCloth = true;
                     rig.clothWeight = variant == "legs" ? 0f : 1f;
                     rig.ResetSkirtKeyError();
+                    rig.ResetChainKeyError();
                 }
             }, (game, variant, me) => $"{me.rig.ClothTitle}; {me.rig.ClothReport}" +
-                                      (FighterRig.IgnoreSkirtKeys ? $"; skirt against the game's keys: {me.rig.SkirtKeyError}" : ""),
+                                      (FighterRig.IgnoreSkirtKeys ? $"; skirt against the game's keys: {me.rig.SkirtKeyError}" : "") +
+                                      (FighterRig.MeasureKeyKinds.Count > 0 ? $"; {string.Join("+", FighterRig.MeasureKeyKinds)} against the game's keys: {me.rig.ChainKeyError}" : ""),
                chosen.script == Script ? null : (variant, me) => (chosen.script, chosen.length));
             RoeSbPhysics.UseControlRigs = true;
             FighterRig.IgnoreSkirtKeys = false;
+            FighterRig.MeasureKeyKinds.Clear();
             foreach (var rig in Object.FindObjectsByType<FighterRig>(FindObjectsSortMode.None))
                 rig.clothWeight = 1f;
         }

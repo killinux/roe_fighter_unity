@@ -635,6 +635,9 @@ namespace RoeFighter.Fight
             bool measureKeys = IgnoreSkirtKeys && gameWeight > 0.99f && skirtRig != null && skirtRig.Ready && hips != null;
             if (measureKeys)
                 KeepSkirtKeys();
+            bool measureChains = MeasureKeyKinds.Count > 0 && gameWeight > 0.99f && hips != null;
+            if (measureChains)
+                KeepChainKeys();
             // the ankle as stiff as her shoe (bindFeet): the foot and toes at their bind rotations against the shin, before
             // the feet are stood on the floor
             if (bindFeet && grounded && bindFoot.Length == 2 && bindToe.Length == 2)
@@ -780,8 +783,21 @@ namespace RoeFighter.Fight
                 cloth.Weight = (clothOverGameClips || overGame ? 1f : mocap) * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
+            // (MeasureKeysLate: taken when the frame is drawn, after Magica Cloth 2 has written its bones - MeasureKeysNow)
             if (measureKeys)
-                MeasureSkirtKeys();
+            {
+                if (MeasureKeysLate)
+                    skirtMeasureDue = true;
+                else
+                    MeasureSkirtKeys();
+            }
+            if (measureChains)
+            {
+                if (MeasureKeysLate)
+                    chainMeasureDue = true;
+                else
+                    MeasureChainKeys();
+            }
             // a DOA6 character's visible cloth (skirt, sleeves): rebuilt from its control points, whichever solver moved them
             if (doaRig != null)
                 doaRig.RebuildSurfaces();
@@ -851,6 +867,93 @@ namespace RoeFighter.Fight
                 skirtKeySum += a * a;
                 skirtKeyCount++;
                 skirtKeyMax = Mathf.Max(skirtKeyMax, a);
+            }
+        }
+
+        /// <summary>
+        /// For checks (RoeClothDemo / RoeClothPlayDemo -roeMeasureKeys ribbon,hair): in the game's own clips the bones of these
+        /// cloth kinds (RoeBoneCloth.RoeKindOf, by name) are measured against their keys like the skirt (ChainKeyError) -
+        /// whatever moves them, so every solver is measured the same way (Goddess Luf's sashes run over the game's clips
+        /// anyway, RoeBoneCloth.AlwaysKinds).  The top bone of each chain (its anchor, which nothing simulates) is left out.
+        /// </summary>
+        public static readonly HashSet<string> MeasureKeyKinds = new HashSet<string>();
+
+        /// <summary>
+        /// For checks in play mode (RoeClothPlayDemo): Magica Cloth 2 writes its bones after the fight's step (in
+        /// PreLateUpdate), so the skirt's and the chains' measurements against the keys wait for MeasureKeysNow, called when
+        /// the frame is drawn; the keys themselves are still taken in the step, before anything moves the bones.
+        /// </summary>
+        public static bool MeasureKeysLate;
+        bool skirtMeasureDue, chainMeasureDue;
+
+        /// <summary>The measurements a step left for later (MeasureKeysLate), on the pose as it is now.</summary>
+        public void MeasureKeysNow()
+        {
+            if (skirtMeasureDue && skirtRig != null && hips != null)
+                MeasureSkirtKeys();
+            if (chainMeasureDue && hips != null)
+                MeasureChainKeys();
+            skirtMeasureDue = chainMeasureDue = false;
+        }
+        List<(Transform bone, Vector3 tail, string kind)> keyChain;
+        Quaternion[] keyedChain = new Quaternion[0];
+        Quaternion keyedChainPelvis;
+        // per kind: sum of squares, bone-frames, worst, bones
+        readonly SortedDictionary<string, (double sum, int count, float max, int bones)> chainKeyError =
+            new SortedDictionary<string, (double, int, float, int)>();
+
+        /// <summary>Per kind: RMS degrees against the keys, the worst, over how many bone-frames of how many bones.</summary>
+        public string ChainKeyError => chainKeyError.Count == 0 || chainKeyError.Values.All(e => e.count == 0) ? "no frames of the game's clips"
+            : string.Join(", ", chainKeyError.Select(kv => $"{kv.Key} {Math.Sqrt(kv.Value.sum / Math.Max(1, kv.Value.count)):F1} deg RMS " +
+                                                            $"(worst {kv.Value.max:F0}) over {kv.Value.count} bone-frames of {kv.Value.bones} bones"));
+
+        public void ResetChainKeyError()
+        {
+            chainKeyError.Clear();
+            keyChain = null;
+        }
+
+        void KeepChainKeys()
+        {
+            if (keyChain == null)
+            {
+                keyChain = new List<(Transform, Vector3, string)>();
+                foreach (var t in animator.GetComponentsInChildren<Transform>(true))
+                {
+                    string kind = RoeBoneCloth.RoeKindOf(t.name);
+                    if (kind == null || !MeasureKeyKinds.Contains(kind) || t.parent == null || RoeBoneCloth.RoeKindOf(t.parent.name) != kind)
+                        continue;
+                    Transform tip = null;
+                    foreach (Transform c in t)
+                        if (c.localPosition.sqrMagnitude > 1e-8f)
+                        {
+                            tip = c;
+                            break;
+                        }
+                    if (tip != null)
+                        keyChain.Add((t, tip.localPosition, kind));
+                }
+                keyedChain = new Quaternion[keyChain.Count];
+                foreach (var g in keyChain.GroupBy(c => c.kind))
+                    chainKeyError[g.Key] = (0, 0, 0f, g.Count());
+            }
+            for (int k = 0; k < keyChain.Count; k++)
+                keyedChain[k] = keyChain[k].bone.rotation;
+            keyedChainPelvis = hips.rotation;
+        }
+
+        void MeasureChainKeys()
+        {
+            if (keyChain == null)
+                return;
+            var nowPelvis = Quaternion.Inverse(hips.rotation);
+            var keyPelvis = Quaternion.Inverse(keyedChainPelvis);
+            for (int k = 0; k < keyChain.Count; k++)
+            {
+                var (bone, tail, kind) = keyChain[k];
+                float a = Vector3.Angle(keyPelvis * (keyedChain[k] * tail), nowPelvis * (bone.rotation * tail));
+                var e = chainKeyError[kind];
+                chainKeyError[kind] = (e.sum + a * a, e.count + 1, Mathf.Max(e.max, a), e.bones);
             }
         }
 

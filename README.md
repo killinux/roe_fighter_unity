@@ -52,6 +52,7 @@
 | 两个 Luf 的裙子和飘带：四种物理并排比（我们的骨骼布料、Magica Cloth 2 用我们的参数、Magica Cloth 2 用插件预设、关），出招和选人展示动作都录了 | 完成（10-06 晚），见"Luf 的裙子：四种物理对比"一节；结论是两人都留在骨骼布料（不改默认）。对比视频 `out\luf_skirt_front.mp4`、`out\luf_skirt_back.mp4`、`out\luf_showcase.mp4`，静帧 `out\luf_skirt_compare.jpg` |
 | Fiona 的肘部检查：她全部 108 段动作里肘弯多深、有没有反弯，最深的时刻拍肘部特写（修正骨不驱动 / 游戏规则） | 完成（10-06 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)"肘部检查"；没看出毛病。特写 `out\fio005_elbow.jpg`、`out\fio005_elbow_left.jpg`（藏起盾看左肘） |
 | 天野（m02）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、爆衣到全身；四个 ROE 角色原地放的技能按游戏的距离打得到（以前离开 2.9 米就打空） | 完成（10-11），见"天野（m02）加入战斗"一节；技能录像 `out\skills_reel.mp4`（m02、Inase、Luf、Luf 女神各放三个技能），爆衣 `out\clothes_burst_demo_m02.mp4` |
+| 两个 Luf 的衣服和游戏里比：游戏怎么做的（战斗全是手 K，大厅只有头发用 Magica Cloth 2），手 K 甩多大；在她们自己的技能里关掉关键帧，我们的骨骼布料、Magica Cloth 2 两种设置和游戏手 K 并排比 | 完成（10-11），见"Luf 的衣服：和游戏里比"一节；视频 `out\luf_cloth_vs_game.mp4` |
 
 ## 目录
 
@@ -2186,3 +2187,79 @@ python tools\burst_video.py _work\burst_demo_m02 out\clothes_burst_demo_m02.mp4
 
 踩过的坑：Unity 批处理偶尔报 "Scripts have compiler errors"，日志里却是 "Internal build system error. Read the full binlog without getting a
 BuildFinishedMessage"、没有任何 `error CS`：这是 Unity 编译系统自己的偶发错误，原样重跑就好。
+
+### Luf 的衣服：和游戏里比（10-11）
+
+用户 10-11："luf的衣服目前是什么物理效果"，然后"再看看游戏里的效果是什么，看看差异"。做法和 Inase 那次一样（[`docs/inase-skirt.md`](docs/inase-skirt.md) 第 3 节）。
+
+- **游戏里怎么做的**：
+  - 战斗里没有物理（见"ROE 战斗里有没有物理"）：裙子、飘带、头发、胸在每个动作里都是手 K 的关键帧。
+  - 大厅里只有头发用 Magica Cloth 2（BoneCloth）：
+    - g04 是刘海和四条发束（`Bip001 bangs_L/R`、`hair_BL/BR/FL/FR`，7 个胶囊碰撞体）；
+    - g05 是脑后三条（`Hair_BC/BL/BR_01`，5 个胶囊和 1 个球）。
+    - 裙子和飘带在大厅里也是手 K。
+  - 手 K 甩多大（`tools/cloth_key_stats.py`）：每根骨的方向放在骨盆坐标系里，和她的战斗站姿（`idle_01` 第一帧）比。
+    每根骨取它在这段动作里最大的那一下，表里是"所有骨的平均 / 最大"：
+
+    | 动作 | g04 裙子（30 根） | g04 头发（18 根） | g05 飘带（23 根） | g05 头发（25 根） |
+    |---|---|---|---|---|
+    | 站架 idle_01 | 12° / 42° | 7° / 21° | 29° / 70° | 18° / 31° |
+    | 待机 idle_02 | 38° / 67° | 39° / 51° | 61° / 135° | 35° / 59° |
+    | 反应 react_01、react_02 | 44–53° / 72–76° | 48–59° / 62–75° | 78–94° / 166–170° | 45–47° / 69–70° |
+    | 受击 hurt | 60° / 131° | 75° / 101° | 99° / 179° | 71° / 96° |
+    | 技能 1、技能 2、超必杀 | 104–119° / 176–179° | 99–112° / 131–162° | 120–124° / 176–177° | 79–87° / 113–122° |
+    | 倒地 die | 66° / 174° | 129° / 168° | 115° / 173° | 89° / 107° |
+
+    技能里裙片和飘带几乎整片翻过去：是跟着转身、踢腿甩出来的，不是挂着往下垂。
+
+- **我们现在怎么做的**（F4 默认，两个 Luf 都是我们的骨骼布料 `magica_style`）：
+  - 走、侧步、普通攻击这些动捕动作，游戏里没有，衣服和头发由骨骼布料模拟（目标是"自然下垂、踢腿不甩飞"）。
+  - 游戏自己的动作（技能、受击、倒地、开场、胜利、选人展示）：g04 的裙子、两人的头发直接用游戏的关键帧，所以和游戏一模一样；
+    只有 g05 的飘带一直模拟（`RoeBoneCloth.AlwaysKinds`：她的飘带在游戏动作里几乎是硬的，受击时像木板一样甩出去一米），
+    模拟时以关键帧的姿势为准、角度限制把布拉在它附近，所以技能里的旋转还在，只是会弯、会拖。
+
+- **并排比**：在她们自己的技能 1、技能 2 里（`-roeScript skills`，12.6 秒），把关键帧关掉交给物理（`-roeSkirtKeys off`，这时头发也交给物理），
+  和游戏手 K 并排。视频 `out\luf_cloth_vs_game.mp4`：上排 g04、下排 g05；左到右：游戏手 K / 我们的骨骼布料 / Magica Cloth 2（我们的参数）/
+  Magica Cloth 2（插件预设）。四列是同一次播放模式录像，光线一样，镜头跟着人上下（`-roeView follow`，g05 技能 1 会飞起来）。
+
+  和游戏手 K 差多少（每根骨在骨盆坐标系里的方向夹角，均方根，括号里是最大）：
+
+  | | 我们的骨骼布料 | Magica Cloth 2（我们的参数） | Magica Cloth 2（插件预设） |
+  |---|---|---|---|
+  | g04 裙子 | 65.0°（177°） | 64.4°（177°）* | 62.3°（174°）* |
+  | g04 头发 | **14.3°**（73°） | 25.7°（101°） | 32.7°（122°） |
+  | g05 飘带 | **23.7°**（121°） | 28.7°（144°） | 32.3°（110°） |
+  | g05 头发 | **13.3°**（77°） | 19.5°（101°） | 36.2°（129°） |
+
+  \* g04 的三块裙片在 Magica 里是网格布（MeshCloth），动的是顶点，骨头停在基础姿势上，这两个数主要反映基础姿势，看视频准。
+
+  看到的：
+  - **g04 的裙子**：游戏里技能 1 跳起时裙片往两边甩开像扇子，技能 2 踢腿时前片被甩到身体一侧、再从身后扬起来；三种物理都让裙片往下垂，
+    插件预设踢腿时还把前片堆在地上。弯腰收招（5.2 秒）时四列差不多。差距和 Inase 一样：在目标（我们照"自然下垂"调的），不在用哪个插件。
+  - **g05 的飘带**：我们的和游戏最像（技能 2 横着甩的那一圈几乎一样），因为是贴着游戏关键帧模拟的；
+    Magica 两种设置不看关键帧，飘带会被甩开或飘起来（技能 1 收招时一条飘到右边，插件预设技能 2 时两条往上翘）。
+  - **头发**：我们的骨骼布料最接近，Magica 插件预设差得最多（甩得乱）。实际对打时游戏动作里头发直接用关键帧，所以这一行只在全程交给物理时才有意义。
+
+- **结论**：现在的组合就是离游戏最近的。游戏自己的动作里，g04 的裙子和两人的头发用关键帧，和游戏一样；g05 的飘带用我们的模拟，最接近游戏。
+  真正不一样的只有动捕动作（游戏里没有这些动作），在那里我们的裙子偏"垂"，游戏的手 K 偏"甩"。
+  - 如果想让动捕动作里的裙子也甩起来像游戏，办法和 Inase 那次建议的一样：拿游戏关键帧当目标自动调物理参数，
+    做成和现在的"自然下垂"可以切换的两套（等你定）。
+
+- **工具**：
+  - `tools/cloth_key_stats.py <id>`：游戏动作里每类布料骨甩多大（上面第一个表）；`skirt_key_models.load` 也认 `..._ld.ab` 这种不带 `_prelude` 的战斗包了。
+  - 新的检查开关 `-roeMeasureKeys ribbon,hair`（`FighterRig.MeasureKeyKinds`）：除了裙子，这几类骨（按骨骼布料的命名规则）也在游戏动作里和关键帧比，
+    每类单独报数；每条链最上面那根（锚点，不模拟）不算。
+  - 播放模式里，量和关键帧的差等画面画出来时再量（`FighterRig.MeasureKeysLate`、`MeasureKeysNow`）：
+    Magica Cloth 2 在战斗那一步之后（PreLateUpdate）才写骨头，之前在战斗那一步里量，量到的是 Magica 动之前的姿势（飘带两种设置都是 4.0°，是错的）。
+  - 录像里一条可以单独保留游戏关键帧：设置后面加 `:keys`（`off:keys` 就是游戏的样子，当对比的第一列）。
+
+```powershell
+python tools\cloth_key_stats.py g04
+python tools\cloth_key_stats.py g05
+# 游戏手 K | 骨骼布料 | Magica（我们的参数）| Magica（插件预设），同一次播放模式录像（约 15 分钟）
+.\tools\unity_batch.ps1 -NoQuit -Graphics -TimeoutMinutes 60 -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Name luf_vs_game `
+    -Extra '-roeChars','g04,g05','-roeCloths','off:keys,magica_style,magica,magica_full','-roeScript','skills','-roeSkirtKeys','off','-roeMeasureKeys','ribbon,hair','-roeView','follow','-roeOut','_work\luf_vs_game'
+python tools\takes_grid_video.py _work\luf_vs_game out\luf_cloth_vs_game.mp4 `
+    --grid "g04_off_keys,g04_magica_style,g04_magica,g04_magica_full;g05_off_keys,g05_magica_style,g05_magica,g05_magica_full" `
+    --titles "off_keys=游戏里（手 K 关键帧）,magica_style=我们的骨骼布料（现在用的）,magica=Magica Cloth 2（我们的参数）,magica_full=Magica Cloth 2（插件预设）"
+```

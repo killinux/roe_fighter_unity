@@ -73,8 +73,13 @@ def load(cid):
     import roe_physics_survey as survey
     bones = dec.read_skeleton(UnityPy.load(survey.one(f"chara_armor_pc_{cid}_hd & ld_hd.ab")), None)
     clips = {}
-    for pattern in (f"chara_armor_pc_{cid}_hd & ld_ld_prelude.ab", f"chara_armor_pc_{cid}_hd & ld_hd.ab"):
-        env = UnityPy.load(survey.one(pattern))
+    # the battle clips are in the LD bundle (a08's is named _prelude), the showcase clips in the HD one
+    for pattern in (f"chara_armor_pc_{cid}_hd & ld_ld_prelude.ab", f"chara_armor_pc_{cid}_hd & ld_ld.ab", f"chara_armor_pc_{cid}_hd & ld_hd.ab"):
+        try:
+            path = survey.one(pattern)
+        except SystemExit:
+            continue
+        env = UnityPy.load(path)
         for clip in env.objects:
             if clip.type.name != "AnimationClip":
                 continue
