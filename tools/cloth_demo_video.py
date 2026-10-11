@@ -13,7 +13,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 FFMPEG = r'D:\Program Files\ffmpeg\bin\ffmpeg.exe'
 FONT = r'C:\Windows\Fonts\msyh.ttc'
-STEPS = {'clip:idle_02': '展示待机（idle_02）', 'clip:react_01': '展示反应 1（react_01）', 'clip:react_02': '展示反应 2（react_02）', 'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '侧步', 'skill 1': '技能 1（游戏动作）', 'skill 2': '技能 2（游戏动作）'}
+STEPS = {'clip:idle_02': '展示待机（idle_02）', 'clip:react_01': '展示反应 1（react_01）', 'clip:react_02': '展示反应 2（react_02）', 'guard': '站架', 'walk': '前进', 'back': '后退', 'side step': '侧步', 'skill 1': '技能 1（游戏动作）', 'skill 2': '技能 2（游戏动作）',
+         'clip:idle_01': '游戏的战斗站姿（idle_01，裙子是游戏手 K）',
+         'key 1': '按 1：技能 1（游戏的 skill_01）', 'key 2': '按 2：技能 2（游戏的 skill_02）', 'key 3': '按 3：超必杀（游戏的 skill_03）'}
+# the attack buttons A-D on 1P's keyboard
+KEYS = {'A': 'J', 'B': 'K', 'C': 'U', 'D': 'I'}
 MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回旋踢', 'slash': '挥砍', 'hook': '勾拳',
          'uppercut': '上勾拳', 'roundhouse_lead': '前腿回旋踢', 'front_kick': '前踢', 'side_kick': '侧踢', 'roundhouse': '后腿回旋踢', 'low_kick': '低踢',
          'high_kick': '高踢', 'knee': '膝撞', 'elbow': '肘击', 'lunge_punch': '冲拳', 'reverse_punch': '逆冲拳',
@@ -28,6 +32,8 @@ NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Lu
 TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '我们的骨骼布料（照 Magica 的做法）', 'swing': '骨骼布料，裙子照游戏手 K 甩（新）',
           'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）',
           'pack': '原来的普通攻击（Bandai 动捕）', 'own': '不知火舞的普通攻击（DOA6）',
+          'guard_pack': '原来的站架（动作包的）', 'guard_stance': '现在：站架 = 游戏的战斗站姿（idle_01）',
+          ('g04', 'guard_pack'): '原来：不知火舞的站架（DOA6）', ('g05', 'guard_pack'): '原来：不知火舞的站架（DOA6）',
           'game': '原来：照游戏浮空，飘带照关键帧', 'floor': '现在：受击倒地落地，技能升空，飘带模拟',
           'doa6': 'DOA6 自己的物理（软体胸、骨链、摆动骨）', 'doa6_breasts': '胸用 DOA6 软体，其余骨骼布料',
           'doa5lr_style': 'DOA5LR 式弹簧网（同样的骨链，换成 DOA5LR 的弹簧）',
@@ -115,7 +121,7 @@ def main():
                        stroke_width=3, stroke_fill=(0, 0, 0))
                 if what in moves:
                     move = moves[what]
-                    label = f'{what} 键：{MOVES.get(move, move)}' + (f'（{move}）' if move in MOVES else '')
+                    label = f'{what} 键（{KEYS.get(what, what)}）：{MOVES.get(move, move)}' + (f'（{move}）' if move in MOVES else '')
                 else:
                     label = STEPS.get(what) or MOVES.get(what, what)
                 d.text((w * n + 16, h + 10), f'{label}　　{t:4.1f} s', font=small, fill=(220, 220, 220))

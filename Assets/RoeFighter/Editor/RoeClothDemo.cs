@@ -88,10 +88,24 @@ namespace RoeFighter.EditorTools
         };
         internal const float StanceLength = 6.0f;
 
-        /// <summary>A demo script by name (-roeScript): moves (the default), skills (SkillScript), full (both), showcase.</summary>
+        /// <summary>
+        /// "all" (-roeScript all): the moves, then her three skills as the keys 1 2 3 start them - skill 1, skill 2, super
+        /// (user 10-11: "战斗按钮123，用luf在ROE里的三个招数"; the meter filled for each).
+        /// </summary>
+        internal static readonly (float from, float to, FighterInput input, string what)[] AllScript =
+            Script.Concat(new (float from, float to, FighterInput input, string what)[]
+            {
+                (Length + 1.0f, Length + 1.0f, new FighterInput { s1 = true }, "key 1"),
+                (Length + 7.0f, Length + 7.0f, new FighterInput { s2 = true }, "key 2"),
+                (Length + 13.0f, Length + 13.0f, new FighterInput { s3 = true }, "key 3"),
+            }).ToArray();
+        internal const float AllLength = Length + 19.0f;
+
+        /// <summary>A demo script by name (-roeScript): moves (the default), skills (SkillScript), full (both), showcase, stance, all.</summary>
         internal static ((float from, float to, FighterInput input, string what)[] script, float length) Named(string name) =>
             name == "skills" ? (SkillScript, SkillLength) : name == "full" ? (FullScript, FullLength)
-            : name == "showcase" ? (ShowcaseScript, ShowcaseLength) : name == "stance" ? (StanceScript, StanceLength) : (Script, Length);
+            : name == "showcase" ? (ShowcaseScript, ShowcaseLength) : name == "stance" ? (StanceScript, StanceLength)
+            : name == "all" ? (AllScript, AllLength) : (Script, Length);
 
         /// <summary>The script's "clip:&lt;name&gt;" steps due at t (s): the fighter plays that clip (a clip she lacks is skipped).</summary>
         internal static void PlayScriptClips((float from, float to, FighterInput input, string what)[] script, float t, Fighter me)
@@ -181,6 +195,36 @@ namespace RoeFighter.EditorTools
                 foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
                     if (own.TryGetValue(rig.id, out var p))
                         rig.strikePack = p;
+        }
+
+        /// <summary>
+        /// A fighter's own guard (FighterRig.ownGuard; Luf: her game's battle stance) against the one she had (her strike pack's -
+        /// Luf's was Mai Shiranui's crouch - or the motion pack's): takes "guard_pack" and "guard_stance" (user 10-11 "luf还原ROE里的姿势吧").
+        ///   -executeMethod RoeFighter.EditorTools.RoeClothDemo.Guards [-roeChars g04] [-roeScript all]
+        /// </summary>
+        [MenuItem("ROE Fighter/Fight/Own guard demo")]
+        public static void Guards()
+        {
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "guard_demo"));
+            var own = new Dictionary<string, AnimationClip>();
+            var chosen = Chosen();
+            Film(outDir, new[] { "guard_pack", "guard_stance" }, (game, variant) =>
+            {
+                foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
+                {
+                    if (rig.ownGuard != null)
+                        own[rig.id] = rig.ownGuard;
+                    rig.ownGuard = variant == "guard_stance" && own.TryGetValue(rig.id, out var g) ? g : null;
+                }
+            }, (game, variant, me) => me.rig.ownGuard != null ? $"guard: her game stance ({me.rig.ownGuard.name})"
+                                      : me.rig.strikePack != null && me.rig.strikePack.clips.Any(c => c.role == "guard" && c.clip != null) ? $"guard: {me.rig.strikePack.title}"
+                                      : $"guard: {game.Pack.title}",
+               chosen.script == Script ? null : (variant, me) => (chosen.script, chosen.length));
+            // as the scene has it again
+            foreach (var game in Object.FindObjectsByType<FightGame>(FindObjectsSortMode.None))
+                foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
+                    if (own.TryGetValue(rig.id, out var g))
+                        rig.ownGuard = g;
         }
 
         [MenuItem("ROE Fighter/Fight/Motion pack demo")]
@@ -276,6 +320,7 @@ namespace RoeFighter.EditorTools
             ShaderUtil.allowAsyncCompilation = false;
             var log = new System.Text.StringBuilder("[ROE] demo:");
             var takes = new List<string>();
+            var filmed = Script;    // the script the takes played (script.txt, for the video's captions)
             // the scene is opened once: opened again in the same editor session, URP's post-processing
             // lost its volume components (assertion "SetupColorLut colorAdjustments cannot be null") and
             // every frame came out black
@@ -349,6 +394,7 @@ namespace RoeFighter.EditorTools
                     var look = Aim();
                     var chestAhead = chest ? ChestAhead() : Vector3.zero;
                     var (script, length) = plan != null ? plan(variant, me) : (Script, Length);
+                    filmed = script;
                     int steps = Mathf.RoundToInt(length * 60f), shot = 0;
                     for (int s = 0; s < steps; s++)
                     {
@@ -396,9 +442,8 @@ namespace RoeFighter.EditorTools
                     if (after != about)
                         log.Append($"\n[ROE]   {id} {variant} after the take: {after}");
                 }
-            if (plan == null)
-                File.WriteAllText(Path.Combine(outDir, "script.txt"), string.Join("\n", Script.Select(x =>
-                    $"{x.from.ToString("F1", CultureInfo.InvariantCulture)} {x.what}")));
+            File.WriteAllText(Path.Combine(outDir, "script.txt"), string.Join("\n", filmed.Select(x =>
+                $"{x.from.ToString("F1", CultureInfo.InvariantCulture)} {x.what}")));
             File.WriteAllText(Path.Combine(outDir, "takes.txt"), string.Join("\n", takes));
             Debug.Log(log.ToString());
         }

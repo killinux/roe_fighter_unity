@@ -160,6 +160,16 @@ namespace RoeFighter.Fight
                     else
                         clips.Insert(at++, new NamedClip { name = c.role, clip = c.clip, loop = c.loop });
                 }
+            // her guard of her own over both (ownGuard: Luf stands in her game's battle stance)
+            if (ownGuard != null)
+            {
+                int i = clips.FindIndex(x => x.name == "guard" && !x.game);
+                var own = new NamedClip { name = "guard", clip = ownGuard, loop = true };
+                if (i >= 0)
+                    clips[i] = own;
+                else
+                    clips.Insert(at++, own);
+            }
             // this fighter's own strikes (strikePack) besides the pack's: their clips under their own names
             if (strikePack != null)
                 foreach (var c in strikePack.clips.Where(c => c.clip != null && strikePack.strikes.Any(m => m.clip == c.role)))
@@ -178,6 +188,14 @@ namespace RoeFighter.Fight
 
         /// <summary>This fighter's own strikes instead of the motion pack's (g04: Mai Shiranui's, from DOA6); null: the pack's.</summary>
         public MotionPack strikePack;
+
+        /// <summary>
+        /// The guard she stands in between moves, in place of the motion pack's and her strike pack's (user 10-11 "luf还原ROE里的姿势吧":
+        /// Luf stands in her game's battle stance idle_01, not in Mai Shiranui's crouch): the stance's humanoid curves only
+        /// (Editor RoeHumanoidClips.HumanOnly), so the bones the motion capture leaves alone - fan, hair, skirt - keep layer 0's
+        /// and her helper bones follow the limbs as under any motion capture; null: the pack's guard.  Takes effect at the next Init().
+        /// </summary>
+        public AnimationClip ownGuard;
 
         /// <summary>
         /// Flat feet - no heels (g05 is barefoot) - as the scene build measured them (Editor RoeFeet: her planted feet in

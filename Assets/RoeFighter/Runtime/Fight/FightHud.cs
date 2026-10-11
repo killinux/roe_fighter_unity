@@ -99,7 +99,7 @@ namespace RoeFighter.Fight
                                      left ? new Vector2(0.28f, 0.11f) : new Vector2(0.97f, 0.11f));
             }
             timer = Label("timer", "60", 64, TextAnchor.MiddleCenter, new Vector2(0.455f, 0.875f), new Vector2(0.545f, 0.985f));
-            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  L O P = specials (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth   F5: skirt   F6: clothes burst   F7: select   F8: camera",
+            help = Label("help", "1P: A/D move  W/S side step  J K U I = A B C D  1 2 3 / L O P = skills (or 236 / 214 / 236236 + J or U)   F1/F2: CPU on/off   F3: motions   F4: cloth   F5: skirt   F6: clothes burst   F7: select   F8: camera",
                          20, TextAnchor.LowerCenter, new Vector2(0.2f, 0.0f), new Vector2(0.8f, 0.04f));
             help.gameObject.SetActive(showHelp && !drawnByCamera);
             BuildSelect(game);

@@ -114,6 +114,7 @@ namespace RoeFighter.Fight
 
     /// <summary>
     /// Keyboard and pad.  Player 1: A/D left/right, W/S step in/out of the screen, J K U I = A B C D,
+    /// 1 2 3 (the number row, as ROE's three skill buttons - user 10-11 "战斗按钮123，用luf在ROE里的三个招数") or
     /// L O P = specials 1 2 3 (or 236/214/236236 + A or C).  Player 2: arrow keys, keypad 1 2 4 5 =
     /// A B C D, keypad 3 6 9 = specials.  A pad works for player 1 (stick or d-pad, buttons 0-3,
     /// shoulders 4/5 = specials 1/2, 6 = super).
@@ -136,9 +137,9 @@ namespace RoeFighter.Fight
                 i.b = Input.GetKeyDown(KeyCode.K) || Input.GetKeyDown(KeyCode.JoystickButton1);
                 i.c = Input.GetKeyDown(KeyCode.U) || Input.GetKeyDown(KeyCode.JoystickButton2);
                 i.d = Input.GetKeyDown(KeyCode.I) || Input.GetKeyDown(KeyCode.JoystickButton3);
-                i.s1 = Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.JoystickButton4);
-                i.s2 = Input.GetKeyDown(KeyCode.O) || Input.GetKeyDown(KeyCode.JoystickButton5);
-                i.s3 = Input.GetKeyDown(KeyCode.P) || Input.GetKeyDown(KeyCode.JoystickButton6);
+                i.s1 = Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.L) || Input.GetKeyDown(KeyCode.JoystickButton4);
+                i.s2 = Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.O) || Input.GetKeyDown(KeyCode.JoystickButton5);
+                i.s3 = Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.P) || Input.GetKeyDown(KeyCode.JoystickButton6);
             }
             else
             {

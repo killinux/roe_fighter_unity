@@ -57,6 +57,7 @@
 | Luf 的裙子粘腿：两个原因——"swing"下垂太少，前片跟着大腿走；她垫在衣服下面的裸体有 6 个大腿顶点挂在裙子骨上。都修了 | 完成（10-11），见"裙子粘腿"一节；踢腿特写在 `out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
 | Luf 左边的裙子翘起来：游戏的战斗站姿里左裙片下摆本来就往外翘 30° 左右；我们的蹲低架势里长裙片碰到地面，"swing"的重力太轻时窄裙片从地面往外卷。重力改回 5 | 完成（10-11），见"左边的裙子翘起来"一节；对比图 `out\g04_left_panel.jpg`；exe 已重新打包 |
 | Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
+| Luf 站游戏里的战斗站姿（不再是不知火舞的蹲姿）；数字键 1、2、3 放技能 1、技能 2、超必杀（ROE 角色的就是她游戏里的三个战斗技能） | 完成（10-11），见"Luf 站游戏里的姿势；技能键 1、2、3"一节；对比视频 `out\g04_roe_stance.mp4`，对比图 `out\g04_roe_stance.jpg`；exe 已重新打包 |
 
 ## 目录
 
@@ -359,7 +360,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 剑星的物理 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
-| 技能 1、技能 2、超必杀（要满能量槽） | L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
+| 技能 1、技能 2、超必杀（要满能量槽）：ROE 角色的就是她游戏里的三个战斗技能 `skill_01..03` | 1、2、3（主键盘的数字键，像 ROE 的三个技能按钮；10-11 起），或 L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
 | 电脑接管 1P / 2P | F1 / F2 | |
 | 选人界面：换卡片 / 确认 / 退回（只有 1P 是人时，先选自己的，再替电脑选） | A、D / J（或回车、空格）/ K | ←、→ / 小键盘 1 / 小键盘 2 |
 | 回选人界面（比赛结束后按回车也回到这里，上一场的两人还选着，确认两次就是再来一场） | F7 | |
@@ -1392,6 +1393,7 @@ python tools\burst_video.py _work\burst_demo_fio005 out\clothes_burst_demo_fio00
   - 这是个前倾的低架势：躯干前倾 37–41°，髋高 0.78 米（拳击架势是 4°、1.11 米）。DOA6 原始数据里就是 36–43°，转换没有放大（`RoeFightProbe.Lean` 量的）；
   - g05 也是 Luffee（女神套装），默认也用这一套（`-roeOwnStrikes g04=doa6_mai,g05=doa6_mai`）。
   - 对比视频 `out\luffee_mai_stance.mp4`：左边动作包的拳击架势和招式，右边不知火舞的架势和四招，g04、g05 各一段。
+  - 10-11 起 g04 的站架改回她游戏里的战斗站姿（见"Luf 站游戏里的姿势；技能键 1、2、3"一节），四招还是不知火舞的；g05 仍站不知火舞的架势。
 
 ### 新角色：b10 和 g05（10-03 晚）
 
@@ -2398,4 +2400,36 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
 ```powershell
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Graphics -Extra '-roeDrapes','1','-roeChains','-roeDrapeByLevel','0,0'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','g04','-roeCloths','swing,magica_style','-roeScript','stance','-roeView','left','-roeOut','_work\stance_hip_left'
+```
+
+### Luf 站游戏里的姿势；技能键 1、2、3（10-11）
+
+用户 10-11："luf还原ROE里的姿势吧，战斗按钮123，用luf在ROE里的三个招数"。
+
+- **站架**：Luf（g04）从 10-03 起站的是不知火舞（DOA6）的格斗架势——两腿岔开、蹲低、身体前倾，和她在 ROE 里差很多。
+  现在出招之间她站的就是游戏里的战斗站姿 `idle_01`（1.33 秒一个循环，手搭在胯上，直身站着）。
+  - 做法：`idle_01` 早就转成了人形动作（`Generated\g04\humanoid\g04_idle_01.anim`，0 层一直在放它）。场景构建时只取它的人体曲线（肌肉和根，
+    `RoeHumanoidClips.HumanOnly`），存成 `g04_guard_stance.anim`，放进动捕层当她的 `guard`（`FighterRig.ownGuard`，`UseMotions` 换上，F3 换动作包也不变）。
+  - 扇子、头发、裙子的曲线故意不放进去：动捕层里一个片段有这些骨头、另一个没有，混合时没有的那一方会把它们拉回绑定姿势
+    （"踩过的坑"第 1 条：出拳时扇子张成巨大的扇面）。这些骨头仍由 0 层的 `idle_01` 和布料管，辅助骨照旧跟着四肢走。
+  - 前进、后退、侧步、四个普通攻击（不知火舞的冲步刺拳、肘击、扑身冲拳、高踢）都没变，出招从游戏站姿直接接过去，收招回到游戏站姿。
+    侧步时上半身是站架的，所以现在侧步也是直身的。
+  - 身体姿势和游戏的 `idle_01` 一样（对比图第二、三列）。裙子不一样的地方：站着时裙子是"swing"布料模拟的，不是游戏的手 K——
+    游戏里左边那条窄裙片的下摆往外翘一点，我们的直着垂下。
+  - 场景构建的开关 `-roeGuard`（默认 `g04=stance`）：`g04=pack` 回到不知火舞的架势；别的角色也能加，例如 `g04=stance,b10=stance`。
+    g05（女神 Luf）没改：她游戏里的战斗站姿浮在半空 23 厘米，`rig.stance` 用的是她的展示待机 `idle_02`。
+- **技能键 1、2、3**：主键盘上的数字键 1、2、3 就是技能 1、技能 2、超必杀（`PlayerInput`），对每个 ROE 角色都是她游戏里的
+  `skill_01`、`skill_02`、`skill_03`（技能一直是这三个，见"天野（m02）加入战斗"一节；原来只能按 L、O、P 或搓招）。L、O、P、搓招、手柄肩键照旧能用。
+  - 规则没改：超必杀要满能量槽；技能 1、2 不耗能量；对手在 6 米（超必杀 7 米）以内才放得出来。屏幕下方的按键提示也改了。
+  - 2P 照旧是小键盘 3、6、9。
+- **对比视频** `out\g04_roe_stance.mp4`（30 秒，`RoeClothDemo.Guards`，左：原来不知火舞的站架；右：现在的游戏站姿）：
+  同一套按键脚本——站架、前进、后退、两边侧步、A、C、D、B 四个普通攻击，然后按 1、2、3 放三个技能（脚本 `all`，放技能前把能量槽加满）。
+  字幕写着每一步按的键。
+- **对比图** `out\g04_roe_stance.jpg`：上排正面、下排左侧；每排是原来的站架 / 现在的站架 / 游戏的 `idle_01`（裙子是游戏手 K）。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics [-Extra '-roeGuard','g04=stance']
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','g04','-roeScript','all','-roeView','front','-roeOut','_work\guard_all_front'
+python tools\cloth_demo_video.py _work\guard_all_front out\g04_roe_stance.mp4 --variants guard_pack,guard_stance
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','g04','-roeScript','stance','-roeView','left','-roeOut','_work\guard_stance_left'
 ```

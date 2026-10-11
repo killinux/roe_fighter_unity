@@ -74,6 +74,24 @@ namespace RoeFighter.EditorTools
         /// <summary>A pose stands on the floor when its lowest toe or ankle bone is this low (m; heels lift the ankles 10-15 cm).</summary>
         public const float StandingSole = 0.12f;
 
+        /// <summary>
+        /// A converted game clip with its humanoid curves only (muscles, RootT, RootQ), saved as ClipPath(id, name): for the
+        /// motion-capture layer (FighterRig.ownGuard - Luf's battle stance as her guard), where the transform curves of her
+        /// fan, hair and skirt would pull those bones to the bind pose whenever a clip without them blends in.
+        /// </summary>
+        public static AnimationClip HumanOnly(string id, AnimationClip source, string name)
+        {
+            var clip = new AnimationClip { name = $"{id}_{name}", frameRate = source.frameRate };
+            var bindings = AnimationUtility.GetCurveBindings(source).Where(b => b.type == typeof(Animator)).ToArray();
+            AnimationUtility.SetEditorCurves(clip, bindings, bindings.Select(b => AnimationUtility.GetEditorCurve(source, b)).ToArray());
+            AnimationUtility.SetAnimationClipSettings(clip, AnimationUtility.GetAnimationClipSettings(source));
+            string assetPath = ClipPath(id, name);
+            Directory.CreateDirectory(Path.GetDirectoryName(assetPath));
+            AssetDatabase.DeleteAsset(assetPath);
+            AssetDatabase.CreateAsset(clip, assetPath);
+            return clip;
+        }
+
         /// <summary>"Left Index 1 Stretched" (HumanTrait) -> "LeftHand.Index.1 Stretched" (curve attribute).</summary>
         public static string MuscleAttribute(string traitName)
         {

@@ -625,6 +625,15 @@ namespace RoeFighter.EditorTools
                     Debug.LogWarning($"[ROE] {c.id}: her strikes ({own}) hold her weapon, but {RoeHumanoid.FighterPath(c.id)} has no RoeGrips - " +
                                      "run RoeFighter.EditorTools.RoeWeaponGrip.Build");
             }
+            // her guard between moves (user 10-11 "luf还原ROE里的姿势吧"): "stance" = her game's battle stance (rig.stance, its
+            // humanoid curves; FighterRig.ownGuard) instead of her strike pack's (Mai Shiranui's crouch) or the motion pack's;
+            // -roeGuard g04=stance,g05=stance (g05's battle stance floats: rig.stance is her showcase stand there)
+            string guardNote = "guard from the motion pack" + (rig.strikePack != null && rig.strikePack.clips.Any(x => x.role == "guard" && x.clip != null) ? $" / {rig.strikePack.name}" : "");
+            if (Table("-roeGuard", "g04=stance").TryGetValue(c.id, out var guardArg) && guardArg == "stance" && rig.stance != null)
+            {
+                rig.ownGuard = RoeHumanoidClips.HumanOnly(c.id, rig.stance, "guard_stance");
+                guardNote = $"guard = her game stance {rig.stance.name} (humanoid curves, -roeGuard {c.id}=stance)";
+            }
             if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
                 rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
             // heels or flat feet (user 10-03: "有的角色是有高跟鞋的，有的角色是没有的，得区分一下"): measured on her own standing
@@ -676,7 +685,7 @@ namespace RoeFighter.EditorTools
                       $"{rig.clips.Count} clips, {rig.weaponRenderers.Length} weapon renderers, {rig.sounds.Count} sounds, " +
                       $"clothes burst {(rig.burst != null ? rig.burst.Report() : "none")}, {showNote}, " +
                       $"own strikes {(rig.strikePack != null ? $"{rig.strikePack.name} ({string.Join(" ", rig.strikePack.strikes.Select(m => $"{m.button} {m.name}"))})" : "none")}, " +
-                      $"weapon size {rig.weaponScale:F2}{feetNote} " +
+                      $"{guardNote}, weapon size {rig.weaponScale:F2}{feetNote} " +
                       $"(hit sound {(hit.p != null ? Path.GetFileName(hit.p) : "none")}; sfx: {string.Join(" ", c.sfx.Take(12).Select(Path.GetFileNameWithoutExtension))})");
             return rig;
         }
