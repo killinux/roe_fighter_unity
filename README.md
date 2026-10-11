@@ -59,6 +59,7 @@
 | Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
 | Luf 站游戏里的战斗站姿（不再是不知火舞的蹲姿）；数字键 1、2、3 放技能 1、技能 2、超必杀（ROE 角色的就是她游戏里的三个战斗技能） | 完成（10-11），见"Luf 站游戏里的姿势；技能键 1、2、3"一节；对比视频 `out\g04_roe_stance.mp4`，对比图 `out\g04_roe_stance.jpg`；exe 已重新打包 |
 | Luf 的裙子重新从 ROE 导出核对（原始数据和游戏动作都没改乱）；照 ROE 自己的物理做了方案 `roe`；默认改成站在游戏站姿里时直接放 ROE 的手 K，动起来再交给布料 | 完成（10-11），见"Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看"一节；视频 `out\g04_skirt_roe.mp4`，图 `out\g04_skirt_roe.jpg`；exe 已重新打包 |
+| 游戏说明：操作、规则、技能、爆衣、功能键、11 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
 
 ## 目录
 
@@ -348,6 +349,8 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 ```
 
 双击 `out\ROEFighter\ROEFighter.exe` 就能玩（窗口 1600×900，可以拉大；整个文件夹 703 MB，四个角色以后 1.1 GB，打包 1.5–4.5 分钟，不能单独拷 exe）。开局先进选人界面（见"选人界面"一节）。
+**游戏说明**（10-11，给玩的人看：怎么操作、规则、每个角色的招式）：`docs\game-manual.md`；exe 旁边的 `out\ROEFighter\游戏说明.html` 是带截图的版本，
+由 `python tools\make_manual.py` 从它生成（键盘图、角色总览自动画；截图用 `--shot select=<帧> --shot fight=<帧> --shot skill=<帧>` 换）。改了按键或规则时一起改这份说明。
 也可以在编辑器里打开 `Assets\RoeFighter\Scenes\Fight_e23_steel_s02.unity` 按 Play。默认 1P 是人、2P 是电脑。
 第一次打包失败过一次：Unity 自带的 `MovedFromExtractor` 处理 `UnityEngine.IMGUIModule.dll` 时退出码 3、没有任何输出，原样重跑就成功了。
 按键：
