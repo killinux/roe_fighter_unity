@@ -56,6 +56,7 @@
 | Luf 的裙子在动捕动作里也甩起来：裙子的物理参数照游戏手 K 自动调（`RoeSkirtTune`），新方案"swing"，Luf 默认用它 | 完成（10-11），见"Luf 的裙子照游戏甩"一节；新旧对比 `out\g04_skirt_swing_front.mp4`、`out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
 | Luf 的裙子粘腿：两个原因——"swing"下垂太少，前片跟着大腿走；她垫在衣服下面的裸体有 6 个大腿顶点挂在裙子骨上。都修了 | 完成（10-11），见"裙子粘腿"一节；踢腿特写在 `out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
 | Luf 左边的裙子翘起来：游戏的战斗站姿里左裙片下摆本来就往外翘 30° 左右；我们的蹲低架势里长裙片碰到地面，"swing"的重力太轻时窄裙片从地面往外卷。重力改回 5 | 完成（10-11），见"左边的裙子翘起来"一节；对比图 `out\g04_left_panel.jpg`；exe 已重新打包 |
+| Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
 
 ## 目录
 
@@ -2355,7 +2356,7 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
     关掉地面碰撞（`-roeSkirt floor=0`）就都竖直（1°）。原来的"自然下垂"也是这样，只是看不太出来。
   - 今天的"swing"重力只有 1.5，那条窄裙片碰到地面后不往下落，从脚边往外卷成 S 形——看起来就是"左边的裙子翘起来"。
     重力改回 5（和游戏手 K 的差距 62.8° → 62.5°，几乎不变）：窄裙片竖直垂到地面，和原来一样。
-  - 另外，蹲着的时候左裙片最上面一根骨在胯部是水平往外的（90°，游戏站姿 51°），是蹲姿让大腿往前抬造成的，幅度小，没改。
+  - 另外，蹲着的时候左裙片最上面一根骨在胯部是水平往外的（90°，游戏站姿 51°）——下一节改成和游戏一样了。
 - **对比图** `out\g04_left_panel.jpg`（从她左边看全身）：swing 重力 1.5（卷起来）/ swing 重力 5（现在）/ 原来的自然下垂 / 游戏的战斗站姿。
 - **工具**：
   - 演示脚本 `-roeScript stance`：前 3 秒是对打架势（裙子交给物理），后 3 秒播游戏的战斗站姿 `idle_01`（裙子用游戏的关键帧）；
@@ -2368,4 +2369,33 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','g04','-roeCloths','swing,magica_style','-roeScript','stance','-roeView','left','-roeOut','_work\stance_left'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Graphics -Extra '-roeDrapes','1','-roeChains'                       # 每根裙骨的角度和离皮肤多远
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Graphics -Extra '-roeDrapes','1','-roeChains','-roeSkirt','floor=0'  # 关掉地面碰撞再看
+```
+
+### 胯部那一段和游戏一样（10-11）
+
+用户 10-11："luf胯部那一段也改成和游戏一样吧"。
+
+- **原来**："自然下垂"把每根裙骨都拉成竖直往下，再把穿进皮肤的推出来。蹲着的对打架势里，左裙片最上面一根骨被推成水平往外（91°），
+  前片腰上那一段又被拉成笔直往下（11°）；游戏站姿里这两处分别是 51° 和 46°（斜着搭在胯上、肚子上）。
+- **现在**（`RoeSkirtRig.DrapeByLevel`，默认 `{0, 0}`）：每片裙子最上面两根骨不下垂，用照游戏站姿拟合的形状（跟着胯和腿，和游戏手 K 一样），
+  也不再被推出皮肤（拟合的形状本来就离皮肤 1–2 厘米）；从第三根骨往下照旧下垂，所以踢腿时下面那一大段不会又被大腿带起来。
+  - 试过第二根骨下垂一半：推出皮肤那一步把前片的第二根骨顶到 66°，比全用拟合的（35°）差，没用。
+- **对比**（`RoeFightProbe.SkirtHang`，对打架势，每片裙子最上面两根骨离竖直往下多少度）：
+
+  | 裙片 | 游戏的战斗站姿 | 原来 | 现在 |
+  |---|---|---|---|
+  | 左裙片 | 51° / 25° | 91° / 33° | 58° / 40° |
+  | 前片 | 47° / 17° | 11° / 1° | 59° / 35° |
+  | 另一片前片 | 46° / 17° | 10° / 1° | 39° / 27° |
+  | 装饰线 | 50° / 44° | 87° / 6° | 41° / 28° |
+  | 后片 | 63° / 17° | 48° / 7° | 45° / 8° |
+
+- 对比图 `out\g04_hip_segment.jpg`：上排从左边看全身，下排左前方看胯部；每排是改之前 / 改之后 / 游戏的战斗站姿。左边那条窄裙片在胯部不再先水平伸出去。
+- 量的数：和游戏手 K 的差距 62.5° → 61.9°；动捕动作里穿进身体 0.42% → 0.53%（胯部的骨贴着皮肤，偶尔进去一点；看不出来），
+  抖动 8.8 → 9.2 毫米/步（最坏的一步 104 → 94），网格拉伸 2.6% → 2.5%。踢腿时前片仍然在腿下面垂着，没有粘回去。
+- 这条对所有用骨骼布料的裙子都起作用（g04；a08 在 exe 里是 Magica Cloth 2 全接管，不受影响）。可以改：`RoeFightProbe.SkirtHang -roeDrapeByLevel 0,0.5` 试别的比例。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Graphics -Extra '-roeDrapes','1','-roeChains','-roeDrapeByLevel','0,0'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','g04','-roeCloths','swing,magica_style','-roeScript','stance','-roeView','left','-roeOut','_work\stance_hip_left'
 ```

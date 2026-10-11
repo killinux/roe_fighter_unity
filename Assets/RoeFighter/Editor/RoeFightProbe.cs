@@ -2035,6 +2035,10 @@ namespace RoeFighter.EditorTools
         public static void SkirtHang()
         {
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            // -roeDrapeByLevel 0,0.5: how much each chain's top bones drape (RoeSkirtRig.DrapeByLevel)
+            string byLevel = RoeCapture.Arg("-roeDrapeByLevel", null);
+            if (byLevel != null)
+                RoeSkirtRig.DrapeByLevel = byLevel.Split(',').Select(x => float.Parse(x, System.Globalization.CultureInfo.InvariantCulture)).ToArray();
             bool chains = System.Environment.GetCommandLineArgs().Contains("-roeChains");
             string variant = RoeCapture.Arg("-roeVariant", "");
             RoeBoneCloth.NoColliders = variant.Contains("nocoll");

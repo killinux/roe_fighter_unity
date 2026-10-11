@@ -95,6 +95,17 @@ namespace RoeFighter
         /// side of the leg to the other.
         /// </summary>
         public static float DrapeSettle = 0.05f;
+        /// <summary>
+        /// How much the top bones of each chain drape, by their place in it (the rest drape fully): the hip end of a panel
+        /// keeps the fitted pose - the game's stance carried by the hips and legs - as the game's own stance has it (user
+        /// 10-11: "luf胯部那一段也改成和游戏一样吧": draped, g04's left panel stood out flat from the hip in her crouched guard,
+        /// 94 degrees from straight down against the game stance's 51, and her front panels hung straight down at the waist,
+        /// 11 against 46): the first two bones (RoeFightProbe.SkirtHang, top two bones against the game's stance - left panel
+        /// 58 / 40 against 51 / 25, front panel 59 / 35 against 47 / 17; with the second bone draped halfway the push off the
+        /// skin stood it up to 66).  From the third bone down the panel still hangs: the fitted pose there rides on the thighs
+        /// (a kick lifted the front panel with the leg).
+        /// </summary>
+        public static float[] DrapeByLevel = { 0f, 0f };
 
         RoeBodySurface body;
         int[] chainRoot;
@@ -103,6 +114,7 @@ namespace RoeFighter
         Vector3[][] samples;     // per joint: a spread of its cloth's vertices, in the bone's rotation frame from its head
         float[][] sampleLever;   // per sample: how far along the bone, as a share of its length (0.5 .. 1.5)
         float[] chainDepth;      // per joint: how far down its chain it starts (0 = the chain's first bone)
+        int[] chainLevel;        // per joint: its place in its chain (0 = the first bone)
         Vector3[] hung;          // per joint: the direction it hung in at the last step (world)
         bool hungValid;
 
@@ -159,6 +171,7 @@ namespace RoeFighter
                 }
                 chainRoot[j] = r;
             }
+            chainLevel = level;
             chainDepth = new float[joints.Count];
             for (int j = 0; j < joints.Count; j++)
             {
@@ -434,7 +447,8 @@ namespace RoeFighter
             var bone = joints[j].bone;
             var head = bone.position;
             float length = (bone.TransformPoint(joints[j].tailLocal) - head).magnitude;
-            float share = Drape * drapeScale;
+            float share = Drape * drapeScale *
+                          (chainLevel != null && j < chainLevel.Length && chainLevel[j] < DrapeByLevel.Length ? DrapeByLevel[chainLevel[j]] : 1f);
             var hanging = share >= 1f ? Vector3.down : Vector3.Slerp(fitted, Vector3.down, share).normalized;
             var dir = Vector3.Slerp(from, hanging, settle).normalized;
             var outward = joints[chainRoot[j]].bone.position - hips.position;
@@ -490,6 +504,11 @@ namespace RoeFighter
                 if (!moved)
                     break;
             }
+            // a bone that keeps (part of) the fitted pose - the hip end of a panel (DrapeByLevel) - is pushed off the skin only
+            // as far as it drapes: the fitted pose lies where the game's stance has it (pushed whole, g04's left panel stood out
+            // flat from her hip in the crouched guard)
+            if (share < 1f)
+                return Vector3.Slerp(fitted.normalized, (tail - head).normalized, Mathf.Clamp01(share)) * length;
             return tail - head;
         }
     }
