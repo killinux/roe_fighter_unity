@@ -88,15 +88,18 @@ namespace RoeFighter
         /// <summary>
         /// The skirt swinging like her game's hand keys (user 10-11: "做吧，让动捕动作里的裙子也甩起来"; the "swing" setup, which
         /// "auto" takes for these fighters): per fighter, settings over the skirt preset ("drape" is the share of
-        /// RoeSkirtRig's drape), found by RoeSkirtTune against her game's own keys - g04: 65.1 -> 58.2 deg RMS on skill 1 and
-        /// 2, held out (super, hurt, react_02) 43.6 -> 40.9.  She feels her own turns and kicks fully (inertia 1), is pulled
-        /// back to the animation pose less (restore 0.1), may swing further (limitTip 60), hangs less straight down (drape
-        /// 0.3) and lighter (gravity 1.5; the search's 0.5 scored the same).  Override, the exe too: -roeSkirtSwing
-        /// "g04:restore=0.1,...|a08:..." (an empty entry takes a fighter off).
+        /// RoeSkirtRig's drape), found by RoeSkirtTune against her game's own keys - g04: 65.1 -> 62.8 deg RMS on skill 1 and
+        /// 2, held out (super, hurt, react_02) 43.6 -> 42.9.  She feels her own turns and kicks fully (inertia 1), is pulled
+        /// back to the animation pose less (restore 0.1), may swing further (limitTip 60, root 12 cm off the pose) and is
+        /// lighter (gravity 1.5; the search's 0.5 scored the same).  She still hangs fully (drape 1): the first version took
+        /// the search's drape 0.3 (58.2 deg), but then 70 % of a panel's pose was the skirt rig's fitted one, which carries
+        /// g04's front panel on her right thigh (0.55-0.65) - a kick lifted the panel with the leg as if glued to it (user
+        /// 10-11: "似乎和裙子有粘连").  Override, the exe too: -roeSkirtSwing "g04:restore=0.1,...|a08:..." (an empty entry
+        /// takes a fighter off; "drape=0.3" gives the leg-carried look back).
         /// </summary>
         public static readonly Dictionary<string, string> SwingTunings = new Dictionary<string, string>
         {
-            ["g04"] = "drape=0.3,restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5",
+            ["g04"] = "restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5",
         };
 
         public static string SwingTuning(string id) => id != null && SwingTunings.TryGetValue(id, out var t) ? t : "";

@@ -71,6 +71,13 @@ namespace RoeFighter.EditorTools
         const float FitReach = 0.05f;                //   the suit's skin at most this far (eve09's feet have none: left alone)
         const float AroundPieces = 0.06f;            //   one further from it and under no piece waits for the nearest pieces (looked for this far, then 2x, 4x)
 
+        /// <summary>A bone of loose cloth (RoeBoneCloth.RoeKindOf: skirt, sash, hair, chain) - the body takes no weight from it.</summary>
+        static bool Loose(Transform bone)
+        {
+            string kind = bone != null ? RoeBoneCloth.RoeKindOf(bone.name) : null;
+            return kind == "skirt" || kind == "ribbon" || kind == "hair" || kind == "chain";
+        }
+
         class Grid
         {
             readonly Dictionary<Vector3Int, List<int>> cells = new Dictionary<Vector3Int, List<int>>();
@@ -426,7 +433,18 @@ namespace RoeFighter.EditorTools
             // clearly nearer than any skin (where the game cut the skin away); else the nearest skin
             var weightsOf = new Dictionary<int, (Transform bone, float weight)[]>();
             var under = new HashSet<int>();         // only under pieces that never come off
-            int fromSkin = 0, fromOutfit = 0, lost = 0;
+            int fromSkin = 0, fromOutfit = 0, lost = 0, unhooked = 0;
+            Dictionary<Transform, float> Gather(List<(int i, float d)> sources)
+            {
+                var sum = new Dictionary<Transform, float>();
+                foreach (var (k, d) in sources)
+                {
+                    float w = 1f / ((d + 0.002f) * (d + 0.002f));
+                    foreach (var (bone, weight) in influence[k])
+                        sum[bone] = (sum.TryGetValue(bone, out float s) ? s : 0f) + w * weight;
+                }
+                return sum;
+            }
             var skinGap = new List<float>();
             (float d, List<(int i, float d)> list) Nearest(Grid grid, Vector3 q, float radius, float band)
             {
@@ -490,12 +508,26 @@ namespace RoeFighter.EditorTools
                     lost++;
                     continue;
                 }
-                var sum = new Dictionary<Transform, float>();
-                foreach (var (k, d) in pick)
+                var sum = Gather(pick);
+                // a body never hangs on loose cloth (user 10-11: "luf的腿部权重是否有问题，似乎和裙子有粘连" - six of g04's
+                // thigh vertices, where the game cut her skin away under a skirt piece lying on the thigh, took that piece's
+                // skirt bones whole, and the swinging skirt pulled the skin with it): the skirt's, sashes', hair's and
+                // chains' bones give no weight; a vertex left with none takes the nearest skin's
+                int before = sum.Count;
+                foreach (var bone in sum.Keys.Where(Loose).ToList())
+                    sum.Remove(bone);
+                if (sum.Count < before)
+                    unhooked++;
+                if (sum.Count == 0 && onSkin != null)
                 {
-                    float w = 1f / ((d + 0.002f) * (d + 0.002f));
-                    foreach (var (bone, weight) in influence[k])
-                        sum[bone] = (sum.TryGetValue(bone, out float s) ? s : 0f) + w * weight;
+                    sum = Gather(onSkin);
+                    foreach (var bone in sum.Keys.Where(Loose).ToList())
+                        sum.Remove(bone);
+                }
+                if (sum.Count == 0)
+                {
+                    lost++;
+                    continue;
                 }
                 var top = sum.OrderByDescending(kv => kv.Value).Take(4).ToArray();
                 float total = top.Sum(kv => kv.Value);
@@ -756,6 +788,7 @@ namespace RoeFighter.EditorTools
             log.Append($"\n[ROE]   nude body from {Path.GetFileName(n.prefab)} {n.renderer}[{string.Join(",", bodySubs)}]: {used.Count} vertices, " +
                        $"{fromSkin} take the suit's skin (gap median {Pct(0.5f):F2} mm, p95 {Pct(0.95f):F2} mm), {fromOutfit} the outfit over them, " +
                        (fromRound > 0 ? $"{fromRound} the skin round a piece that follows the body, " : "") +
+                       (unhooked > 0 ? $"{unhooked} had loose cloth (skirt, sash, hair, chain) among their sources and let it go, " : "") +
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
                        $"outfit pieces on the body {tightParts}, hanging away {looseParts}; " +
                        $"{bones.Count} bones; {skinCount} skin + {points.Count - skinCount} outfit points; material{(nb > 1 ? "s" : "")} " +

@@ -54,6 +54,7 @@
 | 天野（m02）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、爆衣到全身；四个 ROE 角色原地放的技能按游戏的距离打得到（以前离开 2.9 米就打空） | 完成（10-11），见"天野（m02）加入战斗"一节；技能录像 `out\skills_reel.mp4`（m02、Inase、Luf、Luf 女神各放三个技能），爆衣 `out\clothes_burst_demo_m02.mp4` |
 | 两个 Luf 的衣服和游戏里比：游戏怎么做的（战斗全是手 K，大厅只有头发用 Magica Cloth 2），手 K 甩多大；在她们自己的技能里关掉关键帧，我们的骨骼布料、Magica Cloth 2 两种设置和游戏手 K 并排比 | 完成（10-11），见"Luf 的衣服：和游戏里比"一节；视频 `out\luf_cloth_vs_game.mp4` |
 | Luf 的裙子在动捕动作里也甩起来：裙子的物理参数照游戏手 K 自动调（`RoeSkirtTune`），新方案"swing"，Luf 默认用它 | 完成（10-11），见"Luf 的裙子照游戏甩"一节；新旧对比 `out\g04_skirt_swing_front.mp4`、`out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
+| Luf 的裙子粘腿：两个原因——"swing"下垂太少，前片跟着大腿走；她垫在衣服下面的裸体有 6 个大腿顶点挂在裙子骨上。都修了 | 完成（10-11），见"裙子粘腿"一节；踢腿特写在 `out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
 
 ## 目录
 
@@ -2278,36 +2279,65 @@ python tools\takes_grid_video.py _work\luf_vs_game out\luf_cloth_vs_game.mp4 `
   - 检验：用没参与调参的超必杀、受击、react_02 再量一次。
 - **结果**（g04）：
 
-  | | 原来（自然下垂） | 照游戏甩 |
-  |---|---|---|
-  | 技能 1、2（调参用的） | 65.1° | 58.2° |
-  | 超必杀、受击、react_02（检验） | 43.6° | 40.9° |
+  | | 原来（自然下垂） | 照游戏甩（第一版，下垂 0.3） | 照游戏甩（现在，下垂 1） |
+  |---|---|---|---|
+  | 技能 1、2（调参用的） | 65.1° | 58.2° | 62.8° |
+  | 超必杀、受击、react_02（检验） | 43.6° | 40.9° | 42.9° |
 
   - 差距只缩小了一部分：游戏的裙子是美术按"甩"画出来的，很多帧不是物理能算出来的样子。
-  - 方向很清楚，就是"更甩"：下垂 1 → 0.3、惯性 0.3 → 1（完全感受到自己的转身和踢腿）、拉回 0.35 → 0.1、
+  - 方向很清楚，就是"更甩"：惯性 0.3 → 1（完全感受到自己的转身和踢腿）、拉回 0.35 → 0.1、
     裙尖角度上限 35° → 60°、离动画姿势的最大距离（根部）3 → 12 cm、重力 5 → 1.5（搜索给的 0.5 分数一样，取更自然的）。
+  - 第一版还把下垂从 1 降到 0.3（分数最好），结果裙子粘腿，改回 1，见下面"裙子粘腿"。下垂固定为 1 再搜一遍，其余参数没有更好的了。
   - 附近一大片参数分数都差不多（58.2–58.3°），所以取了其中看起来更自然的值。
 - **动捕动作里的效果**（播放模式，`-roeScript moves`，左原来 / 右新的）：`out\g04_skirt_swing_front.mp4`（正面）、`out\g04_skirt_swing_backright.mp4`（右后，臀部特写）。
   - 走路时前片跟着迈步往一边摆，侧步、刺拳时裙片往身后、身侧飘开；高踢时前片被踢起来甩到一边（游戏里的技能就是这样）；
     原来的几乎一直垂着，高踢时腿从垂着的前片旁边穿过去。
-  - 量的数（整段）：穿进身体 0.46% → 0.53%，抖动 9.1 → 9.3 毫米/步，网格拉伸平均 2.5% → 3.0%（最坏的一步 67% → 91%）。几乎没变差。
+  - 量的数（整段，下垂 1 的现在这版）：穿进身体 0.47% → 0.43%，抖动 9.1 → 9.1 毫米/步（最坏的一步 162 → 102），
+    网格拉伸平均 2.5% → 2.6%（最坏的一步 67% → 80%）。
 - **怎么用**：
   - F4 列表多了一个方案 `swing`（"骨骼布料，裙子照游戏手 K 甩"）：裙子用这个人调好的参数，其余（头发、胸、链子）和 `magica_style` 一样。
   - F4 默认的"各用自己游戏的"（`auto`）：调过的人（现在是 g04）自动用 `swing`；想要原来的"自然下垂"，F4 切到 `magica_style`。
-  - F5 照旧在"下垂 / 跟腿走"之间切（`swing` 的下垂是 0.3 倍）。
+  - F5 照旧在"下垂 / 跟腿走"之间切。
   - 游戏自己的动作（技能、受击、开场、胜利、选人展示）照旧用游戏的裙子关键帧，不受影响。
   - Inase 在 exe 里本来就是 Magica Cloth 2 全接管（插件预设），裙子已经会甩，这次没有动她。
 - **参数**（`RoeBoneCloth.SwingTunings`，默认值写在代码里）：
-  `g04 = drape=0.3,restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5`。
+  `g04 = restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5`（另可写 `drape=` 下垂的比例，默认 1）。
   可以覆盖（exe 也认）：`ROEFighter.exe -roeSkirtSwing "g04:restore=0.2,gravity=3"`；给别的角色加：`"a08:..."`；空的一条把这个人去掉。
 
 ```powershell
-# 调参（约 15 分钟）：trials.txt 每一试，best.txt 最好的一组
-.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeSkirtTune.Run -Graphics -TimeoutMinutes 90 -Extra '-roeChar','g04','-roePasses','3','-roeOut','_work\skirt_tune_g04'
+# 调参（约 15 分钟）：trials.txt 每一试，best.txt 最好的一组；-roeSkip drape 把下垂固定在 -roeStart 给的值
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeSkirtTune.Run -Graphics -TimeoutMinutes 90 -Extra '-roeChar','g04','-roePasses','2','-roeSkip','drape','-roeStart','drape=1,restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5','-roeOut','_work\skirt_tune_g04_drape1'
 # 核对：技能里新旧和游戏手 K 差多少（日志 "skirt against the game's keys"）
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','g04','-roeCloths','magica_style,swing','-roeScript','skills','-roeSkirtKeys','off','-roeOut','_work\swing_check'
 # 动捕动作里新旧对比（播放模式，每个视角约 7 分钟），-roeView backright 是右后
 .\tools\unity_batch.ps1 -NoQuit -Graphics -TimeoutMinutes 50 -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Name swing_moves_front `
     -Extra '-roeChars','g04','-roeCloths','magica_style,swing','-roeScript','moves','-roeView','front','-roeOut','_work\swing_moves_front'
 python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_front.mp4 --chars g04 --variants magica_style,swing
+```
+
+### 裙子粘腿（10-11）
+
+用户 10-11："luf的腿部权重是否有问题，似乎和裙子有粘连"。
+
+- **查了什么**（`RoeWeightProbe.SkirtLegs`）：她所有网格逐个材质数，哪些顶点挂在裙子骨上、哪些挂在腿骨上（大腿、小腿、脚、扭转骨、膝盖和臀部辅助骨）、哪些两边都挂；
+  每个顶点（绑定位置、骨骼和权重）写到 `_work\weights\<id>.tsv`。
+  - 裙子网格基本干净：两边都挂的只有腰带一圈（离地 1.00–1.07 米，裙子缝在腰上的地方，正常）。
+  - **裸体身体**（爆衣用，垫在衣服下面）有 **6 个大腿正面的顶点（离地 0.83 米）100% 挂在裙子骨上**：裙子一甩，就把大腿皮肤扯过去。
+    这不是游戏的权重：裸体的权重是我们抄的（`RoeNudeBody`：抄贴在它上面的东西）。游戏在那里把皮肤剪掉了，上面贴着一块裙片，这几个点就抄了裙片的。
+  - **裙子的动画姿势**（`RoeSkirtRig`）：动捕动作里裙骨跟着腿走，权重是照游戏手 K 拟合的——前片中段 55–65% 挂在右大腿上，左片下段 40–50% 挂左小腿，
+    后片下段 33–50% 挂右小腿。原来的"自然下垂"（下垂 1）把方向换成竖直往下，腿只在碰撞时推裙子；
+    今天第一版"swing"只下垂 0.3，前片 70% 跟着大腿走，一踢腿前片就被大腿带起来，像粘在腿上。
+- **改了什么**：
+  - 裸体抄权重时，会飘的东西（裙子、飘带、头发、链子的骨，按骨骼布料的命名规则）一律不给权重；抄完什么都不剩的点改抄最近的皮肤。
+    重建了所有角色的爆衣身体：g04 9 个点、m02 4 个、eve37 1 个改了，其余角色没有这种点。g04 那 6 个点现在挂在大腿上（97%）和骨盆上。
+  - "swing"改回完全下垂（下垂 1），其余让裙子甩的参数保留（下垂固定为 1 重新调了一遍，没有更好的）。和游戏手 K 比 62.8°（原来 65.1°）；
+    动捕动作里穿进身体、抖动都比原来的少一点（见上一节）。踢腿时前片不再跟着大腿上去，在腿下面、后面垂着、甩着。
+- **踩过的坑**：重建爆衣（`RoeBurstBuilder.Check`）之后**要重建对战场景**（`RoeFightScene.Build`）：裸体身体去掉了裙子骨，骨骼的编号变了，
+  场景里还留着旧的骨骼列表，权重就对错了骨头（量出来 3,000 个顶点"挂在裙子骨上"，重建场景后是 0）。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeightProbe.SkirtLegs -Extra '-roeChar','g04'       # → _work\weights\g04.tsv
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','a08,g04,b10,g05,m02,eve09,eve37,fio005'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics        # 爆衣重建之后一定要跟着做
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
 ```

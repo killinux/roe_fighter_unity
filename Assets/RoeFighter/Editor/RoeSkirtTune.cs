@@ -23,7 +23,7 @@ namespace RoeFighter.EditorTools
     /// its candidate values tried, the best kept; two passes.  Trained on skill 1 and skill 2 (RoeClothDemo.SkillScript),
     /// judged on a held-out script (the super, a hurt, react_02) - the game keys every one of them by hand.  Nothing is
     /// rendered; every trial is a fresh fight setup, so the numbers do not depend on the order.
-    ///   -executeMethod RoeFighter.EditorTools.RoeSkirtTune.Run -roeChar g04 [-roePasses 2] [-roeStart "restore=0.2,drape=1"]
+    ///   -executeMethod RoeFighter.EditorTools.RoeSkirtTune.Run -roeChar g04 [-roePasses 2] [-roeStart "restore=0.2,drape=1"] [-roeSkip drape]
     ///   [-roeOut _work\skirt_tune_g04]      -> trials.txt (every trial), best.txt (the tuning string, then the numbers)
     /// </summary>
     public static class RoeSkirtTune
@@ -62,6 +62,9 @@ namespace RoeFighter.EditorTools
             string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
             string outDir = RoeCapture.Arg("-roeOut", Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "skirt_tune_" + id));
             int passes = int.Parse(RoeCapture.Arg("-roePasses", "2"));
+            // -roeSkip drape: settings held where -roeStart puts them (user 10-11: with the drape at 0.3 the skirt rig's fitted
+            // pose - the front panel on her right thigh - lifted the panel with a kick, "和裙子有粘连")
+            var skip = new HashSet<string>(RoeCapture.Arg("-roeSkip", "").Split(',').Select(s => s.Trim()).Where(s => s.Length > 0));
             Directory.CreateDirectory(outDir);
             var current = Space.ToDictionary(p => p.key, p => p.values[0]);
             foreach (var (k, v) in Parse(RoeCapture.Arg("-roeStart", "")))
@@ -82,7 +85,7 @@ namespace RoeFighter.EditorTools
                 for (int pass = 1; pass <= passes; pass++)
                 {
                     bool moved = false;
-                    foreach (var (key, values) in Space)
+                    foreach (var (key, values) in Space.Where(p => !skip.Contains(p.key)))
                         foreach (float v in values)
                         {
                             if (Mathf.Approximately(v, current[key]))
