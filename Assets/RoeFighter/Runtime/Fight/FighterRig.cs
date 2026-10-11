@@ -333,7 +333,7 @@ namespace RoeFighter.Fight
             (cloth as IDisposable)?.Dispose();
             cloth = backend.Make(new RoeClothScope
             {
-                animator = animator, world = transform,
+                id = id, animator = animator, world = transform,
                 exclude = helpers != null ? helpers.drives.Select(d => d.helper).ToList() : null,
                 // a DOA6 character: her loose bones by kind from her physics data (their names are only numbers), her grid
                 // cloth's columns as one sheet each
@@ -346,7 +346,10 @@ namespace RoeFighter.Fight
             // heading, and it hangs on the skin (measured here, in the stance)
             skirtRig = backend.skinnedSkirt ? animator.GetComponent<RoeSkirtRig>() : null;
             if (skirtRig != null)
+            {
                 skirtRig.drapeAllowed = !backend.noDrape;      // a solver that hangs the skirt itself: our drape off
+                skirtRig.drapeScale = backend.DrapeFor(id);     // the "swing" skirt hangs less (RoeBoneCloth.SwingTunings)
+            }
             if (skirtRig != null && hips != null && thighs.All(t => t != null))
             {
                 skirtRig.CaptureStance(hips.position, HipHeading());
@@ -835,6 +838,9 @@ namespace RoeFighter.Fight
 
         public string SkirtKeyError => skirtKeyCount == 0 ? "no frames of the game's clips"
             : $"{Math.Sqrt(skirtKeySum / skirtKeyCount):F1} deg RMS (worst {skirtKeyMax:F0}) over {skirtKeyCount} bone-frames";
+
+        /// <summary>The same as a number (RMS degrees; NaN before any frame of the game's clips) - RoeSkirtTune.</summary>
+        public float SkirtKeyRms => skirtKeyCount == 0 ? float.NaN : (float)Math.Sqrt(skirtKeySum / skirtKeyCount);
 
         public void ResetSkirtKeyError()
         {

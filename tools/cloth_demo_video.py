@@ -25,7 +25,7 @@ MOVES = {'jab': '刺拳', 'cross': '直拳', 'straight': '直拳', 'kick': '回�
          'bot_light_punch': '轻拳', 'bot_light_kick': '轻脚', 'bot_heavy_punch': '重拳', 'bot_heavy_kick': '重脚'}
 NAMES = {'g04': 'g04 Luf', 'a08': 'a08 Inase', 'b10': 'b10 Kart', 'g05': 'g05 Luf', 'kas': '霞（DOA6）', 'kas011': '霞 海盗裙（DOA6）',
          'fio005': 'Fiona PCF_005（Vindictus）', 'eve09': 'Eve 7 代潜降服（剑星）', 'mai': '不知火舞（DOA6）', 'eve37': 'Eve 百褶裙（剑星）'}
-TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '我们的骨骼布料（照 Magica 的做法）',
+TITLES = {'off': '布料关', 'on': '布料开（RoeBoneCloth）', 'legacy': '旧版布料（10-02）', 'magica_style': '我们的骨骼布料（照 Magica 的做法）', 'swing': '骨骼布料，裙子照游戏手 K 甩（新）',
           'rest_guard': '裙子以动捕站架为基准（第一版）', 'rest_stance': '裙子以游戏站姿为基准（52f11de）', 'drape': '裙子自然下垂（新）',
           'pack': '原来的普通攻击（Bandai 动捕）', 'own': '不知火舞的普通攻击（DOA6）',
           'game': '原来：照游戏浮空，飘带照关键帧', 'floor': '现在：受击倒地落地，技能升空，飘带模拟',

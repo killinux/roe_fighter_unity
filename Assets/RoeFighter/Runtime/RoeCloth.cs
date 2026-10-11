@@ -30,6 +30,8 @@ namespace RoeFighter
     /// </summary>
     public class RoeClothScope
     {
+        /// <summary>The fighter (her settings tuned to her own game: RoeBoneCloth.SwingTunings).</summary>
+        public string id;
         public Animator animator;
         public Transform world;
         /// <summary>Bones something else drives (the limb helpers).</summary>
@@ -50,7 +52,7 @@ namespace RoeFighter
 
         public RoeClothScope With(ICollection<string> only) => new RoeClothScope
         {
-            animator = animator, world = world, exclude = exclude, kinds = only, kindOf = kindOf, anchorOf = anchorOf, neighbours = neighbours,
+            id = id, animator = animator, world = world, exclude = exclude, kinds = only, kindOf = kindOf, anchorOf = anchorOf, neighbours = neighbours,
         };
     }
 
@@ -95,6 +97,8 @@ namespace RoeFighter
             /// <summary>The solver hangs the skirt by itself: RoeSkirtRig's drape (our natural hang, F5) stays off.</summary>
             public bool noDrape;
             public Func<RoeClothScope, IRoeCloth> make;
+            /// <summary>Per fighter: the share of RoeSkirtRig's drape (our natural hang, F5) her skirt takes; null: all of it.</summary>
+            public Func<string, float> drape;
             /// <summary>Whether it can take this kind on this fighter (null: any kind, any fighter).</summary>
             public Func<RoeClothScope, string, bool> covers;
         }
@@ -102,6 +106,12 @@ namespace RoeFighter
         public static readonly List<Solver> All = new List<Solver>
         {
             new Solver { name = "bone", title = "Magica-style bone cloth", skinnedSkirt = true, make = s => new RoeBoneCloth(s, legacy: false) },
+            // the skirt swinging like her game's hand keys: her own tuned settings over the skirt preset (RoeBoneCloth.SwingTunings)
+            new Solver
+            {
+                name = "bone_swing", title = "Bone cloth, the skirt swinging like her game's hand keys", skinnedSkirt = true,
+                make = s => new RoeBoneCloth(s, legacy: false, skirtTuning: RoeBoneCloth.SwingTuning(s.id)), drape = RoeBoneCloth.SwingDrape,
+            },
             new Solver { name = "bone_legacy", title = "Bone cloth (10-02)", make = s => new RoeBoneCloth(s, legacy: true) },
             new Solver
             {
@@ -166,6 +176,8 @@ namespace RoeFighter
             public Dictionary<string, string> byKind = new Dictionary<string, string>();
 
             public string SolverFor(string kind) => byKind.TryGetValue(kind, out var s) ? s : fallback;
+            /// <summary>The share of the drape her skirt takes under this setup (RoeClothSolvers.Solver.drape).</summary>
+            public float DrapeFor(string id) => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.drape?.Invoke(id) ?? 1f;
 
             /// <summary>The skirt follows the legs first (RoeSkirtRig) when its solver wants it.</summary>
             public bool skinnedSkirt => RoeClothSolvers.Find(SolverFor("skirt") ?? "")?.skinnedSkirt ?? false;
@@ -207,8 +219,9 @@ namespace RoeFighter
 
         public static readonly List<Backend> All = new List<Backend>
         {
-            All_("auto", "Each her own game's (DOA6, Vindictus' KawaiiPhysics, Stellar Blade's, else bone cloth)", "bone"),
+            All_("auto", "Each her own game's (DOA6, Vindictus' KawaiiPhysics, Stellar Blade's, else bone cloth; Luf's skirt swings like her game's)", "bone"),
             All_("magica_style", "Magica-style bone cloth", "bone"),
+            All_("swing", "Bone cloth, the skirt swinging like her game's hand keys (tuned to them; others as magica_style)", "bone_swing"),
             All_("doa6", "DOA6 physics (soft bodies, cloth grids)", "doa6"),
             new Backend { name = "doa6_breasts", title = "DOA6 soft breasts + bone cloth", fallback = "bone", byKind = { { "breast", "doa6" }, { "body", "doa6" } } },
             new Backend { name = "doa5lr_style", title = "DOA5LR-style spring net (breasts: bone cloth)", fallback = "doa5lr", byKind = { { "breast", "bone" }, { "body", "bone" } } },
@@ -237,7 +250,9 @@ namespace RoeFighter
             : id != null && Application.isPlaying && Preferred.TryGetValue(id, out var own) && All.Any(b => b.name == own) ? own
             : animator != null && animator.GetComponent<RoeDoaRig>() != null ? "doa6"
                                   : animator != null && animator.GetComponent<RoeSbRig>() != null ? "stellar"
-                                  : animator != null && animator.GetComponent<RoeKawaiiRig>() != null ? "kawaii" : "magica_style";
+                                  : animator != null && animator.GetComponent<RoeKawaiiRig>() != null ? "kawaii"
+                                  // a ROE fighter whose skirt is tuned to her game's hand keys (user 10-11: "让动捕动作里的裙子也甩起来")
+                                  : id != null && RoeBoneCloth.SwingTunings.ContainsKey(id) ? "swing" : "magica_style";
 
         public static string Next(string name)
         {

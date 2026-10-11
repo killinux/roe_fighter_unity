@@ -72,7 +72,7 @@ namespace RoeFighter
         // start right at the waist, swung 12 degrees rms standing still and jumped 14-39 degrees in a step
         // (RoeFightProbe.SkirtSwing).  Magica-style: the skirt's own animation pose follows the legs now
         // (RoeSkirtRig), so the cloth is held near it (max distance) and feels less of the fighter's travel.
-        public static Settings Skirt(bool legacy) => Tuned(legacy
+        public static Settings Skirt(bool legacy, string extra = null) => Tuned(Tuned(legacy
             ? new Settings { restore = 0.35f, damping = 0.15f, limitRoot = 5f, limitTip = 35f, inertia = 0.3f, stabilize = 0f }
             : new Settings
             {
@@ -80,10 +80,55 @@ namespace RoeFighter
                 inertia = 0.3f, moveLimit = 3f, turnLimit = 360f, depthInertia = 0.3f,
                 worldInertia = 0.15f, worldMoveLimit = 1f, worldTurnLimit = 120f,
                 maxDistanceRoot = 0.03f, maxDistanceTip = 0.25f, tether = 0.15f, links = true,
-            }, SkirtTuning);
+            }, extra), SkirtTuning);
 
         /// <summary>For checks: "key=value,..." over the skirt preset (see Tuned).</summary>
         public static string SkirtTuning = "";
+
+        /// <summary>
+        /// The skirt swinging like her game's hand keys (user 10-11: "做吧，让动捕动作里的裙子也甩起来"; the "swing" setup, which
+        /// "auto" takes for these fighters): per fighter, settings over the skirt preset ("drape" is the share of
+        /// RoeSkirtRig's drape), found by RoeSkirtTune against her game's own keys - g04: 65.1 -> 58.2 deg RMS on skill 1 and
+        /// 2, held out (super, hurt, react_02) 43.6 -> 40.9.  She feels her own turns and kicks fully (inertia 1), is pulled
+        /// back to the animation pose less (restore 0.1), may swing further (limitTip 60), hangs less straight down (drape
+        /// 0.3) and lighter (gravity 1.5; the search's 0.5 scored the same).  Override, the exe too: -roeSkirtSwing
+        /// "g04:restore=0.1,...|a08:..." (an empty entry takes a fighter off).
+        /// </summary>
+        public static readonly Dictionary<string, string> SwingTunings = new Dictionary<string, string>
+        {
+            ["g04"] = "drape=0.3,restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5",
+        };
+
+        public static string SwingTuning(string id) => id != null && SwingTunings.TryGetValue(id, out var t) ? t : "";
+
+        /// <summary>Her swing tuning's share of the drape (1 when it names none).</summary>
+        public static float SwingDrape(string id)
+        {
+            foreach (var pair in SwingTuning(id).Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                var kv = pair.Split('=');
+                if (kv.Length == 2 && kv[0].Trim() == "drape" &&
+                    float.TryParse(kv[1], System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out float v))
+                    return Mathf.Clamp01(v);
+            }
+            return 1f;
+        }
+
+        /// <summary>-roeSkirtSwing "g04:restore=0.1,...|a08:...": entries over SwingTunings; an empty one takes a fighter off.</summary>
+        public static void SwingFromArg(string arg)
+        {
+            foreach (var entry in (arg ?? "").Split('|'))
+            {
+                int colon = entry.IndexOf(':');
+                if (colon <= 0)
+                    continue;
+                string id = entry.Substring(0, colon).Trim(), tuning = entry.Substring(colon + 1).Trim();
+                if (tuning.Length == 0)
+                    SwingTunings.Remove(id);
+                else
+                    SwingTunings[id] = tuning;
+            }
+        }
 
         static Settings Tuned(Settings s, string tuning)
         {
@@ -107,6 +152,10 @@ namespace RoeFighter
                     case "particleLimit": s.particleLimit = v; break;
                     case "pushAttenuation": s.pushAttenuation = v; break;
                     case "maxDistanceTip": s.maxDistanceTip = v; break;
+                    case "maxDistanceRoot": s.maxDistanceRoot = v; break;
+                    case "moveLimit": s.moveLimit = v; break;
+                    case "turnLimit": s.turnLimit = v; break;
+                    case "worldTurnLimit": s.worldTurnLimit = v; break;
                     case "tether": s.tether = v; break;
                     case "links": s.links = v > 0f; break;
                     case "linkStiffness": s.linkStiffness = v; break;
@@ -233,6 +282,7 @@ namespace RoeFighter
         /// is still there, only it bends and trails.
         /// </summary>
         public static readonly HashSet<string> AlwaysKinds = new HashSet<string> { "ribbon" };
+        readonly string skirtTuning;            // this fighter's settings over the skirt preset (the "swing" setup)
         public float alwaysWeight = 1f;
         public static bool NoColliders, NoBackstop;     // for checks (RoeFightProbe.SkirtSwing -roeVariant)
         /// <summary>
@@ -258,8 +308,9 @@ namespace RoeFighter
         /// and the loose bones by scope.kindOf when the rig's bone names do not tell (DOA6's bone_&lt;id&gt;), its sheets by
         /// scope.anchorOf / neighbours.  doa5: Dead or Alive 5 Last Round's spring net (RoeBoneCloth.Doa5.cs).
         /// </summary>
-        public RoeBoneCloth(RoeClothScope scope, bool legacy, bool doa5 = false)
+        public RoeBoneCloth(RoeClothScope scope, bool legacy, bool doa5 = false, string skirtTuning = null)
         {
+            this.skirtTuning = skirtTuning;
             var animator = scope.animator;
             var world = scope.world;
             var exclude = scope.exclude;
@@ -315,7 +366,7 @@ namespace RoeFighter
                 if (anchor == null)
                     continue;
                 var bones = group.OrderBy(Depth).ToArray();
-                var s = kind == "skirt" ? Skirt(this.legacy) : kind == "hair" ? Hair(this.legacy) : kind == "ribbon" ? Ribbon(this.legacy)
+                var s = kind == "skirt" ? Skirt(this.legacy, skirtTuning) : kind == "hair" ? Hair(this.legacy) : kind == "ribbon" ? Ribbon(this.legacy)
                       : kind == "chain" ? Chain(this.legacy) : Breast(this.legacy);
                 if (doa5)
                     s = Doa5(kind, s);

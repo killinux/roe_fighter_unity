@@ -153,6 +153,9 @@ namespace RoeFighter.Fight
                 RoeClothesBurst.Enabled = Arg("-roeBurst") != "0";
             if (Arg("-roeCloth") != null)
                 FighterRig.ClothBackend = RoeClothBackends.Find(Arg("-roeCloth")).name;
+            // -roeSkirtSwing "g04:restore=0.1,...": a fighter's skirt swinging like her game's keys, tuned otherwise
+            if (Arg("-roeSkirtSwing") != null)
+                RoeBoneCloth.SwingFromArg(Arg("-roeSkirtSwing"));
             if (Arg("-roeCamAvoid") != null)
                 camAvoid = Arg("-roeCamAvoid") != "0";
             PickIds(Arg("-roeP1"), Arg("-roeP2"));

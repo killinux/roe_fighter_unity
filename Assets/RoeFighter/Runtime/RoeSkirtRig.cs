@@ -124,6 +124,8 @@ namespace RoeFighter
 
         /// <summary>Whether the drape may run on this fighter (FighterRig: off under a solver that hangs the skirt itself).</summary>
         [NonSerialized] public bool drapeAllowed = true;
+        /// <summary>This fighter's share of the drape (the cloth setup's: RoeClothBackends.Backend.DrapeFor - the "swing" skirt hangs less).</summary>
+        [NonSerialized] public float drapeScale = 1f;
 
         Transform DriverBone(int k) => k switch { 1 => hips, 2 => leftThigh, 3 => rightThigh, 4 => leftCalf, 5 => rightCalf, _ => null };
 
@@ -358,7 +360,7 @@ namespace RoeFighter
                 aimedFrom = new Vector3[joints.Count];
             }
             Predict(headingPos, headingRot, RestOnStance, predicted, aimedFrom);
-            bool drape = drapeAllowed && Drape > 0f && body != null && body.Count > 0 && chainRoot != null;
+            bool drape = drapeAllowed && Drape * drapeScale > 0f && body != null && body.Count > 0 && chainRoot != null;
             if (drape)
             {
                 body.Pose();
@@ -432,7 +434,8 @@ namespace RoeFighter
             var bone = joints[j].bone;
             var head = bone.position;
             float length = (bone.TransformPoint(joints[j].tailLocal) - head).magnitude;
-            var hanging = Drape >= 1f ? Vector3.down : Vector3.Slerp(fitted, Vector3.down, Drape).normalized;
+            float share = Drape * drapeScale;
+            var hanging = share >= 1f ? Vector3.down : Vector3.Slerp(fitted, Vector3.down, share).normalized;
             var dir = Vector3.Slerp(from, hanging, settle).normalized;
             var outward = joints[chainRoot[j]].bone.position - hips.position;
             outward.y = 0f;
