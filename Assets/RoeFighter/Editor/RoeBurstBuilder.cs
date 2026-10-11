@@ -108,6 +108,7 @@ namespace RoeFighter.EditorTools
             public string name, title;     // title: shown to people (captions, the check picture); the name if empty
             public int stage;
             public bool cloth, together;
+            public bool fade;              // paint on the skin (m02's vines are in her skin texture): fades out where it is, nothing flies
             public bool followBody;        // worn tight on the body: its pieces take the weights of the nude body under them (FollowBody)
             public string renderer, bone, anyBone, material;
             public float anyShare;
@@ -380,12 +381,12 @@ namespace RoeFighter.EditorTools
                 burst.pieces.Add(new RoeClothesBurst.Piece
                 {
                     name = name, group = u.Key.group.name, title = string.IsNullOrEmpty(u.Key.group.title) ? u.Key.group.name : u.Key.group.title,
-                    stage = u.Key.group.stage, cloth = u.Key.group.cloth, renderer = smr, triangles = count,
+                    stage = u.Key.group.stage, cloth = u.Key.group.cloth, fade = u.Key.group.fade, renderer = smr, triangles = count,
                 });
                 if (!taken.TryGetValue(r, out var list_))
                     taken[r] = list_ = new List<Part>();
                 list_.AddRange(u);
-                log.Append($"\n[ROE]   stage {u.Key.group.stage} {(u.Key.group.cloth ? "cloth " : "armour")} {name,-22} {u.Count(),4} pieces {count,6} triangles  " +
+                log.Append($"\n[ROE]   stage {u.Key.group.stage} {(u.Key.group.fade ? "fade  " : u.Key.group.cloth ? "cloth " : "armour")} {name,-22} {u.Count(),4} pieces {count,6} triangles  " +
                            $"bones {string.Join(" ", u.Select(p => p.bone).Distinct().Take(6))}{followed}");
             }
             // the shadows that pieces coming off earlier baked into the occlusion of the pieces under them

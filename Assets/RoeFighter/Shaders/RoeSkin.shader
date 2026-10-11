@@ -18,6 +18,7 @@ Shader "ROE/Skin"
         _BaseColor ("Color", Color) = (1,1,1,1)
         [Toggle(_ALPHATEST_ON)] _EnableAlphaTest ("Alpha Test", Float) = 0
         _Cutoff ("Alpha Cutoff", Range(0, 1)) = 0.5
+        _IGNOpacity ("Dither Opacity", Range(0, 1)) = 1
 
         [Header(Cast Shadow)] [Space(5)]
         _CastShadowDepthBias ("Depth Bias (x light bias)", Range(0, 30)) = 1
@@ -88,6 +89,7 @@ Shader "ROE/Skin"
             half _BumpScale;
             half _BumpBias;
             half _DetailBumpScale;
+            half _IGNOpacity;
         CBUFFER_END
 
         float2 RoeBaseUV(float2 uv)
@@ -100,6 +102,7 @@ Shader "ROE/Skin"
         #if defined(_ALPHATEST_ON)
             clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeBaseUV(uv)).a * _BaseColor.a - _Cutoff);
         #endif
+            RoeDitherClip(positionCS, _IGNOpacity);
         }
 
         void RoeShadowClip(float2 uv)
@@ -107,6 +110,7 @@ Shader "ROE/Skin"
         #if defined(_ALPHATEST_ON)
             clip(SAMPLE_TEXTURE2D(_BaseMap, sampler_BaseMap, RoeBaseUV(uv)).a * _BaseColor.a - _Cutoff);
         #endif
+            clip(_IGNOpacity - 0.5);
         }
 
         #define ROE_SHADOW_DEPTH_BIAS _CastShadowDepthBias
@@ -183,6 +187,8 @@ Shader "ROE/Skin"
             #if defined(_ALPHATEST_ON)
                 clip(alpha - _Cutoff);
             #endif
+                // paint on the skin fading out (RoeClothesBurst Piece.fade: m02's vines)
+                RoeDitherClip(input.positionCS, _IGNOpacity);
 
                 half4 mgac = SAMPLE_TEXTURE2D(_MetallicGlossMap, sampler_MetallicGlossMap, uv);
                 half metallic = mgac.r * _Metallic;

@@ -155,6 +155,8 @@ namespace RoeFighter.EditorTools
                 bool ok = true;
                 for (int i = 0; i < mapped.Length; i++)
                 {
+                    if (src.bones[i] != null && !bones.ContainsKey(src.bones[i].name))
+                        GraftBone(c, src.bones[i], bones);
                     if (src.bones[i] == null || !bones.TryGetValue(src.bones[i].name, out mapped[i]))
                     {
                         Debug.LogWarning($"[ROE] {c.id}: weapon '{src.name}' needs bone '{(src.bones[i] ? src.bones[i].name : "null")}' which the HD rig lacks");
@@ -178,6 +180,36 @@ namespace RoeFighter.EditorTools
                 added++;
             }
             return added;
+        }
+
+        /// <summary>
+        /// A weapon's bone the HD rig lacks (m02's floating eyes hang on Wp_eyes_01..06 and their children, bones only the
+        /// battle LD rig has; the game's clips key them all, idle included): the LD bone and its LD parents up to one the HD
+        /// rig has are copied under that parent with their LD local pose, so the weapon is skinned and the clips drive it.
+        /// </summary>
+        static void GraftBone(RoeManifest.Character c, Transform ldBone, Dictionary<string, Transform> bones)
+        {
+            var chain = new List<Transform>();
+            var p = ldBone;
+            while (p != null && !bones.ContainsKey(p.name))
+            {
+                chain.Add(p);
+                p = p.parent;
+            }
+            if (p == null)
+                return;
+            var parent = bones[p.name];
+            for (int i = chain.Count - 1; i >= 0; i--)
+            {
+                var b = new GameObject(chain[i].name).transform;
+                b.SetParent(parent, false);
+                b.localPosition = chain[i].localPosition;
+                b.localRotation = chain[i].localRotation;
+                b.localScale = chain[i].localScale;
+                bones[b.name] = b;
+                parent = b;
+                Debug.Log($"[ROE] {c.id}: bone '{b.name}' copied from the LD rig under '{b.parent.name}'");
+            }
         }
 
         /// <summary>

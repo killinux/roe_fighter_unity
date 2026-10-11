@@ -34,6 +34,9 @@ SKIP_BUNDLES = {'heros_shader_collection', 'package_cinemachine_prelude', 'audio
 SHADER_MAP = {
     'Pinkcore/Heros/ErosLit/Character': 'RoeCharacter',
     'Pinkcore/Heros/SimpleLit/Character': 'RoeCharacter',
+    # m02's body2/3: the character shader plus dissolve / fresnel / distortion extras, all off in the suits (lit as usual)
+    'Pinkcore/Heros/ErosLit/CharacterVFX': 'RoeCharacter',
+    'Pinkcore/Heros/SimpleLit/CharacterVFX': 'RoeCharacter',
     'Pinkcore/Heros/Skin': 'RoeSkin',
     'Pinkcore/Heros/KajiyaKayHair': 'RoeHair',
     'Pinkcore/Heros/SimpleLit/Hair': 'RoeHair',
@@ -54,7 +57,7 @@ SHADER_MAP = {
 CLIP_ALIASES = {  # the game's own spelling slips
     'skill01': 'skill_01', 'skill02': 'skill_02', 'skill03': 'skill_03',
     'skil_l01': 'skill_01', 'skil_l02': 'skill_02', 'skil_l03': 'skill_03',
-    'idlel_01': 'idle_01', 'dle': 'die',
+    'idlel_01': 'idle_01', 'dle': 'die', 'recat_01': 'react_01', 'recat_02': 'react_02',
 }
 
 

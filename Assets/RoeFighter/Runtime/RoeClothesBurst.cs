@@ -30,6 +30,7 @@ namespace RoeFighter
             public string title;                  // the group as shown to people ("长裙片")
             public int stage = 1;                 // 1 comes off first
             public bool cloth;                    // drops and lies down; otherwise armour: flies and tumbles
+            public bool fade;                     // paint on the skin: fades out on the body where it is (fadeInPlace), nothing flies
             public SkinnedMeshRenderer renderer;  // on the body's bones; off once the piece has come off
             public int triangles;
         }
@@ -73,6 +74,7 @@ namespace RoeFighter
         public float life = 2.6f;                                   // seconds on screen before the fade (cloth 0.8 s more)
         public float fade = 0.5f;
         public float stagger = 0.3f;                                // a stage dropped while another is due waits this long
+        public float fadeInPlace = 0.8f;                            // s: paint pieces (Piece.fade) fading out on the body
 
         /// <summary>Burst on or off for every fighter (F6 in the fight, -roeBurst 0/1).</summary>
         public static bool Enabled = true;
@@ -92,6 +94,7 @@ namespace RoeFighter
         float clock;
         readonly List<(float at, Vector3 dir, float floor)> due = new List<(float, Vector3, float)>();
         readonly List<Debris> debris = new List<Debris>();
+        readonly List<(Piece piece, float age)> fading = new List<(Piece, float)>();
         static readonly int Opacity = Shader.PropertyToID("_IGNOpacity");
         static Transform holder;
 
@@ -115,6 +118,7 @@ namespace RoeFighter
         public void Restore(int seed)
         {
             ClearDebris();
+            StopFading();
             Show(0);
             dropped = 0;
             due.Clear();
@@ -130,6 +134,7 @@ namespace RoeFighter
         /// </summary>
         public void Show(int stagesOff)
         {
+            StopFading();
             foreach (var p in pieces)
                 if (p.renderer != null)
                     p.renderer.enabled = p.stage > stagesOff;
@@ -173,6 +178,19 @@ namespace RoeFighter
             }
             if (dt <= 0f)
                 return;
+            for (int i = 0; i < fading.Count; i++)
+            {
+                var (p, age) = fading[i];
+                age += dt;
+                if (p.renderer == null || age >= fadeInPlace)
+                {
+                    EndFade(p);
+                    fading.RemoveAt(i--);
+                    continue;
+                }
+                fading[i] = (p, age);
+                SetPieceOpacity(p, 1f - age / fadeInPlace);
+            }
             for (int i = 0; i < debris.Count; i++)
             {
                 var d = debris[i];
@@ -206,6 +224,11 @@ namespace RoeFighter
             {
                 if (p.stage != stage || p.renderer == null || !p.renderer.enabled)
                     continue;
+                if (p.fade)
+                {
+                    fading.Add((p, 0f));
+                    continue;
+                }
                 double before = watch.Elapsed.TotalMilliseconds;
                 var d = Snapshot(p);
                 snapshots += watch.Elapsed.TotalMilliseconds - before;
@@ -229,6 +252,33 @@ namespace RoeFighter
                     r.renderer.enabled = true;
             takeOffMs.Add((float)watch.Elapsed.TotalMilliseconds);
             snapshotMs.Add((float)snapshots);
+        }
+
+        static MaterialPropertyBlock fadeBlock;
+
+        static void SetPieceOpacity(Piece p, float opacity)
+        {
+            fadeBlock = fadeBlock ?? new MaterialPropertyBlock();
+            p.renderer.GetPropertyBlock(fadeBlock);
+            fadeBlock.SetFloat(Opacity, Mathf.Clamp01(opacity));
+            p.renderer.SetPropertyBlock(fadeBlock);
+        }
+
+        static void EndFade(Piece p)
+        {
+            if (p.renderer == null)
+                return;
+            p.renderer.enabled = false;
+            p.renderer.SetPropertyBlock(null);
+        }
+
+        /// <summary>Paint still fading goes at once (a new match, or Show).</summary>
+        void StopFading()
+        {
+            foreach (var (p, _) in fading)
+                if (p.renderer != null)
+                    p.renderer.SetPropertyBlock(null);
+            fading.Clear();
         }
 
         /// <summary>The piece as it looks now, as a mesh of its own around its centre.</summary>

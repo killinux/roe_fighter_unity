@@ -36,12 +36,12 @@ namespace RoeFighter.EditorTools
         static readonly string[] GameClips = { "hurt", "die", "rip", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03" };
         static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
-            { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" },
+            { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" }, { "m02", "AMANO" },
         };
         // a word on each suit for the select screen
         static readonly Dictionary<string, string> Outfits = new Dictionary<string, string>
         {
-            { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" },
+            { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" }, { "m02", "Abyss" },
         };
 
         /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
@@ -50,8 +50,9 @@ namespace RoeFighter.EditorTools
         /// her game's KawaiiPhysics and UFE 2's reactions and specials; 10-05 "另外把剑星里的eve的也加个角色进来，物理能用剑星自己的就用
         /// 自己的" - eve09, SbFighter, Stellar Blade's Eve in her Planet Diving Suit (7th) on her game's own physics; "把不知火舞也加入进角色来" -
         /// mai, Mai Shiranui from DOA6 like Kasumi: her stance and strikes are g04's, her game clips and physics her own; "eve有穿jk的衣服么，
-        /// 换成这个角色我看下裙子的物理效果" - eve37, Eve in her pleated-skirt school look, Office Style).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,kas,kas011,fio005,eve09,eve37,mai";
+        /// 换成这个角色我看下裙子的物理效果" - eve37, Eve in her pleated-skirt school look, Office Style; 10-11 "把m02也加入战斗，战斗动作也加入进来，作为3个技能使用" -
+        /// m02, Amano's second suit (suit_amano_2): her game's three battle skills are her skill 1, skill 2 and super).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,m02,kas,kas011,fio005,eve09,eve37,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
@@ -861,7 +862,16 @@ namespace RoeFighter.EditorTools
                 if (endAfter >= 0 && s >= endAfter)
                     break;
             }
-            // sounds for make_video.py: frames of the 30 fps video
+            int sounds = WriteTimeline(game, outDir, shot, every);
+            hide.Dispose();
+            Debug.Log($"[ROE] camera ({(game.camAvoid && game.room != null && game.room.Valid ? "keeps out of the stage" : "the old one")}): {hide.Report(game)}");
+            Debug.Log($"[ROE] fight recorded: {shot} frames ({shot * every / 60f:F1} s), {sounds} sounds, rounds won {game.wins[0]}-{game.wins[1]}, " +
+                      $"to {outDir}{states}");
+        }
+
+        /// <summary>The sounds of a filmed fight for make_video.py, at the frames of the video (every: steps per frame): timeline.json.</summary>
+        static int WriteTimeline(FightGame game, string outDir, int shot, int every)
+        {
             var json = new StringBuilder();
             var lines = new List<string>();
             foreach (var e in game.soundLog)
@@ -877,10 +887,113 @@ namespace RoeFighter.EditorTools
                 : "";
             json.Append($"{{\"fps\":{60 / every},\"frames\":{shot}{music},\"sounds\":[\n  {string.Join(",\n  ", lines)}\n]}}\n");
             File.WriteAllText(Path.Combine(outDir, "timeline.json"), json.ToString());
-            hide.Dispose();
-            Debug.Log($"[ROE] camera ({(game.camAvoid && game.room != null && game.room.Valid ? "keeps out of the stage" : "the old one")}): {hide.Report(game)}");
-            Debug.Log($"[ROE] fight recorded: {shot} frames ({shot * every / 60f:F1} s), {lines.Count} sounds, rounds won {game.wins[0]}-{game.wins[1]}, " +
-                      $"to {outDir}{states}");
+            return lines.Count;
+        }
+
+        /// <summary>
+        /// Her three game skills one after the other in the real fight (user 10-11: "把m02也加入战斗，战斗动作也加入进来，作为3个技能使用"):
+        /// 1P does skill 1, skill 2 and - gauge filled - the super against 2P, who just stands (nobody is the CPU); each
+        /// waits until both are back in guard.  Filmed by the fight's camera with the HUD; the sounds in timeline.json for
+        /// tools/make_video.py.
+        ///   -executeMethod RoeFighter.EditorTools.RoeFightScene.SkillReel [-roeP1 m02] [-roeP2 a08] [-roeSkills 1,2,3]
+        ///   [-roeOut _work\skills_m02] [-roeSize 1280x720] [-roeStage e23_steel_s02] [-roeBurst 1]
+        /// </summary>
+        public static void SkillReel()
+        {
+            string stage = RoeCapture.Arg("-roeStage", "e23_steel_s02");
+            string p1 = RoeCapture.Arg("-roeP1", "m02"), p2 = RoeCapture.Arg("-roeP2", "a08");
+            string outDir = RoeCapture.Arg("-roeOut", Path.Combine(ProjectDir, "_work", "skills_" + p1));
+            var size = RoeCapture.Arg("-roeSize", "1280x720").Split('x');
+            int width = int.Parse(size[0]), height = int.Parse(size[1]);
+            var skills = RoeCapture.Arg("-roeSkills", "1,2,3").Split(',').Select(x => int.Parse(x.Trim())).ToList();
+            const int every = 2;                                  // 60 steps per second, every 2nd filmed = 30 fps
+            RoeClothesBurst.Enabled = RoeCapture.Arg("-roeBurst", "1") != "0";
+
+            ShaderUtil.allowAsyncCompilation = false;
+            string path = ScenePath(stage);
+            if (!File.Exists(path))
+                BuildScene(stage, p1, p2);
+            EditorSceneManager.OpenScene(path, OpenSceneMode.Single);
+            var game = Object.FindFirstObjectByType<FightGame>();
+            game.PickIds(p1, p2);
+            game.cpu = new[] { false, false };
+            game.seed = 1;
+            game.hud.drawnByCamera = true;
+            foreach (var rig in game.roster.Length > 0 ? game.roster : game.rigs)
+                foreach (var smr in rig.GetComponentsInChildren<SkinnedMeshRenderer>(true))
+                    smr.forceMatrixRecalculationPerRender = true;     // many renders inside one editor update
+            game.Setup();
+
+            string frameDir = Path.Combine(outDir, "frames");
+            if (Directory.Exists(frameDir))
+                Directory.Delete(frameDir, true);
+            Directory.CreateDirectory(frameDir);
+            var log = new StringBuilder();
+            var segments = new List<string>();                    // reel.json: which frames show which skill (tools/skill_reel_video.py)
+            int s = 0, shot = 0, limit = 60 * 90;
+            void Advance(FighterInput[] inputs)
+            {
+                game.Step(inputs);
+                game.UpdateCamera(FightGame.Dt);
+                if (s % every == 0)
+                {
+                    game.hud.Refresh(game);
+                    Canvas.ForceUpdateCanvases();
+                    if (shot == 0)
+                        RoeCapture.Render(game.cam, 320, 180, Path.Combine(outDir, "_warmup.jpg"), 80);
+                    RoeCapture.Render(game.cam, width, height, Path.Combine(frameDir, $"{shot:D5}.jpg"), 92);
+                    shot++;
+                }
+                s++;
+            }
+            bool Ready(Fighter x) => x.state == FightState.Idle || x.state == FightState.Walk || x.state == FightState.Side;
+
+            while (game.phase != FightGame.Phase.Fight && s < limit)
+                Advance(null);
+            foreach (int k in skills)
+            {
+                // both back in guard, then a short pause
+                for (int calm = 0; calm < 40 && s < limit;)
+                {
+                    Advance(null);
+                    calm = Ready(game.f[0]) && Ready(game.f[1]) ? calm + 1 : 0;
+                }
+                if (k == 3)
+                    game.f[0].meter = 100f;
+                // a skill that reaches less far than she stands: walk up first, as the CPU does
+                string skillName = "skill" + k;
+                for (int walk = 0; walk < 240 && s < limit &&
+                     Vector3.Distance(game.f[0].pos, game.f[1].pos) > game.f[0].SpecialReach(skillName) - 0.3f; walk++)
+                {
+                    var toFoe = game.f[1].pos - game.f[0].pos;
+                    var step = new FighterInput[2];
+                    step[0] = new FighterInput { x = Vector3.Dot(toFoe, game.cam.transform.right) >= 0f ? 1 : -1 };
+                    Advance(step);
+                }
+                var press = new FighterInput[2];
+                press[0] = new FighterInput { s1 = k == 1, s2 = k == 2, s3 = k == 3 };
+                int from = shot;
+                float dist = Vector3.Distance(game.f[0].pos, game.f[1].pos);
+                var action = game.f[0].rig.sheet?.Find("skill" + k);
+                string reach = action != null
+                    ? $"{dist:F1} m apart, reach {FightGame.BlowReach(action, game.f[1]):F1} m ({(action.Dashes ? "dashes" : $"hits {action.HitsAhead:F1} m ahead")}, {action.Blows.Count} blows at {string.Join(" ", action.Blows.Select(h => h.time.ToString("F2", CultureInfo.InvariantCulture)))} s), "
+                    : "";
+                Advance(press);
+                bool started = game.f[0].state == FightState.Special;
+                while (game.f[0].state == FightState.Special && s < limit)
+                    Advance(null);
+                var burst = game.f[1].rig.GetComponentInChildren<RoeClothesBurst>(true);
+                segments.Add($"{{\"skill\":{k},\"from\":{from},\"to\":{shot},\"started\":{(started ? "true" : "false")},\"hp\":{game.f[1].hp}}}");
+                log.Append($"\n[ROE]   {(k == 3 ? "super" : "skill " + k)}: {(started ? "" : "DID NOT START (out of range or no timeline) ")}" +
+                           $"{reach}frames {from}-{shot}, {p2} hp {game.f[1].hp}, her stages off {(burst != null ? burst.Dropped : 0)}");
+            }
+            for (int i = 0; i < 120; i++)
+                Advance(null);
+            int sounds = WriteTimeline(game, outDir, shot, every);
+            string Name(string id) => DisplayNames.TryGetValue(id, out var n) ? n : id;
+            File.WriteAllText(Path.Combine(outDir, "reel.json"),
+                $"{{\"p1\":\"{p1}\",\"name\":\"{Name(p1)}\",\"p2\":\"{p2}\",\"foe\":\"{Name(p2)}\",\"fps\":{60 / every},\"frames\":{shot},\"skills\":[\n  {string.Join(",\n  ", segments)}\n]}}\n");
+            Debug.Log($"[ROE] skill reel {p1} vs {p2}: {shot} frames ({shot * every / 60f:F1} s), {sounds} sounds, to {outDir}{log}");
         }
 
         /// <summary>

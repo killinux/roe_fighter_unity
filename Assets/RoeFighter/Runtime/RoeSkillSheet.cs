@@ -149,6 +149,44 @@ namespace RoeFighter
             public IEnumerable<Hit> DamageHits => hits.Where(h => h.IsDamage);
 
             /// <summary>
+            /// How far in front of her the game puts this skill's hit effects (m along her facing, the farthest one):
+            /// a skill that does not dash up to the opponent lands its blows out there (Inase's thrown swords 9.8 m,
+            /// Kart's pistols 6 m, Amano's tentacles 6.3 m - the game stands the enemy line that far off).  0 when it
+            /// has no anchored hit effect (Goddess Luf's heals).  Muted tracks count: the game mutes the hit effects of
+            /// skills whose hits it spawns on the target instead (Inase's skill 2 and super, Goddess Luf's skill 1), and
+            /// their anchors still show where it stands the enemy.
+            /// </summary>
+            public float HitsAhead
+            {
+                get
+                {
+                    float far = 0f;
+                    foreach (var e in effects)
+                        if (e.anchor != null && e.anchor.nodes.Count > 0 && e.prefab != null &&
+                            e.prefab.IndexOf("hit", StringComparison.OrdinalIgnoreCase) >= 0)
+                            far = Mathf.Max(far, Ahead(e.anchor));
+                    return far;
+                }
+            }
+
+            /// <summary>Has a move up to the opponent (the game's "attack" slide): then the blows land where she stops.</summary>
+            public bool Dashes => moves.Any(m => m.kind == "attack");
+
+            static float Ahead(Node n)
+            {
+                var pos = Vector3.zero;
+                var rot = Quaternion.identity;
+                var scale = Vector3.one;
+                foreach (var s in n.nodes)
+                {
+                    pos += rot * Vector3.Scale(scale, s.position);
+                    rot *= s.rotation;
+                    scale = Vector3.Scale(scale, s.scale == Vector3.zero ? Vector3.one : s.scale);
+                }
+                return pos.z;
+            }
+
+            /// <summary>
             /// The blows of the skill in a fight: its damage numbers; a skill without any (g05's skill 2 and super heal
             /// in the game) strikes at the moments its effects land instead, one blow per moment.
             /// </summary>

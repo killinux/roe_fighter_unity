@@ -362,9 +362,9 @@ namespace RoeFighter.Fight
             var action = s != null && rig.sheet != null ? rig.sheet.Find(s.action) : null;
             if (action == null)
                 return 0f;
-            if (action.moves.Any(m => m.kind == "attack"))
+            if (action.Dashes)
                 return s.range;
-            return Mathf.Min(s.range, (foe.rig.sheet != null ? foe.rig.sheet.receiveRadius : 1f) + FightGame.SpecialReachExtra);
+            return Mathf.Min(s.range, FightGame.BlowReach(action, foe));
         }
 
         bool StartSpecial(string name)

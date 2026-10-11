@@ -829,6 +829,21 @@ namespace RoeFighter.Fight
         public const float SpecialReachExtra = 1.0f + 0.9f;
 
         /// <summary>
+        /// How far a skill's blows reach the victim: her radius + SpecialReachExtra (a skill that dashes up stops there), or
+        /// for a skill that stays where she is, as far as the game puts its hit effects in front of her plus the victim's
+        /// radius (user 10-11 "战斗技能都作为3个技能加入进来": Amano's super, Inase's thrown swords and Kart's pistols are
+        /// ranged in the game and used to miss anyone more than 2.9 m away; RoeSkillSheet.Action.HitsAhead).
+        /// </summary>
+        public static float BlowReach(RoeSkillSheet.Action action, Fighter vic)
+        {
+            float radius = vic.rig.sheet != null ? vic.rig.sheet.receiveRadius : 1f;
+            float reach = radius + SpecialReachExtra;
+            if (action != null && !action.Dashes)
+                reach = Mathf.Max(reach, action.HitsAhead + radius);
+            return reach;
+        }
+
+        /// <summary>
         /// A damage moment of a skill.  The first one decides: the opponent blocks it (holding back),
         /// has stepped out of reach (a miss), or is hit.  A hit or a block then holds the opponent
         /// until the skill is over, the way the game stages it; the super's last hit knocks down.
@@ -838,7 +853,7 @@ namespace RoeFighter.Fight
             var vic = atk.foe;
             if (atk.specialOutcome == 0)
             {
-                float reach = (vic.rig.sheet != null ? vic.rig.sheet.receiveRadius : 1f) + SpecialReachExtra;
+                float reach = BlowReach(atk.rig.sheet != null ? atk.rig.sheet.Find(s.action) : null, vic);
                 atk.specialOutcome = !vic.Hittable || Vector3.Distance(atk.pos, vic.pos) > reach ? 3 : vic.CanBlock ? 2 : 1;
             }
             if (atk.specialOutcome == 3 || !vic.Hittable)

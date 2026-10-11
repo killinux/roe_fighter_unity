@@ -51,6 +51,7 @@
 | 卡地亚（Kart，b10，红色短夹克）拿斧头打普通攻击：她 10-03 就在战斗里，但以前用拳脚；现在照她游戏的站架，小斧头握在右手、两把枪插在大腿枪套里（枪套被爆衣打掉时枪一起消失），四个普通攻击用斧头；枪还是在技能里自己飞出来开火，和游戏一样 | 完成（10-06），见"卡地亚（Kart，b10）拿斧头打普通攻击"一节；14 招候选 `out\b10_axe_candidates.mp4`，定下的四招 `out\b10_axe_strikes.mp4`、`out\b10_axe_check_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_b10_axe.mp4`（对 Inase）；换招改 `tools/motionpacks/b10_axe.json`。大腿根（10-06 晚）：屁股坠到大腿上是这几招把着地的腿往里转了 45–60°（游戏自己最多 36°），限制住了，对比 `out\b10_thigh_root.jpg`、`out\b10_axe_strikes_compare.mp4` |
 | 两个 Luf 的裙子和飘带：四种物理并排比（我们的骨骼布料、Magica Cloth 2 用我们的参数、Magica Cloth 2 用插件预设、关），出招和选人展示动作都录了 | 完成（10-06 晚），见"Luf 的裙子：四种物理对比"一节；结论是两人都留在骨骼布料（不改默认）。对比视频 `out\luf_skirt_front.mp4`、`out\luf_skirt_back.mp4`、`out\luf_showcase.mp4`，静帧 `out\luf_skirt_compare.jpg` |
 | Fiona 的肘部检查：她全部 108 段动作里肘弯多深、有没有反弯，最深的时刻拍肘部特写（修正骨不驱动 / 游戏规则） | 完成（10-06 晚），见 [`docs/vindictus-fiona.md`](docs/vindictus-fiona.md)"肘部检查"；没看出毛病。特写 `out\fio005_elbow.jpg`、`out\fio005_elbow_left.jpg`（藏起盾看左肘） |
+| 天野（m02）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、爆衣到全身；四个 ROE 角色原地放的技能按游戏的距离打得到（以前离开 2.9 米就打空） | 完成（10-11），见"天野（m02）加入战斗"一节；技能录像 `out\skills_reel.mp4`（m02、Inase、Luf、Luf 女神各放三个技能），爆衣 `out\clothes_burst_demo_m02.mp4` |
 
 ## 目录
 
@@ -1462,7 +1463,7 @@ python tools\burst_sheet.py --chars b10,g05
 - `out\fight_cpu_match_b10_g05.mp4`：电脑对电脑一整场（120 秒，g05 二比零，b10 最后全身）；
 - `RoeBurstDemo.Run -roeChars b10,g05 -roeFoes g05,b10`、`RoeFightScene.Record -roeP1 b10 -roeP2 g05` 可以重录。
 
-显示名：a08 INASE，g04 LUF，b10 KART，g05 GODDESS LUF；选人卡片上另有一个词：Valkyrie、Porcelain、Agent、Goddess（`RoeFightScene.DisplayNames` / `Outfits`）。
+显示名：a08 INASE，g04 LUF，b10 KART，g05 GODDESS LUF，m02 AMANO（10-11）；选人卡片上另有一个词：Valkyrie、Porcelain、Agent、Goddess、Abyss（`RoeFightScene.DisplayNames` / `Outfits`）。
 
 #### 第二轮：g05 的浮空、飘带和脚，a08、g04 重转（10-03 晚）
 
@@ -2107,3 +2108,81 @@ python tools\roe_physics_scan.py --report
 python tools\cloth_demo_video.py _work\luf_skirt_front out\luf_skirt_front.mp4 --variants magica_style,magica,magica_full,off
 # 右后：-roeView backright；展示动作：-roeScript showcase
 ```
+
+### 天野（m02）加入战斗；原地放的技能按游戏的距离打（10-11）
+
+用户 10-11："继续，把m02也加入战斗，战斗动作也加入进来，作为3个技能使用，之前的inase 和luf的也是，战斗技能都作为3个技能加入进来"。
+
+- **m02 = 天野（Amano）的第 2 套**（游戏单位 `suit_amano_2`）：身上是画在皮肤上的黑色藤蔓，背后一对发蓝光的翅膀，头顶到身后一圈黑色触手，
+  手里一串漂浮的眼睛（她的武器），光脚。家族裸体底模 m01。显示名 AMANO，选人卡片上的词 Abyss。
+- **三个技能**：和其他 ROE 角色一样，游戏的 `skill_01`、`skill_02`、`skill_03` 就是格斗里的技能 1、技能 2、超必杀
+  （L、O、P，或 236 / 214 / 236236 + J/U；超必杀要满能量槽），由她自己的时间轴驱动，特效、音效、语音都是游戏的。
+  Inase、两个 Luf、Kart 本来就是这样接的（`RoeFightScene` 的 `game.specials`）。
+- **原地放的技能以前大多打空**（四个 ROE 角色都有）：技能的伤害只在对手离她不超过"对手半径 1 米 + 1.9 米"时算数。冲到对手面前再打的技能没问题，
+  但很多技能在游戏里是原地放的：扔剑、开枪、触手从地里冒出来，打的是站在远处的敌人。对手离开 2.9 米，这些技能的特效明明打到了她，伤害却算打空。
+  游戏把这类技能的命中特效摆在她前方固定的距离（游戏里敌人站的那一排），现在就按这个距离算：
+  原地放的技能能打到"命中特效离她多远 + 对手半径"，至少还是原来的 2.9 米。
+  - 时间轴里被静音的命中轨道也算：游戏把一部分技能改成在目标身上生成命中特效，原来那条轨道静音了，但它的挂点还标着敌人站在哪。
+  - 冲到对手面前的技能（游戏里有一段滑到对手攻击位的位移）照旧；没有命中特效的（Luf 女神的两个治疗技能）也照旧。
+  - 开始放的条件不变（离对手不超过技能的范围 6 / 7 米）；电脑也按新的距离决定什么时候放。
+  - 代码：`RoeSkillSheet.Action.HitsAhead`（命中特效离她多远）、`Action.Dashes`（有没有冲刺）、`FightGame.BlowReach`（打击距离）。
+
+  | 角色 | 技能 | 冲到对手面前 | 游戏把命中特效放在她前方 | 以前打得到 | 现在打得到 |
+  |---|---|---|---|---|---|
+  | m02 天野 | 技能 1、技能 2 | 冲 | — | 冲到后 2.9 米 | 不变 |
+  | m02 天野 | 超必杀（触手从地里冒出来） | 不冲 | 6.3 米 | 2.9 米 | 7.3 米 |
+  | a08 Inase | 技能 2（扔剑） | 不冲 | 9.8 米 | 2.9 米 | 10.8 米 |
+  | a08 Inase | 超必杀 | 不冲 | 9.5 米 | 2.9 米 | 10.5 米 |
+  | g04 Luf | 技能 2 | 不冲 | 6.1 米 | 2.9 米 | 7.1 米 |
+  | g04 Luf | 超必杀 | 不冲 | 4.7 米 | 2.9 米 | 5.7 米 |
+  | b10 Kart | 技能 1、技能 2（枪） | 不冲 | 6.0 米 | 2.9 米 | 7.0 米 |
+  | g05 Luf 女神 | 技能 1 | 不冲 | 6.9 米 | 2.9 米 | 7.9 米 |
+  | g05 Luf 女神 | 技能 2、超必杀（游戏里是治疗） | 不冲 | 没有命中特效 | 2.9 米 | 不变 |
+
+- **技能录像**（`RoeFightScene.SkillReel`）：真实的格斗逻辑里，1P 依次放技能 1、技能 2、超必杀（放超必杀前把能量槽加满），2P 站着不动、谁都不是电脑；
+  每招等两人都回到架势再放；够不着的技能先走近（和电脑一样）。日志里每招写着两人相距多远、打击距离多少、打中后对手剩多少血。
+  `tools/skill_reel_video.py` 给每段配上声音和字幕（谁、第几个技能），再接成一个视频。
+  `out\skills_reel.mp4`（68 秒）：m02、Inase、Luf、Luf 女神各放三个技能，12 招都打中：技能 1 掉 150、技能 2 掉 190、超必杀掉 360 并击倒，
+  对手的衣服掉一段。
+- **加入 m02 时改的**（都是通用的，没有写死哪个角色）：
+  - **着色器**：她的翅膀和触手用游戏的 `CharacterVFX`（角色着色器加溶解、菲涅尔、扭曲，这套衣服里都关着），对到我们的 `RoeCharacter`（`import_ripped.py`）。
+  - **动作名**：游戏把她的展示动作拼成了 `recat_01/02`，按 `react_01/02` 认（`CLIP_ALIASES`）。
+  - **武器的骨骼**：漂浮的眼睛挂在 `Wp_eyes_01..18` 上，这组骨骼只有战斗低模才有。建预制体时把缺的骨骼按低模的父子关系和本地姿势补进高模
+    （`RoeFighterBuilder.GraftBone`），游戏动作照常驱动它们（待机里也有关键帧）。和其他角色的武器一样，眼睛只在技能、开场、胜利时出现。
+  - **爆衣三段**：触手环、翅膀、身上的藤蔓。藤蔓画在皮肤贴图里（套装的皮肤材质用的就是 body1 那张带藤蔓的贴图），
+    所以第三段是把整块套装皮肤原地淡出（游戏自己的网点淡出 `_IGNOpacity`，0.8 秒），下面露出 m01 的身体，不往外飞。
+    - 爆衣规则新加 `fade`（`Editor\Burst\m02.json`、`RoeClothesBurst.Piece.fade`），皮肤着色器 `RoeSkin` 也加了网点淡出。
+    - 三种材质各写一条 outfit：它们在接缝处共用点，写在一条里会焊成一整块，哪条规则都对不上。
+    - 检查图 `out\clothes_burst\unity\m02_*.png`；比赛里的演示 `out\clothes_burst_demo_m02.mp4`（Inase 的超必杀打掉触手环，KO 打掉翅膀；
+      第二局的超必杀让藤蔓淡出）。
+
+```powershell
+# 1. 拷包、还原、导入（AssetRipper 服务开着，见"从零重做一遍"）
+python tools\stage_bundles.py _work\bundles_m02 m02
+python tools\stage_bundles.py _work\bundles_nude_m --nude m01
+python tools\rip.py --bundles _work\bundles_m02 --out _work\ripped_m02 --log _work\assetripper.log
+python tools\rip.py --bundles _work\bundles_nude_m --out _work\ripped_nude_m --log _work\assetripper.log
+python tools\import_ripped.py --src _work\ripped_m02\ExportedProject\Assets
+python tools\import_nude.py m01 --src _work\ripped_nude_m\ExportedProject\Assets\AssetBundles --sel _work\ripped_nude_m_sel
+# 2. 技能：玩法预制体和技能表
+copy "<游戏包目录>\gameplay_prefab_suit_amano_2.ab" _work\bundles_skills_m02\
+python tools\rip.py --bundles _work\bundles_skills_m02 --out _work\ripped_skills_m02 --log _work\assetripper.log
+python tools\import_skills.py suit_amano_2 --src _work\ripped_skills_m02\ExportedProject\Assets
+python tools\skill_sheet.py suit_amano_2 m02
+# 3. Unity（她没有裙子，FitSkirt 跳过）；场景名单默认已含 m02
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFighterBuilder.BuildAll -Extra '-roeChars','m02'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHumanoidClips.ConvertAll -Extra '-roeChars','m02'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.Run -Extra '-roeChars','m02'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','m02'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+# 技能录像（每人约 1 分钟）和合成
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.SkillReel -Graphics -Extra '-roeP1','m02','-roeP2','a08'
+python tools\skill_reel_video.py out\skills_reel.mp4 _work\skills_m02 _work\skills_a08 _work\skills_g04 _work\skills_g05
+# 爆衣演示
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','m02','-roeFoes','a08','-roeOut','_work\burst_demo_m02'
+python tools\burst_video.py _work\burst_demo_m02 out\clothes_burst_demo_m02.mp4
+```
+
+踩过的坑：Unity 批处理偶尔报 "Scripts have compiler errors"，日志里却是 "Internal build system error. Read the full binlog without getting a
+BuildFinishedMessage"、没有任何 `error CS`：这是 Unity 编译系统自己的偶发错误，原样重跑就好。
