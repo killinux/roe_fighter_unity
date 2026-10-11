@@ -597,6 +597,11 @@ namespace RoeFighter.EditorTools
                 standing += $"; the game's clips hover {rig.gameHover * 100f:F0} cm: reactions come down to the floor, " +
                             (skillsHover ? "skills rise to it" : "skills too");
             rig.skillSheetJson = AssetDatabase.LoadAssetAtPath<TextAsset>(RoeSkillSheet.PathOf(c.id));
+            // her game's own Magica Cloth 2 - its lobby prefab's, read by tools/roe_mc2_dump.py --fighter <id> - for the "roe"
+            // cloth setup (user 10-11 "就完全遵从ROE本身的物理的角度再看看"); without it that setup uses the game's numbers by hand
+            rig.gameMagica = AssetDatabase.LoadAssetAtPath<TextAsset>($"Assets/ROE/{c.id}/magica_lobby.json");
+            if (rig.gameMagica != null)
+                standing += "; her game's Magica Cloth 2 set-up read (magica_lobby.json)";
 
             // weapons only show during the game's own clips (skills, intro, victory): in the basic moves a08's
             // sword would swing around the hips, and g04 throws her punches and kicks without the giant fan

@@ -179,6 +179,48 @@ namespace RoeFighter
                                                  (inertia >= 0f ? $", inertia {inertia:F2}" : "");
         }
 
+        /// <summary>
+        /// A fighter's own game's Magica Cloth 2 set-up: ROE's lobby prefab (meta_armor_pc_&lt;id&gt;_hd) read by tools/roe_mc2_dump.py
+        /// into Assets/ROE/&lt;id&gt;/magica_lobby.json - each cloth's parameters as Magica's preset JSON (ImportJson takes them as
+        /// the plugin takes its presets), its roots and colliders by name.  (Luf's: one BoneCloth, Line, on bangs_L/R and
+        /// hair_BL/BR/FL/FR; gravity 5, damping 0.05, no angle restoration, angle limit 90 degrees growing from 0 at the root,
+        /// no inertia, particles at most 1 m/s, 1.5 cm particles against points; seven capsules on her chest, head, neck and
+        /// Spine2.)
+        /// </summary>
+        [System.Serializable]
+        public class GameSetup
+        {
+            public string source;
+            public GameCloth[] cloths = new GameCloth[0];
+            public GameCollider[] colliders = new GameCollider[0];
+        }
+
+        [System.Serializable]
+        public class GameCloth
+        {
+            public string[] roots = new string[0];
+            public int[] colliders = new int[0];
+            public bool enabled = true;
+            public string json;
+        }
+
+        /// <summary>The fields of a cloth's JSON that ImportJson keeps as the set-up and leaves alone (its TempBuffer).</summary>
+        [System.Serializable]
+        class GameSetUp
+        {
+            public float rotationalInterpolation = 1f, rootRotation = 1f, animationPoseRatio, stablizationTimeAfterReset = 0.1f;
+            public int normalAxis = 1;
+        }
+
+        [System.Serializable]
+        public class GameCollider
+        {
+            public string name, kind, bone;
+            public float[] localPosition, localRotation, localScale, size, center;
+            public int direction;
+            public bool radiusSeparation, alignedOnCenter = true, reverseDirection;
+        }
+
         readonly List<MagicaCloth> cloths = new List<MagicaCloth>();
         readonly List<GameObject> made = new List<GameObject>();
         readonly RoeDoaRig doaRig;
@@ -229,7 +271,9 @@ namespace RoeFighter
 
         static bool TooManyChildren(Transform root) => root.GetComponentsInChildren<Transform>(true).Any(t => t.childCount > MaxChildren);
 
-        public RoeMagicaCloth(RoeClothScope scope, bool presets = false)
+        /// <param name="game">Rise of Eros' own (the "roe" setup): her game's lobby set-up as it is (GameSetup), every other chain
+        /// on the same numbers as a line of its own, as the game builds them; no MeshCloth (the game has none).</param>
+        public RoeMagicaCloth(RoeClothScope scope, bool presets = false, bool game = false)
         {
             this.presets = presets;
             // the pieces and colliders exactly as our Magica-style solver finds and measures them (only the kinds the
@@ -266,8 +310,11 @@ namespace RoeFighter
             MagicaManager.SetSimulationFrequency(Mathf.RoundToInt(m.frequency));
             MagicaManager.SetMaxSimulationCountPerFrame(Mathf.RoundToInt(m.stepsPerFrame));
             var meshed = new HashSet<RoeBoneCloth.Piece>();
+            // Rise of Eros' own: everything is built there (the pieces it takes go into meshed: nothing more below)
+            if (game)
+                GameCloths(scope, pieces, colliders, root, parts, meshed);
             var burst = animator.GetComponentInChildren<RoeClothesBurst>(true);
-            if (m.on && burst != null && scope.Takes("skirt"))
+            if (m.on && burst != null && scope.Takes("skirt") && !game)
                 foreach (var bp in burst.pieces)
                 {
                     var smr = bp.renderer;
@@ -429,7 +476,7 @@ namespace RoeFighter
                 parts.Add($"{piece.kind} {string.Join("+", piece.roots.Select(r => r.name))} ({sd.connectionMode})");
             }
             int meshCount = parts.Count(p => p.StartsWith("MeshCloth"));
-            Report = $"Magica Cloth 2{(presets ? " on its own presets" : "")}: {meshCount} MeshCloths, {cloths.Count - meshCount} Bone cloths: " +
+            Report = $"Magica Cloth 2{(presets ? " on its own presets" : game ? ", Rise of Eros' own set-up" : "")}: {meshCount} MeshCloths, {cloths.Count - meshCount} Bone cloths: " +
                      $"{string.Join(", ", parts)}; colliders {colliders.Count}" +
                      (Tuning.Length > 0 ? $"; tuning {Tuning}" : "") +
                      (missingPresets.Count > 0 ? $"; PRESETS NOT FOUND (our settings used): {string.Join(" ", missingPresets.Distinct())}" : "");
@@ -526,6 +573,162 @@ namespace RoeFighter
             sd.updateMode = ClothUpdateMode.Normal;
             Teleport(sd);
             return true;
+        }
+
+        /// <summary>
+        /// Rise of Eros' own Magica Cloth 2 on a fighter (the "roe" setup): her game's lobby components as the game set them up
+        /// (GameSetup: roots, parameters, its own colliders where it put them), then every other piece our chain finder knows of
+        /// - her skirt, sashes, chains - on the same numbers (the game has one set for all its cloth: docs/roe-game-physics.md),
+        /// a line per chain as the game builds every cloth, against our capsules round her legs and hips (the game has no
+        /// cloth below the waist, so no colliders there either).  A piece of a kind the game would key - every hair chain it
+        /// leaves out of its cloth - is left on the keys.  Every piece taken goes into <paramref name="taken"/>.
+        /// </summary>
+        void GameCloths(RoeClothScope scope, List<RoeBoneCloth.Piece> pieces, Dictionary<RoeBoneCloth.Capsule, MagicaCapsuleCollider> ours,
+                        Transform root, List<string> parts, HashSet<RoeBoneCloth.Piece> taken)
+        {
+            var setup = string.IsNullOrEmpty(scope.gameMagica) ? new GameSetup() : JsonUtility.FromJson<GameSetup>(scope.gameMagica);
+            var bones = new Dictionary<string, Transform>();
+            foreach (var t in scope.animator.GetComponentsInChildren<Transform>(true))
+                if (!bones.ContainsKey(t.name))
+                    bones[t.name] = t;
+            Vector3 V3(float[] v, Vector3 or) => v != null && v.Length == 3 ? new Vector3(v[0], v[1], v[2]) : or;
+
+            // its colliders, where the game put them
+            var theirs = new List<ColliderComponent>();
+            foreach (var c in setup.colliders)
+            {
+                ColliderComponent col = null;
+                if (bones.TryGetValue(c.bone ?? "", out var bone) && (c.kind == "capsule" || c.kind == "sphere"))
+                {
+                    var go = new GameObject($"Magica {c.name}");
+                    made.Add(go);
+                    go.transform.SetParent(bone, false);
+                    go.transform.localPosition = V3(c.localPosition, Vector3.zero);
+                    if (c.localRotation != null && c.localRotation.Length == 4)
+                        go.transform.localRotation = new Quaternion(c.localRotation[0], c.localRotation[1], c.localRotation[2], c.localRotation[3]);
+                    go.transform.localScale = V3(c.localScale, Vector3.one);
+                    if (c.kind == "capsule")
+                    {
+                        var cap = go.AddComponent<MagicaCapsuleCollider>();
+                        cap.direction = (MagicaCapsuleCollider.Direction)c.direction;
+                        cap.radiusSeparation = c.radiusSeparation;
+                        cap.alignedOnCenter = c.alignedOnCenter;
+                        cap.reverseDirection = c.reverseDirection;
+                        col = cap;
+                    }
+                    else
+                        col = go.AddComponent<MagicaSphereCollider>();
+                    col.center = V3(c.center, Vector3.zero);
+                    col.SetSize(V3(c.size, Vector3.one * 0.05f));
+                    col.UpdateParameters();
+                }
+                theirs.Add(col);
+            }
+            string template = setup.cloths.Select(c => c.json).FirstOrDefault(j => !string.IsNullOrEmpty(j));
+
+            // (poseRatio: animationPoseRatio over the game's, when 0 or more)
+            MagicaCloth Build(List<Transform> roots, string json, IEnumerable<ColliderComponent> with, string label, float poseRatio = -1f)
+            {
+                var go = new GameObject($"MC2 ROE cloth {cloths.Count} ({label})");
+                made.Add(go);
+                go.transform.SetParent(root, false);
+                var cloth = go.AddComponent<MagicaCloth>();
+                var sd = cloth.SerializeData;
+                sd.clothType = ClothProcess.ClothType.BoneCloth;
+                sd.rootBones.AddRange(roots);
+                sd.connectionMode = RenderSetupData.BoneConnectionMode.Line;
+                if (json != null && sd.ImportJson(json))
+                {
+                    // what ImportJson keeps as the set-up, but the game set too: its bones turn wholly with the particles
+                    // (rotational interpolation and root rotation 1; Magica's default 0.5) and rest on the pose it was built in
+                    var own = JsonUtility.FromJson<GameSetUp>(json);
+                    sd.rotationalInterpolation = own.rotationalInterpolation;
+                    sd.rootRotation = own.rootRotation;
+                    sd.animationPoseRatio = own.animationPoseRatio;
+                    sd.stablizationTimeAfterReset = own.stablizationTimeAfterReset;
+                    sd.normalAxis = (ClothNormalAxis)own.normalAxis;
+                }
+                else
+                    RoeTemplate(sd);
+                // (the game's update mode follows its Animator; ours is stepped by the fight) and a dash is a teleport
+                sd.updateMode = ClothUpdateMode.Normal;
+                Teleport(sd);
+                if (poseRatio >= 0f)
+                    sd.animationPoseRatio = poseRatio;
+                foreach (var col in with.Where(c => c != null).Distinct())
+                    sd.colliderCollisionConstraint.colliderList.Add(col);
+                cloth.BuildAndRun();
+                cloths.Add(cloth);
+                return cloth;
+            }
+
+            // the game's own cloths
+            var claimed = new HashSet<Transform>();
+            foreach (var gc in setup.cloths.Where(c => c.enabled))
+            {
+                var roots = gc.roots.Select(n => bones.TryGetValue(n, out var t) ? t : null).Where(t => t != null).ToList();
+                var mine = pieces.Where(p => p.roots.Any(roots.Contains)).ToList();
+                // only the kinds this setup gives the cloth (its pieces' kinds; hair when none of ours is on them)
+                if (roots.Count == 0 || (mine.Count > 0 ? !mine.Any(p => scope.Takes(p.kind)) : !scope.Takes("hair")))
+                    continue;
+                Build(roots, gc.json, gc.colliders.Where(i => i >= 0 && i < theirs.Count).Select(i => theirs[i]), roots[0].name);
+                claimed.UnionWith(roots);
+                foreach (var p in mine)
+                    taken.Add(p);
+                parts.Add($"the game's {string.Join("+", roots.Select(r => r.name))} ({gc.colliders.Length} of its colliders)");
+            }
+            // the rest on the same numbers, a line per chain; the hair the game leaves out of its cloth stays on the keys
+            foreach (var piece in pieces.Where(p => !taken.Contains(p)))
+            {
+                taken.Add(piece);
+                if (piece.kind == "hair" && setup.cloths.Length > 0)
+                {
+                    parts.Add($"hair {piece.roots[0].name}: keys (not in the game's cloth)");
+                    continue;
+                }
+                var free = piece.roots.Where(r => !claimed.Contains(r)).ToList();
+                if (free.Count == 0 || piece.roots.Any(TooManyChildren))
+                    continue;
+                // a skirt is held to the pose the animation gives it (RoeSkirtRig: it follows the legs as the game keys it), not
+                // to the pose it was built in - the game's 0 there, with its angle limit 0 at the root, kept the panels' tops in
+                // the stance's place on the hips whatever the legs did
+                Build(free, template, piece.capsules.Select(c => ours.TryGetValue(c, out var col) ? col : null), piece.roots[0].name,
+                      piece.kind == "skirt" ? 1f : -1f);
+                parts.Add($"{piece.kind} {string.Join("+", piece.roots.Select(r => r.name))} (the game's numbers{(template == null ? " by hand" : "")}" +
+                          $"{(piece.kind == "skirt" ? ", held to the pose that follows the legs" : "")}, {piece.capsules.Length} of our capsules)");
+            }
+        }
+
+        /// <summary>
+        /// The one set of numbers Rise of Eros gives all its cloth (its lobby hair, sashes, ear rings, waist hangings: docs/roe-game-physics.md),
+        /// for a fighter whose lobby set-up was not read (GameSetup): gravity 5, damping 0.05, no angle restoration, angle limit 90
+        /// degrees growing from 0 at the root, no inertia, particles at most 1 m/s, no tether, 1.5 cm particles against points,
+        /// the pose it was built in as its base.
+        /// </summary>
+        static void RoeTemplate(ClothSerializeData sd)
+        {
+            sd.animationPoseRatio = 0f;
+            sd.rotationalInterpolation = 1f;
+            sd.rootRotation = 1f;
+            sd.gravity = 5f;
+            sd.damping.SetValue(0.05f);
+            sd.radius.SetValue(0.015f);
+            var inertia = sd.inertiaConstraint;
+            inertia.worldInertia = 0f;
+            inertia.localInertia = 0f;
+            inertia.depthInertia = 0f;
+            inertia.centrifualAcceleration = 0f;
+            inertia.particleSpeedLimit.SetValue(true, 1f);
+            sd.tetherConstraint.distanceCompression = 0f;
+            sd.distanceConstraint.stiffness.SetValue(1f);
+            sd.angleRestorationConstraint.useAngleRestoration = true;
+            sd.angleRestorationConstraint.stiffness.SetValue(0f);
+            sd.angleRestorationConstraint.velocityAttenuation = 0.8f;
+            sd.angleLimitConstraint.useAngleLimit = true;
+            sd.angleLimitConstraint.limitAngle.SetValue(90f, 0f, 1f, true);
+            sd.colliderCollisionConstraint.mode = ColliderCollisionConstraint.Mode.Point;
+            sd.colliderCollisionConstraint.friction = 0.05f;
+            sd.colliderCollisionConstraint.limitDistance.SetValue(0.05f);
         }
 
         /// <summary>A jump of the fighter is a teleport to Magica (MeshSettings.teleport): the cloth keeps its shape and goes along.</summary>

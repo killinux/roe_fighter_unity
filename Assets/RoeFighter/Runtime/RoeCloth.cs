@@ -47,12 +47,15 @@ namespace RoeFighter
         /// </summary>
         public IDictionary<Transform, Transform> anchorOf;
         public IDictionary<Transform, Transform[]> neighbours;
+        /// <summary>Her game's own Magica Cloth 2 set-up (ROE's lobby prefab, tools/roe_mc2_dump.py -> Assets/ROE/&lt;id&gt;/magica_lobby.json); null: none.</summary>
+        public string gameMagica;
 
         public bool Takes(string kind) => kinds == null || kinds.Contains(kind);
 
         public RoeClothScope With(ICollection<string> only) => new RoeClothScope
         {
             id = id, animator = animator, world = world, exclude = exclude, kinds = only, kindOf = kindOf, anchorOf = anchorOf, neighbours = neighbours,
+            gameMagica = gameMagica,
         };
     }
 
@@ -74,6 +77,8 @@ namespace RoeFighter
     ///                 KawaiiPhysics nodes, PhysX rigid bodies for the ponytail and the back panels - only for her
     ///   magica        Magica Cloth 2 itself, once it is installed in Assets/MagicaCloth2 (RoeMagicaCloth, behind the
     ///                 MAGICACLOTH2 define the package adds to the project when it loads)
+    ///   roe           Rise of Eros' own: the game's keys in its clips and in its stance, its lobby's Magica Cloth 2 set-up
+    ///                 elsewhere (RoeMagicaCloth with game: true; docs: README "Luf 的裙子：完全照 ROE")
     /// A new solver (another engine, another game's system) is one more entry here: a class implementing IRoeCloth
     /// that simulates only scope.kinds, and says which kinds it can take on a model (Covers).
     /// </summary>
@@ -141,6 +146,18 @@ namespace RoeFighter
                 overGameClips = true, noDrape = true, make = s => new RoeMagicaCloth(s, presets: true),
                 covers = (s, kind) => RoeMagicaCloth.Covers(s, kind),
             },
+            // Rise of Eros' own (user 10-11 "就完全遵从ROE本身的物理的角度再看看"): its hand keys wherever it has them, and where it has
+            // none its own Magica Cloth 2 - her lobby prefab's components as the game set them up (Luf: one BoneCloth on her six
+            // hair chains, its colliders), every other chain on the same numbers, a line per chain as the game builds them.  Of
+            // ours only the skirt's pose that follows the legs (RoeSkirtRig, fitted to the game's own keys) stays, as the pose
+            // Magica holds the skirt to: on the stance's pose its stiff top stood out from the hips like boards once the legs
+            // moved.  No drape, no tuning.
+            new Solver
+            {
+                name = "roe", title = "Rise of Eros' own (its keys; its Magica Cloth 2 where it has none)", skinnedSkirt = true, noDrape = true,
+                make = s => new RoeMagicaCloth(s, game: true),
+                covers = (s, kind) => RoeMagicaCloth.Covers(s, kind),
+            },
 #endif
         };
 
@@ -164,6 +181,8 @@ namespace RoeFighter
     ///   magica        Magica Cloth 2 for everything (when installed)
     ///   magica_full   Magica Cloth 2 for everything on its own presets, in the game's own clips too, without our drape
     ///                 (when installed; Inase's pick under auto then - Preferred)
+    ///   roe           Rise of Eros' own: its keys in its clips and its stance, its lobby's Magica Cloth 2 elsewhere, breasts
+    ///                 keyed (when installed)
     /// </summary>
     public static class RoeClothBackends
     {
@@ -232,6 +251,12 @@ namespace RoeFighter
 #if MAGICACLOTH2
             All_("magica", "Magica Cloth 2", "magica"),
             All_("magica_full", "Magica Cloth 2, everything (its presets; also in the game's clips)", "magica_full"),
+            // breasts and other flesh stay on the keys: ROE keys them in every clip ("keys" is no solver: nothing simulates them)
+            new Backend
+            {
+                name = "roe", title = "Rise of Eros' own: its keys, its lobby's Magica Cloth 2 where it has none (breasts keyed)", fallback = "roe",
+                byKind = { { "breast", "keys" }, { "body", "keys" } },
+            },
 #endif
         };
 

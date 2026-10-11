@@ -61,6 +61,8 @@ namespace RoeFighter.Fight
         public List<NamedDirector> directors = new List<NamedDirector>();
         public List<NamedSound> sounds = new List<NamedSound>();
         public TextAsset skillSheetJson;
+        /// <summary>Her game's own Magica Cloth 2 set-up (ROE's lobby prefab: Assets/ROE/&lt;id&gt;/magica_lobby.json, tools/roe_mc2_dump.py) for the "roe" cloth setup; null: none.</summary>
+        public TextAsset gameMagica;
         public Renderer[] weaponRenderers;           // shown only during skills (a08's sword) - always while she holds them (Holds)
 
         /// <summary>
@@ -357,6 +359,7 @@ namespace RoeFighter.Fight
                 // cloth's columns as one sheet each
                 kindOf = RoeDoaPhysics.KindsOf(animator),
                 anchorOf = sheets.anchorOf, neighbours = sheets.neighbours,
+                gameMagica = gameMagica != null ? gameMagica.text : null,
             });
             if (cloth != null)
                 Debug.Log($"[ROE] {id} cloth {backend.name}: {cloth.Report}");
@@ -632,6 +635,10 @@ namespace RoeFighter.Fight
                     t %= c.clip.length;
                 else
                     t = Math.Min(t, c.clip.length);
+                // her own guard is her game's stance (ownGuard): in step with layer 0's, so the skirt, hair and fan there are
+                // keyed for the very frame the body is in
+                if (ownGuard != null && c.clip == ownGuard && stance != null)
+                    t = stanceTime % Mathf.Max(0.01f, stance.length);
                 playables[i].SetTime(t);
             }
             ApplyWeights();
@@ -653,6 +660,12 @@ namespace RoeFighter.Fight
             // (a solver over the game's clips too - magica_full - takes their skirt the same way)
             bool overGame = IgnoreSkirtKeys || (backend != null && backend.overGameClips);
             float skirtMocap = overGame ? 1f : mocap;
+            // standing in her game's stance - her guard is that clip (ownGuard) - she shows the game's keys as in its own clips
+            // (user 10-11 "luf的裙子能像ROE一样自然下垂么"): the skirt neither follows the legs nor turns with the hips there, and the
+            // cloth writes nothing; it takes over as she moves out of it (a solver over the game's clips too keeps it) - and as
+            // her legs step sideways (StepLegs: a side step is the guard's upper body over legs we step)
+            float stanceKeys = !overGame && ownGuard != null && index.TryGetValue("guard", out int g) ? weight[g] * (1f - stepWeight) : 0f;
+            float skirtFollow = skirtMocap * (1f - stanceKeys);
             bool measureKeys = IgnoreSkirtKeys && gameWeight > 0.99f && skirtRig != null && skirtRig.Ready && hips != null;
             if (measureKeys)
                 KeepSkirtKeys();
@@ -756,12 +769,12 @@ namespace RoeFighter.Fight
             // the panels' roots then sit where the skinned skirt expects them.
             // (not under a solver that hangs the skirt as its own game does: Stellar Blade's Eve 37 - her skirt rig reads the
             // panels' roots where the animation has them)
-            if (hipCloth != null && skirtMocap > 0f && !NoHipCloth && !(backend != null && backend.ownSkirt))
+            if (hipCloth != null && skirtFollow > 0f && !NoHipCloth && !(backend != null && backend.ownSkirt))
             {
                 var heading = HipHeading();
                 var turn = Quaternion.Inverse(heading) * hips.rotation * Quaternion.Inverse(pelvisRef);
                 for (int k = 0; k < hipCloth.Length; k++)
-                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * turn * hipClothRest[k], skirtMocap);
+                    hipCloth[k].rotation = Quaternion.Slerp(hipCloth[k].rotation, heading * turn * hipClothRest[k], skirtFollow);
             }
             TrackContact();                 // on the animated pose, before the legs are bent to locked feet
             StepLegs(dt, mocap);
@@ -789,8 +802,8 @@ namespace RoeFighter.Fight
             // cloth swings from there.  On the legs' final pose.
             if (capturingGuard)
                 skirtRig.AddGuard(hips.position, HipHeading());
-            else if (skirtRig != null && skirtRig.Ready && skirtMocap > 0f && !NoHipCloth)
-                skirtRig.Apply(hips.position, HipHeading(), skirtMocap, dt);
+            else if (skirtRig != null && skirtRig.Ready && skirtFollow > 0f && !NoHipCloth)
+                skirtRig.Apply(hips.position, HipHeading(), skirtFollow, dt);
             else
                 skirtRig?.Idle();
             // the cloth on the finished pose; the game's own clips keep their hand-keyed skirts and hair
@@ -801,7 +814,7 @@ namespace RoeFighter.Fight
                     boneCloth.skirtOnSkin = skirtRig != null && skirtRig.Ready && RoeSkirtRig.Drape > 0f;
                     boneCloth.alwaysWeight = clothWeight;     // sashes: over the game's clips too (RoeBoneCloth.AlwaysKinds)
                 }
-                cloth.Weight = (clothOverGameClips || overGame ? 1f : mocap) * clothWeight;
+                cloth.Weight = (clothOverGameClips || overGame ? 1f : mocap * (1f - stanceKeys)) * clothWeight;
                 cloth.Step(dt, transform.position.y);
             }
             // (MeasureKeysLate: taken when the frame is drawn, after Magica Cloth 2 has written its bones - MeasureKeysNow)

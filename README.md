@@ -58,6 +58,7 @@
 | Luf 左边的裙子翘起来：游戏的战斗站姿里左裙片下摆本来就往外翘 30° 左右；我们的蹲低架势里长裙片碰到地面，"swing"的重力太轻时窄裙片从地面往外卷。重力改回 5 | 完成（10-11），见"左边的裙子翘起来"一节；对比图 `out\g04_left_panel.jpg`；exe 已重新打包 |
 | Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
 | Luf 站游戏里的战斗站姿（不再是不知火舞的蹲姿）；数字键 1、2、3 放技能 1、技能 2、超必杀（ROE 角色的就是她游戏里的三个战斗技能） | 完成（10-11），见"Luf 站游戏里的姿势；技能键 1、2、3"一节；对比视频 `out\g04_roe_stance.mp4`，对比图 `out\g04_roe_stance.jpg`；exe 已重新打包 |
+| Luf 的裙子重新从 ROE 导出核对（原始数据和游戏动作都没改乱）；照 ROE 自己的物理做了方案 `roe`；默认改成站在游戏站姿里时直接放 ROE 的手 K，动起来再交给布料 | 完成（10-11），见"Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看"一节；视频 `out\g04_skirt_roe.mp4`，图 `out\g04_skirt_roe.jpg`；exe 已重新打包 |
 
 ## 目录
 
@@ -357,7 +358,7 @@ python tools\make_video.py _work\fight _work\fight\fight.mp4
 | 侧步（往画面里 / 往画面外，绕着对手转） | W / S | ↑ / ↓ |
 | A–D 四个攻击（`bandai1`：刺拳、挥砍、直拳、回旋踢；`accad_male2`：刺拳、前腿回旋踢、直拳、后腿回旋踢；Fiona 用自己的：突刺、反击斩、转身斩、踢加斩；Inase 用 Mecanim Bot 的：刺拳、中段前踢、冲步直拳、回旋高踢） | J、K、U、I（手柄 0–3） | 小键盘 1、2、4、5 |
 | 换动作包（比赛重新开始） | F3 | |
-| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 剑星的物理 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
+| 换物理方案（各用自己游戏的 / Magica 式骨骼布料 / DOA6 的物理 / 只有胸用 DOA6 / DOA5LR 式弹簧网 / Vindictus 的 KawaiiPhysics / 剑星的物理 / 10-02 旧版 / 关 / 装了插件时还有 Magica Cloth 2 和 ROE 自己的（roe）；比赛重新开始，见 `docs/doa-physics.md` 第 4 节） | F4 | |
 | 裙子：自然下垂 / 跟腿走（立即生效） | F5 | |
 | 爆衣开 / 关（关掉时立刻全部穿回去；`ROEFighter.exe -roeBurst 0` 以关闭状态启动） | F6 | |
 | 技能 1、技能 2、超必杀（要满能量槽）：ROE 角色的就是她游戏里的三个战斗技能 `skill_01..03` | 1、2、3（主键盘的数字键，像 ROE 的三个技能按钮；10-11 起），或 L、O、P，或 236+J/U、214+J/U、236236+J/U | 小键盘 3、6、9 |
@@ -2415,7 +2416,7 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
   - 前进、后退、侧步、四个普通攻击（不知火舞的冲步刺拳、肘击、扑身冲拳、高踢）都没变，出招从游戏站姿直接接过去，收招回到游戏站姿。
     侧步时上半身是站架的，所以现在侧步也是直身的。
   - 身体姿势和游戏的 `idle_01` 一样（对比图第二、三列）。裙子不一样的地方：站着时裙子是"swing"布料模拟的，不是游戏的手 K——
-    游戏里左边那条窄裙片的下摆往外翘一点，我们的直着垂下。
+    游戏里左边那条窄裙片的下摆往外翘一点，我们的直着垂下。（当晚改了：站着时直接放游戏的手 K，见下一节。）
   - 场景构建的开关 `-roeGuard`（默认 `g04=stance`）：`g04=pack` 回到不知火舞的架势；别的角色也能加，例如 `g04=stance,b10=stance`。
     g05（女神 Luf）没改：她游戏里的战斗站姿浮在半空 23 厘米，`rig.stance` 用的是她的展示待机 `idle_02`。
 - **技能键 1、2、3**：主键盘上的数字键 1、2、3 就是技能 1、技能 2、超必杀（`PlayerInput`），对每个 ROE 角色都是她游戏里的
@@ -2432,4 +2433,63 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','g04','-roeScript','all','-roeView','front','-roeOut','_work\guard_all_front'
 python tools\cloth_demo_video.py _work\guard_all_front out\g04_roe_stance.mp4 --variants guard_pack,guard_stance
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','g04','-roeScript','stance','-roeView','left','-roeOut','_work\guard_stance_left'
+```
+
+### Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看（10-11）
+
+用户 10-11："luf的裙子能像ROE一样自然下垂么，要不重新导出ROE中的看一下吧，可能改了太多次改乱了，就完全遵从ROE本身的物理的角度再看看"。
+
+- **重新导出、核对**：
+  - Luf 的 51 个游戏包重新拷出来，用 AssetRipper 重新还原到 `_work\ripped_g04_fresh`。
+  - 和工程里用的 `Assets\ROE\g04` 逐个文件比：Luf 自己的 18 个包、112 个文件（网格、骨骼、动作、材质、贴图、预制体）全部一样，只有 Unity 的内部编号不同。
+  - 游戏包本身最后更新在 2026-08（战斗低模 2025-12），我们 10 月第一次导出之后没变过。
+  - 转换后的游戏动作和原版逐骨回放对比（`RoeHumanoidClips`）：待机 `idle_01` 平均差 0.01 厘米，三个技能 0.02–0.08 厘米。
+    游戏动作里裙子就是 ROE 的手 K，原始数据和转换都没有改乱。
+  - 和游戏不一样的只有游戏没有的部分：站架和动捕动作里，裙子是我们模拟的，而且叠了五层：跟腿走的拟合、自然下垂、上两根骨保留拟合、胯部对齐、swing 调参。
+- **ROE 本身的物理**（`tools\roe_mc2_dump.py` 从新导出的大厅预制体 `meta_armor_pc_g04_hd` 读出来）：
+  - 裙子没有任何物理，战斗、展示、大厅里全是手 K。
+  - Luf 身上只有一个 Magica Cloth 2 组件，在大厅模型上，管 6 条头发（左右刘海、4 条后发）。参数：连接方式 Line（每条链单独算），
+    重力 5、阻尼 0.05、角度恢复 0、角度限制 90°（根部 0°，越往下越大）、惯性全 0、粒子最快 1 米/秒、粒子半径 1.5 厘米、
+    7 个胶囊碰撞体（胸、头、颈、上身），基准是初始姿势。和 10-05 调研的结论一样：ROE 所有布料都用这一套"头发"参数。
+- **新的物理方案 `roe`**（ROE 自己的，F4 能切到；`RoeMagicaCloth` 的 `game` 模式）：
+  - 游戏动作和站架里（站架现在就是游戏的待机），所有部位直接放 ROE 的手 K。
+  - 动起来时：
+    - 头发：用游戏的那个组件，原样照搬（同样的参数、7 个碰撞体、6 条链）。`ImportJson` 不导入的几项（旋转插值、根部旋转、
+      基准姿势比例等，游戏是 1、1、0）另外照游戏补上，Magica 默认的旋转插值和根部旋转是 0.5。
+    - 裙子、腰链：用同一套参数，每条链一个 Line，加上我们的腿部胶囊。游戏腰以下没有碰撞体，因为它的裙子不模拟。
+    - 胸：和 ROE 一样不加物理。
+  - 我们的东西只留了一样：裙子跟着腿走的姿势（`RoeSkirtRig`，本身就是从 ROE 手 K 拟合的），Magica 以它为基准。
+    原因：照游戏用初始姿势当基准、根部角度限制又是 0° 的话，腿一动，裙子上半段就像木板一样从胯上支出去（试过）。
+  - 结果：站着和游戏一模一样；但走路、侧步、出拳时，这套"头发参数"放在拖地长裙上显得飘。后片被脚后跟踢起来，要横在身后好一会儿才落下，
+    因为每秒 1 米的限速让它落得慢。去掉限速也试过：阻尼只有 0.05，裙片像旗子一样甩出去，更差。走路、后退时穿进腿也多。
+- **所以默认改成**：
+  - 站在游戏站姿里（站架）时，不管哪种物理方案，都直接放 ROE 的手 K，和技能、开场、胜利一样：裙子不跟腿走、不按胯对齐，布料不写。
+  - 一动起来（走、退、出拳）或侧步迈腿，布料再接手，Luf 默认还是 swing。切换按站架动作的混合权重渐变；布料一直在后台算，所以不会跳。
+  - `FighterRig`：站架和 0 层的游戏待机逐帧对齐，身体和关键帧里的裙子、头发是同一帧。
+- **对比**（`RoeClothPlayDemo`，同一套操作：站架、前进、后退、侧步、四个普通攻击，再按 1、2、3 放技能。每格是"穿进身体 % / 抖动 毫米"）：
+
+  | 段 | 原来（站着也模拟） | 现在（站着用手 K） | 完全照 ROE |
+  |---|---|---|---|
+  | 站架 | 0.25 / 1.2 | 0 / 0.5 | 0 / 0.5 |
+  | 前进 | 0.09 / 5.6 | 0.09 / 5.5 | 0.49 / 3.5 |
+  | 后退 | 0.14 / 5.1 | 0.14 / 5.1 | 0.67 / 2.9 |
+  | 侧步 | 0.20 / 2.9 | 0.19 / 3.0 | 0.38 / 5.0 |
+  | 四个普通攻击 | 0.23–0.42 | 0.12–0.32 | 0.25–0.77 |
+  | 三个技能 | 0.13 / 0.26 / 0.34 | 0.03 / 0.12 / 0.29 | 0.03 / 0.12 / 0.29 |
+  | 全程 | 0.24 / 6.3 | 0.15 / 5.8 | 0.24 / 5.5 |
+
+  技能本身三列都是游戏手 K，差别在技能前后站着的那段。
+- 视频 `out\g04_skirt_roe.mp4`（30 秒，左：原来；中：现在；右：完全照 ROE）。图 `out\g04_skirt_roe.jpg`：站架、前进、侧步、出拳后回到站架，四个时刻各一行。
+- 想看 ROE 方案：比赛里按 F4 切到 "roe"（exe 里装着 Magica Cloth 2）。去掉限速的那条：`-roeCloths 'roe:speedLimit=0'`。
+- 游戏的组件数据写在 `Assets\ROE\<角色>\magica_lobby.json`（游戏数据，不进仓库），场景构建时读进 `FighterRig.gameMagica`；
+  别的 ROE 角色先跑一遍 `roe_mc2_dump.py --fighter <id>` 就能用 `roe`。没读的话，`roe` 照这套参数手写一份（`RoeMagicaCloth.RoeTemplate`）。
+
+```powershell
+python tools\stage_bundles.py _work\bundles_g04_fresh g04
+python tools\rip.py --bundles _work\bundles_g04_fresh --out _work\ripped_g04_fresh --log _work\assetripper.log
+python tools\roe_mc2_dump.py "_work\ripped_g04_fresh\ExportedProject\Assets\AssetBundles\meta_armor_pc_g04_hd & ld\pc_g04_hd.prefab" --fighter g04
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Graphics -NoQuit -Extra '-roeChars','g04','-roeCloths','swing,roe','-roeScript','all','-roeView','front','-roeOut','_work\roe_cloth_front5'
+# 视频的三栏：原来那一栏是改之前录的 swing（_work\roe_cloth_front2\g04_swing），和这两条放进 _work\roe_cloth_compare（takes.txt 里叫 swing_old）
+python tools\cloth_demo_video.py _work\roe_cloth_compare out\g04_skirt_roe.mp4 --variants swing_old,swing,roe
 ```
