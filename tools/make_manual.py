@@ -15,8 +15,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 FONT = r'C:\Windows\Fonts\msyh.ttc'
 FONT_BOLD = r'C:\Windows\Fonts\msyhbd.ttc'
-ROSTER = [('a08', 'INASE'), ('g04', 'LUF'), ('b10', 'KART'), ('g05', 'GODDESS LUF'), ('m02', 'AMANO'), ('kas', 'KASUMI'),
-          ('kas011', 'KASUMI 海盗裙'), ('mai', 'MAI'), ('fio005', 'FIONA'), ('eve09', 'EVE'), ('eve37', 'EVE 百褶裙')]
+ROSTER = [('a08', 'INASE'), ('g04', 'LUF'), ('b10', 'KART'), ('g05', 'GODDESS LUF'), ('m02', 'AMANO'), ('b14', 'CRANE KART'),
+          ('kas', 'KASUMI'), ('kas011', 'KASUMI 海盗裙'), ('mai', 'MAI'), ('fio005', 'FIONA'), ('eve09', 'EVE'), ('eve37', 'EVE 百褶裙')]
 
 # ---- pictures
 

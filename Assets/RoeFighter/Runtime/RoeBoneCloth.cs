@@ -179,6 +179,25 @@ namespace RoeFighter
             return s;
         }
 
+        /// <summary>
+        /// A long sleeve (b14's Sleeve_R1: eleven bones from her right forearm down past the knee): a ribbon that hangs.  Nothing
+        /// pulls it back to its animated pose and only its root keeps close to the forearm (25 degrees, 150 at the tip) - with a
+        /// ribbon's (15 / 50 and a pull of 0.3) it kept the shape it has on her lowered arm in her stance, so a raised forearm
+        /// (blocking, a punch) stood it up over her head like a board.
+        /// </summary>
+        public static Settings Sleeve(bool legacy)
+        {
+            var s = Ribbon(legacy);
+            s.restore = 0f;
+            s.limitRoot = 25f;
+            s.limitTip = 150f;
+            s.inertia = 0.5f;
+            s.worldInertia = 0.5f;
+            return s;
+        }
+
+        static readonly Regex SleeveName = new Regex(@"^sleeve_", RegexOptions.IgnoreCase);
+
         // hair, chains and breasts: the add-on's presets, world inertia as their old inertia on the anchor
         public static Settings Hair(bool legacy) => new Settings
         {
@@ -208,12 +227,14 @@ namespace RoeFighter
             return null;
         }
 
+        // (b14's long right sleeve, Sleeve_R1 - eleven bones from the forearm down past her knee - is a ribbon with its own
+        // settings, Sleeve; her belt's tassels, Tassel_L1 / R1, swing like chains)
         static readonly (string kind, Regex name)[] Kinds =
         {
-            ("chain", new Regex(@"skirt_chain|^chain\d|chain_arm|dec_wrist", RegexOptions.IgnoreCase)),
+            ("chain", new Regex(@"skirt_chain|^chain\d|chain_arm|dec_wrist|^tassel_", RegexOptions.IgnoreCase)),
             ("skirt", new Regex(@"skirt", RegexOptions.IgnoreCase)),
             ("hair", new Regex(@"hair|braid|bangs|hari", RegexOptions.IgnoreCase)),
-            ("ribbon", new Regex(@"riband|ribbon", RegexOptions.IgnoreCase)),
+            ("ribbon", new Regex(@"riband|ribbon|^sleeve_", RegexOptions.IgnoreCase)),
             ("breast", new Regex(@"breast|chest_[lr]", RegexOptions.IgnoreCase)),
         };
 
@@ -241,6 +262,7 @@ namespace RoeFighter
         class ChainSet
         {
             public string name, kind;
+            public bool sleeve;                 // a long sleeve: a ribbon, but on the game's keys in its clips (not AlwaysKinds)
             public Settings s;
             public Transform anchor;
             public Vector3 anchorAxis;          // the anchor's local axis that pointed up at rest: the body axis for the backstop
@@ -372,7 +394,9 @@ namespace RoeFighter
                 if (anchor == null)
                     continue;
                 var bones = group.OrderBy(Depth).ToArray();
-                var s = kind == "skirt" ? Skirt(this.legacy, skirtTuning) : kind == "hair" ? Hair(this.legacy) : kind == "ribbon" ? Ribbon(this.legacy)
+                bool sleeve = kind == "ribbon" && bones.Any(b => SleeveName.IsMatch(b.name));
+                var s = kind == "skirt" ? Skirt(this.legacy, skirtTuning) : kind == "hair" ? Hair(this.legacy)
+                      : kind == "ribbon" ? (sleeve ? Sleeve(this.legacy) : Ribbon(this.legacy))
                       : kind == "chain" ? Chain(this.legacy) : Breast(this.legacy);
                 if (doa5)
                     s = Doa5(kind, s);
@@ -387,7 +411,9 @@ namespace RoeFighter
                        : new Capsule[0];
                 // inertia and the backstop's body axis come from the body part the chain belongs to
                 // (the pelvis for a skirt, even when its panels hang on a skirt bone)
-                var c = Build($"{kind} on {anchor.name}", kind, s, owner != null ? owner : anchor, bones, cs, skin);
+                var c = Build($"{(sleeve ? "sleeve" : kind)} on {anchor.name}", kind, s, owner != null ? owner : anchor, bones, cs, skin);
+                // a sleeve keeps to the game's keys in its clips, like a skirt (its game keys fling it about on purpose)
+                c.sleeve = sleeve;
                 if (s.links && !this.legacy && !(scope.neighbours != null && LinkNeighbours(c, scope.neighbours)))
                     Link(c, meshes);
                 if (doa5)
@@ -1355,10 +1381,10 @@ namespace RoeFighter
 
         const float MaxPush = 0.025f;
 
-        /// <summary>Write the simulated rotations, blended with the animated ones by ``weight`` (``alwaysWeight`` for AlwaysKinds).</summary>
+        /// <summary>Write the simulated rotations, blended with the animated ones by ``weight`` (``alwaysWeight`` for AlwaysKinds but sleeves).</summary>
         void Write(ChainSet c)
         {
-            float w = AlwaysKinds.Contains(c.kind) ? alwaysWeight : weight;
+            float w = AlwaysKinds.Contains(c.kind) && !c.sleeve ? alwaysWeight : weight;
             if (w <= 0f)
                 return;
             foreach (var lv in c.levels)

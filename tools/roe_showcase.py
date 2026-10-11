@@ -18,6 +18,8 @@ import os
 
 import UnityPy
 
+from import_ripped import CLIP_ALIASES      # the game's spelling slips (b14's and m02's recat_01 is the fighter's react_01)
+
 AB = r'D:\Program Files (x86)\Steam\steamapps\common\Rise of Eros\RiseOfEros_Data\StreamingAssets\AssetBundles'
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -63,7 +65,8 @@ def timelines(cid):
                 clip_ref = at.get('m_Clip')
                 if 'm_ApplyFootIK' in at or 'm_MatchTargetFields' in at:          # an animation clip
                     anim = by_id.get(clip_ref['m_PathID']) if clip_ref and clip_ref.get('m_FileID') == 0 else None
-                    entry['clip'] = anim.read().m_Name if anim is not None else c.get('m_DisplayName')
+                    name = anim.read().m_Name if anim is not None else c.get('m_DisplayName')
+                    entry['clip'] = CLIP_ALIASES.get(name, name)
                     entry['length'] = round(float(c.get('m_Duration', 0.0)), 3)
                 elif 'm_bufferingTime' in at:                                       # an audio clip
                     entry['voice'] = c.get('m_DisplayName')

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Unity.Collections;
 using UnityEditor;
 using UnityEngine;
@@ -50,6 +51,14 @@ namespace RoeFighter.EditorTools
     ///                 most), blended back to its own shape at 4 cm.  The suit's feet were made for its shoes, the base's
     ///                 flat bare feet were not: its toes came out through the shoes and between the straps its ankles
     ///                 were either through them or (left out) missing.
+    ///
+    /// Kart's crane robe (b14, 10-11): her suit has no skin on her right upper arm (the robe covers it), and what lies over it
+    /// is the sheer sleeve, whose top the game hangs on the forearm's twist bone, and the shoulder piece on its own bone - the
+    /// body took those and its upper arm stayed out sideways in the bind pose like a board.  One more word:
+    ///   ownWeights    a regex of the suit's bones: where the suit's skin is not within SkinReach, a vertex the base hangs
+    ///                 mostly on such a bone keeps the base's own weights, bones by name (one the suit lacks - b01's ArmTwist_R,
+    ///                 toes - its nearest ancestor the suit has).  Only there: all over (tried first) her thighs creased where the
+    ///                 base's own weights (the thigh) met the suit's skin (its twist bones, which hang on the spine).
     ///
     /// Vindictus' Fiona (10-06): her base is the game's own SM_Fiona_Body01 laid on PCF_005's skin in Blender (tools/vdf_nude.py),
     /// with two textures - body, and hands and feet: "submeshes" + "materials" in place of "submesh" + "material".  All of her
@@ -433,7 +442,11 @@ namespace RoeFighter.EditorTools
             // clearly nearer than any skin (where the game cut the skin away); else the nearest skin
             var weightsOf = new Dictionary<int, (Transform bone, float weight)[]>();
             var under = new HashSet<int>();         // only under pieces that never come off
-            int fromSkin = 0, fromOutfit = 0, lost = 0, unhooked = 0;
+            int fromSkin = 0, fromOutfit = 0, lost = 0, unhooked = 0, fromOwn = 0;
+            string ownNote = "";
+            var ownOf = !string.IsNullOrEmpty(n.ownWeights)
+                ? OwnWeights(model, prefab, nudeRenderer, nudeToModel, ToModel(target.transform), bindpose, used, new Regex(n.ownWeights), out ownNote)
+                : null;
             Dictionary<Transform, float> Gather(List<(int i, float d)> sources)
             {
                 var sum = new Dictionary<Transform, float>();
@@ -464,6 +477,16 @@ namespace RoeFighter.EditorTools
                     skinGap.Add(ds);
                     pick = onSkin;
                     fromSkin++;
+                }
+                else if (ownOf != null && ownOf.TryGetValue(i, out var mine))
+                {
+                    // "ownWeights": no suit skin here - the base's own weights, not the pieces over it
+                    weightsOf[i] = mine;
+                    fromOwn++;
+                    foreverGrid.Near(p, 0.025f, near);
+                    if (near.Count > 0)
+                        under.Add(i);
+                    continue;
                 }
                 else
                 {
@@ -787,6 +810,7 @@ namespace RoeFighter.EditorTools
             float Pct(float q) => skinGap.Count > 0 ? skinGap[Mathf.Clamp(Mathf.RoundToInt(q * (skinGap.Count - 1)), 0, skinGap.Count - 1)] * 1000f : -1f;
             log.Append($"\n[ROE]   nude body from {Path.GetFileName(n.prefab)} {n.renderer}[{string.Join(",", bodySubs)}]: {used.Count} vertices, " +
                        $"{fromSkin} take the suit's skin (gap median {Pct(0.5f):F2} mm, p95 {Pct(0.95f):F2} mm), {fromOutfit} the outfit over them, " +
+                       (ownOf != null ? $"{fromOwn} keep their own ({ownNote}), " : "") +
                        (fromRound > 0 ? $"{fromRound} the skin round a piece that follows the body, " : "") +
                        (unhooked > 0 ? $"{unhooked} had loose cloth (skirt, sash, hair, chain) among their sources and let it go, " : "") +
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
@@ -985,6 +1009,86 @@ namespace RoeFighter.EditorTools
             {
                 Object.DestroyImmediate(img);
             }
+        }
+
+        /// <summary>
+        /// "ownWeights": the base's own weights of these vertices on the suit's skeleton, bones by name - a bone the suit lacks
+        /// gives its weight to its nearest ancestor the suit has; loose cloth gives none; the four largest, normalised; only the
+        /// vertices whose largest such weight is on a bone named like region.  The suit's meshes skin only the twist bones of
+        /// its limbs, not the limbs (b14: no Bip001 R UpperArm in any of them): a bone no suit renderer skins with gets its bind
+        /// pose from the base's (bindpose, in the target renderer's space - the family's skeleton, standing where the suit's does).
+        /// </summary>
+        static Dictionary<int, (Transform bone, float weight)[]> OwnWeights(GameObject model, GameObject prefab, SkinnedMeshRenderer nudeRenderer,
+                                                                            Matrix4x4 nudeToModel, Matrix4x4 targetToModel,
+                                                                            Dictionary<Transform, Matrix4x4> bindpose, IEnumerable<int> vertices,
+                                                                            Regex region, out string note)
+        {
+            var byName = new Dictionary<string, Transform>();
+            foreach (var t in model.GetComponentsInChildren<Transform>(true))
+                if (!byName.ContainsKey(t.name))
+                    byName[t.name] = t;
+            var nbones = nudeRenderer.bones;
+            var nposes = nudeRenderer.sharedMesh.bindposes;
+            var baseBind = new Dictionary<Transform, Matrix4x4>();         // the base's bones, bone space to model space
+            for (int k = 0; k < nbones.Length && k < nposes.Length; k++)
+                if (nbones[k] != null)
+                    baseBind[nbones[k]] = nudeToModel * nposes[k].inverse;
+            Matrix4x4 BaseBind(Transform t) => baseBind.TryGetValue(t, out var m) ? m : prefab.transform.worldToLocalMatrix * t.localToWorldMatrix;
+            var to = new Transform[nbones.Length];
+            int direct = 0, byAncestor = 0, none = 0, posed = 0;
+            for (int k = 0; k < nbones.Length; k++)
+            {
+                var t = nbones[k];
+                while (t != null && !byName.ContainsKey(t.name))
+                    t = t.parent;
+                if (t == null)
+                {
+                    none++;
+                    continue;
+                }
+                var suit = byName[t.name];
+                to[k] = suit;
+                if (t == nbones[k])
+                    direct++;
+                else
+                    byAncestor++;
+                if (!bindpose.ContainsKey(suit))
+                {
+                    bindpose[suit] = BaseBind(t).inverse * targetToModel;
+                    posed++;
+                }
+            }
+            var mesh = nudeRenderer.sharedMesh;
+            var perVertex = mesh.GetBonesPerVertex();
+            var all = mesh.GetAllBoneWeights();
+            var start = new int[mesh.vertexCount + 1];
+            for (int i = 0; i < mesh.vertexCount && i < perVertex.Length; i++)
+                start[i + 1] = start[i] + perVertex[i];
+            var result = new Dictionary<int, (Transform bone, float weight)[]>();
+            foreach (int i in vertices)
+            {
+                if (i >= perVertex.Length)
+                    continue;
+                var sum = new Dictionary<Transform, float>();
+                for (int j = start[i]; j < start[i + 1]; j++)
+                {
+                    var w = all[j];
+                    if (w.boneIndex >= to.Length || to[w.boneIndex] == null || w.weight <= 0f || Loose(to[w.boneIndex]))
+                        continue;
+                    var bone = to[w.boneIndex];
+                    sum[bone] = (sum.TryGetValue(bone, out float s) ? s : 0f) + w.weight;
+                }
+                if (sum.Count == 0)
+                    continue;
+                var top = sum.OrderByDescending(kv => kv.Value).Take(4).ToArray();
+                if (!region.IsMatch(top[0].Key.name))
+                    continue;
+                float total = top.Sum(kv => kv.Value);
+                result[i] = top.Select(kv => (kv.Key, kv.Value / total)).ToArray();
+            }
+            note = $"{result.Count} of the body's vertices on {region}; the base's bones: {direct} by name, {byAncestor} by an ancestor, {none} on nothing of the suit's; " +
+                   $"{posed} the suit skins nothing with, bound where the base has them";
+            return result;
         }
 
         /// <summary>

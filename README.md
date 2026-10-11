@@ -59,7 +59,8 @@
 | Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
 | Luf 站游戏里的战斗站姿（不再是不知火舞的蹲姿）；数字键 1、2、3 放技能 1、技能 2、超必杀（ROE 角色的就是她游戏里的三个战斗技能） | 完成（10-11），见"Luf 站游戏里的姿势；技能键 1、2、3"一节；对比视频 `out\g04_roe_stance.mp4`，对比图 `out\g04_roe_stance.jpg`；exe 已重新打包 |
 | Luf 的裙子重新从 ROE 导出核对（原始数据和游戏动作都没改乱）；照 ROE 自己的物理做了方案 `roe`；默认改成站在游戏站姿里时直接放 ROE 的手 K，动起来再交给布料 | 完成（10-11），见"Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看"一节；视频 `out\g04_skirt_roe.mp4`，图 `out\g04_skirt_roe.jpg`；exe 已重新打包 |
-| 游戏说明：操作、规则、技能、爆衣、功能键、11 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
+| 游戏说明：操作、规则、技能、爆衣、功能键、12 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
+| Kart 最新的一套（b14，白蓝鹤袍，游戏里 2026-09-12 上的）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、选人时的展示动作和台词、爆衣四段到全身；右边拖到膝下的长纱袖交给布料，抬手时垂下来 | 完成（10-11），见"Kart 最新的一套（b14，鹤袍）加入战斗"一节；技能 `out\b14_skills.mp4`，爆衣 `out\clothes_burst_demo_b14.mp4`，电脑对电脑（对 b10）`out\fight_cpu_match_b14.mp4`，检查图 `out\clothes_burst\unity\b14_sheet.png`；exe 已重新打包 |
 
 ## 目录
 
@@ -1172,7 +1173,8 @@ g04 的鞋一直穿着：她的脚和底模的高跟角度不同（差 1–1.4 �
     - a08：19,880 个顶点，17,760 个抄套装皮肤（最近顶点距离中位 1.5 毫米），2,120 个抄护甲；
     - g04：19,751 个顶点，11,294 个抄皮肤（中位 3.9 毫米），8,457 个抄衣服——她的上衣、手套、内裤下面删掉的皮肤多，体形也和底模差得多一些。
   - **规则表里的写法**：`"nude"` 一段写底模的预制体、身体渲染器、子网格、材质，要接到的套装渲染器（`attachTo`），以及它代替的皮肤（`replace`）；
-    `fill` 写从底模的哪个子网格补套装没有的部分（`missingFrom`：拿来比对的套装渲染器），b10、g05 用它补领子下面的脖子（见"新角色：b10 和 g05"）。
+    `fill` 写从底模的哪个子网格补套装没有的部分（`missingFrom`：拿来比对的套装渲染器），b10、g05 用它补领子下面的脖子（见"新角色：b10 和 g05"）；
+    `ownWeights`（骨头名的正则）：底模挂在这些骨头上、套装皮肤又够不着的顶点，不抄盖在上面的衣服，用底模自己的权重，b14 的右上臂用它（见"Kart 最新的一套（b14，鹤袍）加入战斗"）。
   - **顺手修了一个老问题：皮肤 LUT 一直缺着**。
     - 套装的皮肤和脸的材质都引用游戏的皮肤散射查找表 `pc_common_skin_rgbx_Lut`，它在 `chara_tex_bare_common_prelude` 包里，当初没导进来。着色器一直用默认的白图，人物的皮肤和脸偏白偏平。
     - 这次导底模时这张图进来了。我在 `Assets\ROE\common\chara_tex_bare_common_prelude\` 给它加了一个用原引用编号（guid `0a100c…`）的副本，套装和脸也用上了，三者肤色一致，更接近游戏。
@@ -2495,4 +2497,93 @@ python tools\roe_mc2_dump.py "_work\ripped_g04_fresh\ExportedProject\Assets\Asse
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothPlayDemo.Run -Graphics -NoQuit -Extra '-roeChars','g04','-roeCloths','swing,roe','-roeScript','all','-roeView','front','-roeOut','_work\roe_cloth_front5'
 # 视频的三栏：原来那一栏是改之前录的 swing（_work\roe_cloth_front2\g04_swing），和这两条放进 _work\roe_cloth_compare（takes.txt 里叫 swing_old）
 python tools\cloth_demo_video.py _work\roe_cloth_compare out\g04_skirt_roe.mp4 --variants swing_old,swing,roe
+```
+
+### Kart 最新的一套（b14，鹤袍）加入战斗（10-11）
+
+用户 10-11："把kart 最新的模型加入到游戏中"。
+
+- **b14 = Kart 的第 14 套**（游戏单位 `suit_kart_14`）：游戏包是 2026-09-12 的，Kart 其他十几套都在 8 月或更早，所以是最新的一套。
+  - 样子：白蓝长袍只盖右肩，右臂一条拖到膝下的纱袖，腰带上停着一只丹顶鹤，裙片下摆是羽毛；金冠、耳坠、项圈，黑色细高跟。
+  - 武器是一把长剑，剑柄挂着长穗；站架里右手握着剑。
+  - 游戏里还有一个粉白换色款（`outfit1`），这次没加。
+  - b10 保留。b14 的显示名是 CRANE KART，两个 Kart 同场时分得清（照 GODDESS LUF 的先例）；选人卡片上的词是 Crane。
+  - 家族裸体底模和 b10 一样是 b01；名单默认加在 m02 后面。
+- **三个技能**：游戏的 `skill_01`–`03`，特效、音效、语音都是游戏的。三个都打中（`out\b14_skills.mp4`，对 Inase）：
+
+  | 技能 | 怎么打 | 能打多远 | 打中掉血 |
+  |---|---|---|---|
+  | 技能 1 | 冲到对手面前，挥剑两下 | 冲刺后 2.9 米 | 150 |
+  | 技能 2 | 原地刺剑，命中特效在她前方 4.9 米 | 5.9 米 | 190 |
+  | 超必杀 | 天上落下一排羽剑，击倒 | 8.0 米（命中特效在 7.0 米） | 360，对手掉一段衣服 |
+
+- **普通攻击**：先用动作包的四招，和 m02 一样。剑只在技能、开场、胜利时出现。要像 Inase、b10 那样平时拿剑打，另外做。
+- **选人时的展示动作和台词**：`python tools\roe_showcase.py b14`。
+  - 顺带发现两个问题：m02 加入时漏了这一步；b14 和 m02 的游戏把 `react` 拼成了 `recat`，选人确认时找不到这段动作。
+  - 现在 `roe_showcase.py` 按 `import_ripped.py` 的拼写表改名（`CLIP_ALIASES`），m02 也补上了。
+- **布料**：
+  - 裙片 10 条链（68 根骨）、头发、胸，照旧。
+  - **右边的长纱袖**（`Sleeve_R1`，11 节，挂在右前臂的扭转骨上）：
+    - 按名字认作"飘带"，参数单独一套（`RoeBoneCloth.Sleeve`）：不往动画姿势拉，只有袖根贴着前臂（袖根 25°，到袖尖放宽到 150°），靠重力垂下来；
+    - 技能、受击、开场、胜利这些游戏动作里照游戏手 K（别的飘带在游戏动作里也模拟，袖子不）。
+    - 第一版直接用飘带的参数（往站姿拉 0.3、限制 15° / 50°），站架里袖子垂在放下的手臂旁，一抬手防御、出拳，整片袖子就像木板一样立在头顶。
+    - 辅助骨拟合（`RoeHelperFit`）不再把袖子的骨当成跟着前臂走的辅助骨。
+  - 腰带上两条流苏（`Tassel_L1` / `R1`）当链子模拟。
+  - 她游戏大厅的 Magica Cloth 2 只管头发（`roe_mc2_dump.py --fighter b14` 读好了，F4 的 `roe` 能用）。
+- **爆衣四段**（`Editor\Burst\b14.json`，检查图 `out\clothes_burst\unity\b14_sheet.png`）：
+
+  | 段 | 掉什么 |
+  |---|---|
+  | 1 | 金冠、耳坠、项圈和吊坠、左胸的金饰、右肩的肩饰 |
+  | 2 | 腰上的丹顶鹤、流苏和珠串、右边的长纱袖 |
+  | 3 | 左臂的袖套、戒指、高跟鞋 |
+  | 4 | 长袍（上身、腰带、裙片是连着的一件）和金色丁字裤 |
+
+  - 长袍、纱袖、袖子衬里三种材质在接缝处共用顶点。写成一条 outfit 会焊成一整块，所以每种材质写一条，纱袖才能单独掉。
+    长袍本身的上身和裙片连在一起，只能一起掉。
+  - **新加的规则词 `ownWeights`**（`RoeNudeBody`）：
+    - 问题：她的套装在右上臂没有皮肤（被长袍盖住，游戏裁掉了）。盖在上面的纱袖在游戏里挂在前臂扭转骨上，肩饰挂在自己的骨头上。
+      裸体照旧从盖着的东西抄权重，上臂就跟着前臂和肩饰走，站架里整条上臂横着支出去，像一块木板。
+    - 现在写 `"ownWeights": "^Bip001 R UpperArm$"`：底模自己挂在右上臂上的那些顶点，只要套装皮肤够不着（1.5 厘米外），就用底模 b01 自己的权重。
+      骨头按名字找，套装没有的辅助骨（比如 b01 的 `ArmTwist_R`）归到最近的祖先。
+    - 套装网格只挂扭转骨、不挂上臂本身，这些套装没蒙皮的骨头按底模的绑定姿势补上（同一家族的骨架，站的位置一样）。
+    - 试过、没用的：
+      - 全身都用底模权重：大腿上和套装皮肤的权重交界处出折痕（套装的大腿扭转骨挂在脊柱上，底模的挂在大腿上）；
+      - 肩膀也算进去：肩顶多一道折痕；
+      - Eve 那样"被衣服盖着的身体等衣服掉了再画"（`reveal`）：胸口长袍边缘露出黑洞。
+    - 剩下肩顶一个很小的台阶，只在全身那一段能看到。
+  - 她的皮肤和 b01 的身体是同一个曲面，只是做得粗一些：沿法线中位差 0 毫米，5% / 95% 是 −2 / +1 毫米。
+  - 爆衣演示（Inase 打她，两局四段全掉）：`out\clothes_burst_demo_b14.mp4`。
+- 电脑对电脑（对 b10，60 秒）：`out\fight_cpu_match_b14.mp4`。
+
+```powershell
+# 1. 拷包、还原、导入（AssetRipper 服务开着，见"从零重做一遍"；b01 的裸体底模工程里已有）
+python tools\stage_bundles.py _work\bundles_b14 b14
+python tools\rip.py --bundles _work\bundles_b14 --out _work\ripped_b14 --log _work\assetripper.log
+python tools\import_ripped.py --src _work\ripped_b14\ExportedProject\Assets
+# 2. 技能、选人的展示动作、游戏大厅的物理
+copy "<游戏包目录>\gameplay_prefab_suit_kart_14.ab" _work\bundles_skills_b14\
+python tools\rip.py --bundles _work\bundles_skills_b14 --out _work\ripped_skills_b14 --log _work\assetripper.log
+python tools\import_skills.py suit_kart_14 --src _work\ripped_skills_b14\ExportedProject\Assets
+python tools\skill_sheet.py suit_kart_14 b14
+python tools\roe_showcase.py b14 m02
+python tools\roe_mc2_dump.py "Assets\ROE\b14\meta_armor_pc_b14_hd_ld\pc_b14_hd.prefab" --fighter b14
+# 3. Unity
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFighterBuilder.BuildAll -Extra '-roeChars','b14'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHumanoidClips.ConvertAll -Extra '-roeChars','b14'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.Run -Extra '-roeChars','b14'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.FitSkirt -Extra '-roeChars','b14'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','b14'
+python tools\burst_sheet.py --chars b14
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+# 录像：技能、爆衣、电脑对电脑
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.SkillReel -Graphics -Extra '-roeP1','b14','-roeP2','a08'
+python tools\skill_reel_video.py out\b14_skills.mp4 _work\skills_b14
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','b14','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_b14'
+python tools\burst_video.py _work\burst_demo_b14 out\clothes_burst_demo_b14.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','b14','-roeP2','b10','-roeSeconds','60','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_b14'
+python tools\make_video.py _work\fight_b14 out\fight_cpu_match_b14.mp4
+# 她每个顶点的权重（_work\weights\b14.tsv），右上臂的问题就是这样查出来的
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeightProbe.SkirtLegs -Graphics -Extra '-roeChar','b14'
 ```

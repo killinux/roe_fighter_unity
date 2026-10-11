@@ -17,10 +17,10 @@ import numpy as np
 import skirt_key_models as skm
 
 KINDS = [  # RoeBoneCloth.Kinds, first match wins
-    ("chain", re.compile(r"skirt_chain|^chain\d|chain_arm|dec_wrist", re.I)),
+    ("chain", re.compile(r"skirt_chain|^chain\d|chain_arm|dec_wrist|^tassel_", re.I)),
     ("skirt", re.compile(r"skirt", re.I)),
     ("hair", re.compile(r"hair|braid|bangs|hari", re.I)),
-    ("ribbon", re.compile(r"riband|ribbon", re.I)),
+    ("ribbon", re.compile(r"riband|ribbon|^sleeve_", re.I)),
     ("breast", re.compile(r"breast|chest_[lr]", re.I)),
 ]
 ORDER = ["idle_01", "idle_02", "idle_ur01", "react_01", "react_02", "hurt", "skill_01", "skill_02", "skill_03", "die", "rip"]

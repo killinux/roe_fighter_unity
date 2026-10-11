@@ -38,12 +38,13 @@ namespace RoeFighter.EditorTools
         static readonly string[] GameClips = { "hurt", "die", "rip", "idle_01", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03" };
         static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
-            { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" }, { "m02", "AMANO" },
+            { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" }, { "m02", "AMANO" }, { "b14", "CRANE KART" },
         };
-        // a word on each suit for the select screen
+        // a word on each suit for the select screen (b14: a red-crowned crane sits on her belt; she is CRANE KART on the bars, so
+        // a match of the two Karts tells them apart, as GODDESS LUF and LUF)
         static readonly Dictionary<string, string> Outfits = new Dictionary<string, string>
         {
-            { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" }, { "m02", "Abyss" },
+            { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" }, { "m02", "Abyss" }, { "b14", "Crane" },
         };
 
         /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
@@ -53,8 +54,9 @@ namespace RoeFighter.EditorTools
         /// 自己的" - eve09, SbFighter, Stellar Blade's Eve in her Planet Diving Suit (7th) on her game's own physics; "把不知火舞也加入进角色来" -
         /// mai, Mai Shiranui from DOA6 like Kasumi: her stance and strikes are g04's, her game clips and physics her own; "eve有穿jk的衣服么，
         /// 换成这个角色我看下裙子的物理效果" - eve37, Eve in her pleated-skirt school look, Office Style; 10-11 "把m02也加入战斗，战斗动作也加入进来，作为3个技能使用" -
-        /// m02, Amano's second suit (suit_amano_2): her game's three battle skills are her skill 1, skill 2 and super).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,m02,kas,kas011,fio005,eve09,eve37,mai";
+        /// m02, Amano's second suit (suit_amano_2): her game's three battle skills are her skill 1, skill 2 and super; "把kart
+        /// 最新的模型加入到游戏中" - b14, Kart's newest suit (suit_kart_14, the white and blue crane robe, 2026-09-12)).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,m02,b14,kas,kas011,fio005,eve09,eve37,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_01", "idle_02" };

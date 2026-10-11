@@ -67,6 +67,9 @@ namespace RoeFighter.EditorTools
                                                     // fuller than the outfit: Eve's would come out through her suits)
             public bool fit;                        // where pieces that never come off lie (shoes), the base takes the shape of the
                                                     // suit's skin it replaces (her flat bare feet in eve37's heels)
+            public string ownWeights;               // regex: where the suit's skin does not lie on it, a vertex the base hangs mostly on
+                                                    // such a bone (the suit's, by name) keeps the base's own weights (b14's right upper
+                                                    // arm: no skin there under the robe, and the sleeve over it hangs on the forearm)
         }
 
         /// <summary>

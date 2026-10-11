@@ -134,11 +134,12 @@ namespace RoeFighter.EditorTools
             }
 
             var skinned = new HashSet<Transform>(go.GetComponentsInChildren<SkinnedMeshRenderer>(true).SelectMany(r => r.bones).Where(b => b != null));
-            // chains and ribbons swing (RoeBoneCloth), they follow no limb (g05's ribbons on her arms fitted 26-85 degrees off).
+            // chains, ribbons and long sleeves swing (RoeBoneCloth), they follow no limb (g05's ribbons on her arms fitted 26-85
+            // degrees off; b14's sleeve hangs from her right forearm).
             // A leg's twist bones may hang off the trunk: b10's Bip001 L/RThighTwist(1) are on Bip001 Spine, and with them left
             // where the stance put them her knees stayed behind in every lunge (user 10-06: "卡地亚的膝盖和小腿是不是有问题") - by name
             var helpers = skinned.Where(b => !human.ContainsKey(b) && (LimbOwners.Contains(Owner(b)) || LegTwist.IsMatch(b.name)) &&
-                                             !Regex.IsMatch(b.name, "chain|riband|ribbon", RegexOptions.IgnoreCase))
+                                             !Regex.IsMatch(b.name, "chain|riband|ribbon|^sleeve_", RegexOptions.IgnoreCase))
                 .OrderBy(b => Depth(b)).ToList();
             var candidates = map.Where(kv => !kv.Key.Contains(" ")).Select(kv => kv.Key).ToList();     // no fingers
             var tracked = new HashSet<Transform>(helpers.Concat(map.Values));
