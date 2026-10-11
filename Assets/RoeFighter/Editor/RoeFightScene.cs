@@ -33,7 +33,9 @@ namespace RoeFighter.EditorTools
 
         public static string ScenePath(string stage) => $"{SceneDir}/Fight_{stage}.unity";
 
-        static readonly string[] GameClips = { "hurt", "die", "rip", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03" };
+        // (idle_01, the battle stance, is the rig's stance under everything; as a game clip too since 10-11, so a check can show her
+        // stance exactly as the game keys it - RoeClothDemo -roeScript stance)
+        static readonly string[] GameClips = { "hurt", "die", "rip", "idle_01", "idle_02", "react_01", "react_02", "skill_01", "skill_02", "skill_03" };
         static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
             { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" }, { "m02", "AMANO" },
@@ -55,7 +57,7 @@ namespace RoeFighter.EditorTools
         public const string DefaultRoster = "a08,g04,b10,g05,m02,kas,kas011,fio005,eve09,eve37,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
-        static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_02" };
+        static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_01", "idle_02" };
 
         [MenuItem("ROE Fighter/Fight/Build fight scene")]
         public static void Build()

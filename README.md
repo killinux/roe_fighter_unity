@@ -55,6 +55,7 @@
 | 两个 Luf 的衣服和游戏里比：游戏怎么做的（战斗全是手 K，大厅只有头发用 Magica Cloth 2），手 K 甩多大；在她们自己的技能里关掉关键帧，我们的骨骼布料、Magica Cloth 2 两种设置和游戏手 K 并排比 | 完成（10-11），见"Luf 的衣服：和游戏里比"一节；视频 `out\luf_cloth_vs_game.mp4` |
 | Luf 的裙子在动捕动作里也甩起来：裙子的物理参数照游戏手 K 自动调（`RoeSkirtTune`），新方案"swing"，Luf 默认用它 | 完成（10-11），见"Luf 的裙子照游戏甩"一节；新旧对比 `out\g04_skirt_swing_front.mp4`、`out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
 | Luf 的裙子粘腿：两个原因——"swing"下垂太少，前片跟着大腿走；她垫在衣服下面的裸体有 6 个大腿顶点挂在裙子骨上。都修了 | 完成（10-11），见"裙子粘腿"一节；踢腿特写在 `out\g04_skirt_swing_backright.mp4`；exe 已重新打包 |
+| Luf 左边的裙子翘起来：游戏的战斗站姿里左裙片下摆本来就往外翘 30° 左右；我们的蹲低架势里长裙片碰到地面，"swing"的重力太轻时窄裙片从地面往外卷。重力改回 5 | 完成（10-11），见"左边的裙子翘起来"一节；对比图 `out\g04_left_panel.jpg`；exe 已重新打包 |
 
 ## 目录
 
@@ -2286,14 +2287,14 @@ python tools\takes_grid_video.py _work\luf_vs_game out\luf_cloth_vs_game.mp4 `
 
   - 差距只缩小了一部分：游戏的裙子是美术按"甩"画出来的，很多帧不是物理能算出来的样子。
   - 方向很清楚，就是"更甩"：惯性 0.3 → 1（完全感受到自己的转身和踢腿）、拉回 0.35 → 0.1、
-    裙尖角度上限 35° → 60°、离动画姿势的最大距离（根部）3 → 12 cm、重力 5 → 1.5（搜索给的 0.5 分数一样，取更自然的）。
+    裙尖角度上限 35° → 60°、离动画姿势的最大距离（根部）3 → 12 cm。重力留在原来的 5（搜索给的 1.5 只好 0.4°，但太轻时窄裙片碰到地面会往外卷，见"左边的裙子翘起来"）。
   - 第一版还把下垂从 1 降到 0.3（分数最好），结果裙子粘腿，改回 1，见下面"裙子粘腿"。下垂固定为 1 再搜一遍，其余参数没有更好的了。
   - 附近一大片参数分数都差不多（58.2–58.3°），所以取了其中看起来更自然的值。
 - **动捕动作里的效果**（播放模式，`-roeScript moves`，左原来 / 右新的）：`out\g04_skirt_swing_front.mp4`（正面）、`out\g04_skirt_swing_backright.mp4`（右后，臀部特写）。
   - 走路时前片跟着迈步往一边摆，侧步、刺拳时裙片往身后、身侧飘开；高踢时前片被踢起来甩到一边（游戏里的技能就是这样）；
     原来的几乎一直垂着，高踢时腿从垂着的前片旁边穿过去。
-  - 量的数（整段，下垂 1 的现在这版）：穿进身体 0.47% → 0.43%，抖动 9.1 → 9.1 毫米/步（最坏的一步 162 → 102），
-    网格拉伸平均 2.5% → 2.6%（最坏的一步 67% → 80%）。
+  - 量的数（整段，现在这版：下垂 1、重力 5）：穿进身体 0.47% → 0.42%，抖动 9.1 → 8.8 毫米/步（最坏的一步 162 → 104），
+    网格拉伸平均 2.5% → 2.6%（最坏的一步 67% → 79%）。
 - **怎么用**：
   - F4 列表多了一个方案 `swing`（"骨骼布料，裙子照游戏手 K 甩"）：裙子用这个人调好的参数，其余（头发、胸、链子）和 `magica_style` 一样。
   - F4 默认的"各用自己游戏的"（`auto`）：调过的人（现在是 g04）自动用 `swing`；想要原来的"自然下垂"，F4 切到 `magica_style`。
@@ -2301,7 +2302,7 @@ python tools\takes_grid_video.py _work\luf_vs_game out\luf_cloth_vs_game.mp4 `
   - 游戏自己的动作（技能、受击、开场、胜利、选人展示）照旧用游戏的裙子关键帧，不受影响。
   - Inase 在 exe 里本来就是 Magica Cloth 2 全接管（插件预设），裙子已经会甩，这次没有动她。
 - **参数**（`RoeBoneCloth.SwingTunings`，默认值写在代码里）：
-  `g04 = restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12,gravity=1.5`（另可写 `drape=` 下垂的比例，默认 1）。
+  `g04 = restore=0.1,inertia=1,worldInertia=0.75,limitTip=60,maxDistanceRoot=0.12`（另可写 `drape=` 下垂的比例、`gravity=` 重力，默认 1、5）。
   可以覆盖（exe 也认）：`ROEFighter.exe -roeSkirtSwing "g04:restore=0.2,gravity=3"`；给别的角色加：`"a08:..."`；空的一条把这个人去掉。
 
 ```powershell
@@ -2340,4 +2341,31 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','a08,g04,b10,g05,m02,eve09,eve37,fio005'
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics        # 爆衣重建之后一定要跟着做
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+```
+
+### 左边的裙子翘起来（10-11）
+
+用户 10-11："luf的左边的裙子为什么翘起来了一点，ROE游戏中就是这样的么"。
+
+- **游戏里**（她自己的关键帧，`tools/cloth_key_stats.py` 的做法，每根骨离竖直往下多少度）：战斗站姿 `idle_01` 里左裙片从腰上往外张开 51°，
+  往下 25°，中段几乎竖直（9–11°），**下摆又往外翘 17–33°**（晃起来最多 42°）。展示站姿 `idle_02` 下摆翘得少（9–12°）。
+  所以游戏里左裙片的下摆本来就往外翘一点。
+- **我们这里**（`RoeFightProbe.SkirtHang`，对打架势、骨骼布料）：左裙片 8 根骨 90° / 34° / 2° / 2° / 1° / 1° / **69° / 90°**。
+  - 对打架势是不知火舞的（10-03 起），蹲得比游戏的站姿低，Luf 的裙片长到脚面，**下摆碰到地面**，地面碰撞把最后两根骨顶平；
+    关掉地面碰撞（`-roeSkirt floor=0`）就都竖直（1°）。原来的"自然下垂"也是这样，只是看不太出来。
+  - 今天的"swing"重力只有 1.5，那条窄裙片碰到地面后不往下落，从脚边往外卷成 S 形——看起来就是"左边的裙子翘起来"。
+    重力改回 5（和游戏手 K 的差距 62.8° → 62.5°，几乎不变）：窄裙片竖直垂到地面，和原来一样。
+  - 另外，蹲着的时候左裙片最上面一根骨在胯部是水平往外的（90°，游戏站姿 51°），是蹲姿让大腿往前抬造成的，幅度小，没改。
+- **对比图** `out\g04_left_panel.jpg`（从她左边看全身）：swing 重力 1.5（卷起来）/ swing 重力 5（现在）/ 原来的自然下垂 / 游戏的战斗站姿。
+- **工具**：
+  - 演示脚本 `-roeScript stance`：前 3 秒是对打架势（裙子交给物理），后 3 秒播游戏的战斗站姿 `idle_01`（裙子用游戏的关键帧）；
+    为此 `idle_01` 也作为游戏动作放进了角色（`RoeFightScene.GameClips`），要重建场景。
+  - 新视角 `-roeView left` / `right`：从她这一侧看全身，镜头低一点，看得到地上的下摆。
+  - 骨骼布料的调试参数多了 `floor`（`-roeSkirt floor=0` 关掉裙子的地面碰撞，只用来查问题）。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics        # idle_01 作为游戏动作
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Run -Graphics -Extra '-roeChars','g04','-roeCloths','swing,magica_style','-roeScript','stance','-roeView','left','-roeOut','_work\stance_left'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Graphics -Extra '-roeDrapes','1','-roeChains'                       # 每根裙骨的角度和离皮肤多远
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightProbe.SkirtHang -Graphics -Extra '-roeDrapes','1','-roeChains','-roeSkirt','floor=0'  # 关掉地面碰撞再看
 ```

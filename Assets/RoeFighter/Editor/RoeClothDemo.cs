@@ -76,10 +76,22 @@ namespace RoeFighter.EditorTools
         };
         internal const float ShowcaseLength = 13.6f;
 
+        /// <summary>
+        /// "stance" (-roeScript stance): her fight guard (the motion pack's, the skirt on the solver) and then her game's battle
+        /// stance idle_01 with its hand-keyed skirt - how the skirt hangs in each (user 10-11: "luf的左边的裙子为什么翘起来了一点，
+        /// ROE游戏中就是这样的么").
+        /// </summary>
+        internal static readonly (float from, float to, FighterInput input, string what)[] StanceScript =
+        {
+            (0.0f, 3.0f, default, "guard"),
+            (3.0f, 3.0f, default, "clip:idle_01"),
+        };
+        internal const float StanceLength = 6.0f;
+
         /// <summary>A demo script by name (-roeScript): moves (the default), skills (SkillScript), full (both), showcase.</summary>
         internal static ((float from, float to, FighterInput input, string what)[] script, float length) Named(string name) =>
             name == "skills" ? (SkillScript, SkillLength) : name == "full" ? (FullScript, FullLength)
-            : name == "showcase" ? (ShowcaseScript, ShowcaseLength) : (Script, Length);
+            : name == "showcase" ? (ShowcaseScript, ShowcaseLength) : name == "stance" ? (StanceScript, StanceLength) : (Script, Length);
 
         /// <summary>The script's "clip:&lt;name&gt;" steps due at t (s): the fighter plays that clip (a clip she lacks is skipped).</summary>
         internal static void PlayScriptClips((float from, float to, FighterInput input, string what)[] script, float t, Fighter me)
@@ -313,6 +325,10 @@ namespace RoeFighter.EditorTools
                     var cam = game.cam;
                     // close views: at the hips, from behind or in front, to one side (backright, backleft, frontright, frontleft)
                     bool behind = view == "back", chest = view == "chest";
+                    // left / right: the whole fighter from that side of her, low enough for the hem on the floor (user 10-11:
+                    // "luf的左边的裙子为什么翘起来了一点")
+                    bool flank = view == "left" || view == "right";
+                    float flankSide = view == "left" ? -1f : 1f;
                     bool close = (view.StartsWith("back") || view.StartsWith("front")) && view != "back" && view != "front";
                     float sideways = view.EndsWith("left") ? -1f : 1f, facing = view.StartsWith("front") ? 1f : -1f;
                     var hips = me.rig.animator.GetBoneTransform(HumanBodyBones.Hips);
@@ -327,6 +343,7 @@ namespace RoeFighter.EditorTools
                     }
                     Vector3 Aim() => close ? new Vector3(me.pos.x, hips.position.y - 0.12f, me.pos.z)
                                    : chest ? neck.position - Vector3.up * 0.18f
+                                   : flank ? me.pos + Vector3.up * 0.75f
                                    : me.pos + Vector3.up * 0.95f;
                     cam.fieldOfView = close || chest ? 28f : 30f;
                     var look = Aim();
@@ -360,6 +377,7 @@ namespace RoeFighter.EditorTools
                         cam.transform.position = close
                             ? look + (fwd * (0.8f * facing) + side * (0.6f * sideways)).normalized * 1.9f + Vector3.up * 0.1f
                             : chest ? look + (fwd * 0.9f - side * 0.35f).normalized * 1.15f + Vector3.up * 0.05f
+                            : flank ? look + (side * flankSide + fwd * 0.15f).normalized * distance + Vector3.up * 0.05f
                             : look + ((behind ? -fwd : fwd) * 0.8f - side * 0.6f).normalized * distance + Vector3.up * 0.2f;
                         cam.transform.LookAt(look, Vector3.up);
                         if (s % every != 0)
