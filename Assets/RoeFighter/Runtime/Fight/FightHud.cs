@@ -128,7 +128,10 @@ namespace RoeFighter.Fight
             int n = game.roster != null ? game.roster.Length : 0;
             cardFrame = new Image[n];
             cardTag = new Text[n];
-            const float w = 0.085f, gap = 0.014f, y0 = 0.075f, y1 = 0.315f;
+            // the cards a row fits on the screen holds 13 of; more get smaller, all of a card alike (14 since 10-17: the row ran off
+            // both edges)
+            float fit = Mathf.Min(1f, 13f / Mathf.Max(1, n));
+            float w = 0.085f * fit, gap = 0.014f * fit, y0 = 0.075f, y1 = y0 + 0.24f * fit;
             float x = 0.5f - (n * w + (n - 1) * gap) * 0.5f;
             for (int k = 0; k < n; k++, x += w + gap)
             {

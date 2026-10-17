@@ -59,8 +59,9 @@ namespace RoeFighter.EditorTools
         /// 换成这个角色我看下裙子的物理效果" - eve37, Eve in her pleated-skirt school look, Office Style; 10-11 "把m02也加入战斗，战斗动作也加入进来，作为3个技能使用" -
         /// m02, Amano's second suit (suit_amano_2): her game's three battle skills are her skill 1, skill 2 and super; "把kart
         /// 最新的模型加入到游戏中" - b14, Kart's newest suit (suit_kart_14, the white and blue crane robe, 2026-09-12); 10-17 "要"
-        /// (her pink and white recolour as a fighter of its own) - b14_outfit1, tools/roe_outfit.py).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,m02,b14,b14_outfit1,kas,kas011,fio005,eve09,eve37,mai";
+        /// (her pink and white recolour as a fighter of its own) - b14_outfit1, tools/roe_outfit.py; "eve中有个粉色的衣服的角色有哪些帮我查一下" ->
+        /// "Cooling Suit 加入到角色里" - eve_nikke06, Eve in the NIKKE collaboration's pink Cooling Suit (Alice), SbFighter).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,m02,b14,b14_outfit1,kas,kas011,fio005,eve09,eve37,eve_nikke06,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_01", "idle_02" };

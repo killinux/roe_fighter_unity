@@ -196,7 +196,14 @@ def main():
             e["surface"] = "transparent"
             e["color"] = [0, 0, 0, 0]
         elif "Basecolor" in tex and "ORM" in tex:
-            put_albedo(texture(tex["Basecolor"]))
+            # an instance made Masked over its opaque parent (BasePropertyOverrides): cut out by the colour map's alpha at the
+            # game's clip value (the NIKKE suit's SUPERB decal, 10-17: its letters only, not a black square on the thigh)
+            over = props.get("BasePropertyOverrides") or {}
+            masked = over.get("bOverride_BlendMode") and str(over.get("BlendMode", "")).endswith("BLEND_Masked")
+            put_albedo(texture(tex["Basecolor"]), use_alpha=bool(masked))
+            if masked:
+                e["surface"] = "cutout"
+                e["cutoff"] = float(over.get("OpacityMaskClipValue", 0.3333))
             put_normal(texture(tex.get("Baked NormalMap")))
             orm = texture(tex["ORM"])
             if orm:

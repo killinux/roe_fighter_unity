@@ -110,6 +110,7 @@
 | FIONA（White Feather） | Vindictus | 突刺 / 反击斩 / 转身斩 / 踢加斩 | Vindictus 里她的主动技能 1、主动技能 3、终结技 |
 | EVE（Planet Diving Suit） | 剑星 | 动作包的四招 | 三段连续技 / 升龙拳 / 百裂踢（UFE 2 示例角色的招式） |
 | EVE（Office Style） | 剑星 | 同上 | 同上 |
+| EVE（Cooling Suit） | 剑星（NIKKE 联动） | 同上 | 同上 |
 
 - LUF 和 INASE 站着时用的是她们在 ROE 里的战斗站姿（INASE 剑尖拄地、手扶剑柄，出招时才把剑握起来）；其他角色站的是动捕的格斗架势（GODDESS LUF 是不知火舞的）。
 - 开场和胜利时放的是各自游戏里的展示动作。
@@ -148,7 +149,7 @@ ROE 角色放技能、开场、胜利动作时，裙子和头发用游戏原版�
 | `-roeCloth roe` | 用某个物理方案启动（名字见第 7 节） |
 | `-roeCamAvoid 0` | 用旧镜头启动 |
 
-角色代号：a08 INASE、g04 LUF、b10 KART、g05 GODDESS LUF、m02 AMANO、b14 CRANE KART、b14_outfit1 PINK CRANE KART、kas KASUMI、kas011 KASUMI 海盗裙、mai MAI、fio005 FIONA、eve09 EVE、eve37 EVE 百褶裙。
+角色代号：a08 INASE、g04 LUF、b10 KART、g05 GODDESS LUF、m02 AMANO、b14 CRANE KART、b14_outfit1 PINK CRANE KART、kas KASUMI、kas011 KASUMI 海盗裙、mai MAI、fio005 FIONA、eve09 EVE、eve37 EVE 百褶裙、eve_nikke06 EVE 粉色紧身衣。
 
 例：`ROEFighter.exe -roeP1 g04 -roeP2 a08 -roeSelect 0`
 

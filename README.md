@@ -59,11 +59,12 @@
 | Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
 | Luf 站游戏里的战斗站姿（不再是不知火舞的蹲姿）；数字键 1、2、3 放技能 1、技能 2、超必杀（ROE 角色的就是她游戏里的三个战斗技能） | 完成（10-11），见"Luf 站游戏里的姿势；技能键 1、2、3"一节；对比视频 `out\g04_roe_stance.mp4`，对比图 `out\g04_roe_stance.jpg`；exe 已重新打包 |
 | Luf 的裙子重新从 ROE 导出核对（原始数据和游戏动作都没改乱）；照 ROE 自己的物理做了方案 `roe`；默认改成站在游戏站姿里时直接放 ROE 的手 K，动起来再交给布料 | 完成（10-11），见"Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看"一节；视频 `out\g04_skirt_roe.mp4`，图 `out\g04_skirt_roe.jpg`；exe 已重新打包 |
-| 游戏说明：操作、规则、技能、爆衣、功能键、13 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
+| 游戏说明：操作、规则、技能、爆衣、功能键、14 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
 | Kart 最新的一套（b14，白蓝鹤袍，游戏里 2026-09-12 上的）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、选人时的展示动作和台词、爆衣四段到全身；右边拖到膝下的长纱袖交给布料，抬手时垂下来 | 完成（10-11），见"Kart 最新的一套（b14，鹤袍）加入战斗"一节；技能 `out\b14_skills.mp4`，爆衣 `out\clothes_burst_demo_b14.mp4`，电脑对电脑（对 b10）`out\fight_cpu_match_b14.mp4`，检查图 `out\clothes_burst\unity\b14_sheet.png`；exe 已重新打包 |
 | Crane Kart（b14）拿剑打普通攻击：剑一直握在右手（她技能里挥剑时的正手握），四招里三招截自她自己的技能、一招是 Vindictus 的翻身斩；全身那段右肩顶的棱修掉了（右肩照左肩镜像取权重） | 完成（10-17），见"Crane Kart（b14）拿剑打普通攻击；右肩照左肩取权重"一节；四招 `out\b14_sword_strikes.mp4`，候选 `out\b14_sword_candidates.mp4`，电脑对电脑（对 Inase）`out\fight_cpu_match_b14_sword.mp4`，右肩对比 `out\b14_shoulder_fix.jpg`，爆衣演示重录；exe 已重新打包 |
 | Kart 鹤袍的粉白换色款（b14 的 outfit1）做成新角色 PINK CRANE KART：材质、贴图、白发粉梢、粉色技能特效都是游戏里换色款自己的，网格、动作、爆衣规则、握剑、剑招沿用 b14 | 完成（10-17），见"Kart 鹤袍的粉白换色款（b14_outfit1）加入战斗"一节；技能 `out\b14_outfit1_skills.mp4`，剑招 `out\b14_outfit1_sword_strikes.mp4`，爆衣 `out\clothes_burst_demo_b14_outfit1.mp4`，粉白对蓝白 `out\fight_cpu_match_b14_outfit1.mp4`；exe 已重新打包 |
 | Inase 两招之间站她在 ROE 里的战斗站姿（剑尖拄地、手扶剑柄），出招时剑才转进挥砍的握法 | 完成（10-17），见"Inase 站游戏里的姿势"一节；对比视频 `out\a08_roe_stance.mp4`，对比图 `out\a08_roe_stance.jpg`；exe 已重新打包 |
+| 剑星 Eve 的粉色紧身衣（NIKKE 联动的 Cooling Suit，`eve_nikke06`）加入战斗：模型、贴图、物理都照游戏读，四段爆衣到全身 | 完成（10-17），见"剑星 Eve 的粉色紧身衣"一节；爆衣 `out\clothes_burst_demo_eve_nikke06.mp4`，电脑对电脑（对 eve09）`out\fight_cpu_match_eve_nikke06.mp4`；exe 已重新打包 |
 
 ## 目录
 
@@ -2797,4 +2798,68 @@ python tools\make_manual.py --shot select=_work\select_demo_1017\frames\00160.jp
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','a08','-roeScript','all','-roeView','front','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_guard_all_front'
 python tools\cloth_demo_video.py _work\a08_guard_all_front out\a08_roe_stance.mp4 --variants guard_pack,guard_stance
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','a08','-roeScript','stance','-roeView','left','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_guard_stance_left'
+```
+
+### 剑星 Eve 的粉色紧身衣（Cooling Suit，`eve_nikke06`）（10-17）
+
+用户 10-17："eve中有个粉色的衣服的角色有哪些帮我查一下，我要找一个加入到战斗角色里"，看过候选后说"Cooling Suit 加入到角色里"。
+
+**剑星里哪些衣服是粉色的**（归档的 148 套 Eve 服装，按预览图里粉色像素的占比排，再逐张看）
+
+| 服装 | 说明 |
+|---|---|
+| Cooling Suit（Alice，`CH_P_EVE_Nikke_06`） | NIKKE 联动 DLC：粉色紧身衣、粉色蓬松外套、白袜球鞋 |
+| Pink Bear（`CH_P_EVE_45_TypeB`） | 一整套粉色熊玩偶服，连头套 |
+| Peony（牡丹，`CH_P_EVE_33_Body`） | 珊瑚粉的旗袍式紧身衣 |
+
+- 看着像粉、其实是红色系的：La Vie en Rose、Angelic Rose、Resonance、6th V2 (OrangeRed)。
+- ripper_tpose 以前按贴图做过一次同样的调查（`docs/stellar-blade-eve-outfits.md` 第 4 节），结论也是真正的粉色只有 Pink Bear 和 Cooling Suit 两套。
+
+**做法**：和 eve09、eve37 一样（`docs/stellar-blade-eve.md` 第 5 节），代号 `eve_nikke06`。
+
+- 模型：ripper_tpose 归档的 `Eve_CH_P_EVE_Nikke_06.blend` → `tools/sb_fbx.py` → `Assets/SB/eve_nikke06`（不入库）。204 根骨，4 个网格。
+- 联动 DLC 的东西在游戏包的 `SB/Content/DLC_2/Art/Character/PC/CH_P_EVE_Nikke_06/` 下，不在本体的 `Art/Character/PC` 下：
+  - 贴图：`tools/sb_textures.py --mi-dir DLC_2/Art/Character/PC/CH_P_EVE_Nikke_06/Mat`。
+  - 物理：`tools/sb_physics.py` 新加了 `--dlc DLC_2`，衣服自己的动画蓝图、物理资产、马尾碰撞改到 DLC 路径下找；主动画蓝图和头发还是本体的。
+- 贴花：腿上 "SUPERB" 的字是一个贴花材质。游戏里它在材质实例上把混合方式覆盖成了"遮罩"（裁剪阈值 0.333），透明度在颜色图的 alpha 里。
+  `sb_textures.py` 以前没读这种覆盖，导出成不透明，腿上会是一块黑方块。现在遇到覆盖成遮罩的，保留颜色图的 alpha，按游戏的阈值裁剪。
+- 物理全用剑星自己的（游戏数据读出来）：6 个弹簧骨（胸、臀、大腿扭转骨），17 个 KawaiiPhysics 节点（头发，加上这套衣服自己的颈部褶边、胸前两条带子、背后的飘带和环、肩上的细绳、腋下的挂件），马尾 7 节刚体链。
+- 发型：游戏里还有一个配套的 Alice 发型 `EVE_HR_Nikke_06`，是单独装备的。这次和 eve09、eve37 一样用 Eve 默认的黑马尾。
+- 格斗定义 `tools/sb/eve_nikke06.json`：照 eve09 的。站架、走、四个普通攻击用动作包；受击、倒地、起身和三个技能用 UFE 2 的。
+- 名单默认加在 eve37 后面。选人卡片上是 EVE，名字下面写 Cooling Suit (Alice, NIKKE)。
+
+**爆衣四段**（`Editor\Burst\eve_nikke06.json`，检查图 `out\clothes_burst\unity\eve_nikke06_sheet.png`）
+
+| 段 | 掉什么 |
+|---|---|
+| 1 | 外套和领子（最外面一层，掉了最显眼） |
+| 2 | 胸前的带子、背后的环和飘带、腿上的字 |
+| 3 | 球鞋和袜子、手套 |
+| 4 | 紧身衣 |
+
+- 衣服是一个网格、三种材质：UV1 是紧身衣、袜子、球鞋、手套；UV2 是外套、领子、带子；第三种是腿上的字。按材质和挂的骨头分组。
+- 衣服把她全身都包住了，里面没有她自己的皮肤可以换。底下垫 Eve 的裸体底模（`Assets/SB/eve_nude`，和 eve09、eve37 一样），每块不透明的衣服掉了以后，它下面的身体才画出来（`reveal`）。
+
+**录像**
+
+- 爆衣演示（Inase 打她，两局四段全掉）：`out\clothes_burst_demo_eve_nikke06.mp4`。
+- 电脑对电脑（对 eve09，60 秒）：`out\fight_cpu_match_eve_nikke06.mp4`。
+- 选人界面（14 张卡片）：`out\select_screen_demo_1017.mp4`。
+
+```powershell
+# 1. 模型（Blender 3.6，读归档的 .blend，不保存）
+& 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup 'E:\game_export\StellarBlade\Eve\blend\CH_P_EVE_Nikke_06\Eve_CH_P_EVE_Nikke_06.blend' --python tools\sb_fbx.py -- Assets\SB\eve_nikke06 eve_nikke06
+# 2. 贴图、物理（联动 DLC 的路径）
+python tools\sb_textures.py Assets\SB\eve_nikke06 --mi-dir DLC_2/Art/Character/PC/CH_P_EVE_Nikke_06/Mat
+python tools\sb_physics.py Assets\SB\eve_nikke06 --outfit CH_P_EVE_Nikke_06 --dlc DLC_2
+# 3. Unity：建角色、爆衣检查、场景
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve_nikke06'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','eve_nikke06'
+python tools\burst_sheet.py --chars eve_nikke06
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+# 录像
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','eve_nikke06','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_eve_nikke06'
+python tools\burst_video.py _work\burst_demo_eve_nikke06 out\clothes_burst_demo_eve_nikke06.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve_nikke06','-roeP2','eve09','-roeSeconds','60','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve_nikke06'
+python tools\make_video.py _work\fight_eve_nikke06 out\fight_cpu_match_eve_nikke06.mp4
 ```

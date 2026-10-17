@@ -314,3 +314,11 @@ python tools\sb_controlrig.py _work\sb\research\json\SB\Content\Art\Character\PC
 
 - 素材在 `Assets/SB/eve37/`（不入库），格斗定义 `tools/sb/eve37.json`；rig 的程序在 `sbphysics.json` 的 `rigs` 里（`RoeSbRig.Data.rigs`）。
 - 想关掉 rig 看区别：演示用 `stellar_norig`；代码里是 `RoeSbPhysics.UseControlRigs`。
+
+## 7. 粉色紧身衣（Cooling Suit，eve_nikke06）（10-17）
+
+- NIKKE 联动 DLC 的服装在游戏包的 `SB/Content/DLC_2/Art/Character/PC/<服装>/` 下：贴图用 `--mi-dir DLC_2/Art/Character/PC/CH_P_EVE_Nikke_06/Mat`，
+  物理用 `sb_physics.py --dlc DLC_2`（只有服装自己的动画蓝图、物理资产、马尾碰撞改路径，主蓝图和头发还是本体的）。
+- 材质实例可以把父材质的混合方式覆盖掉（`BasePropertyOverrides`）。这套腿上的字（`MI_VietaCos004_Decal`）覆盖成了遮罩、裁剪阈值 0.333：
+  `sb_textures.py` 现在读这个覆盖，保留颜色图的 alpha、按阈值裁剪，不再是一块黑方块。
+- 爆衣、录像、命令见 README"剑星 Eve 的粉色紧身衣"一节。

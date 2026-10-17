@@ -17,7 +17,7 @@ FONT = r'C:\Windows\Fonts\msyh.ttc'
 FONT_BOLD = r'C:\Windows\Fonts\msyhbd.ttc'
 ROSTER = [('a08', 'INASE'), ('g04', 'LUF'), ('b10', 'KART'), ('g05', 'GODDESS LUF'), ('m02', 'AMANO'), ('b14', 'CRANE KART'),
           ('b14_outfit1', 'PINK CRANE KART'), ('kas', 'KASUMI'), ('kas011', 'KASUMI 海盗裙'), ('mai', 'MAI'), ('fio005', 'FIONA'),
-          ('eve09', 'EVE'), ('eve37', 'EVE 百褶裙')]
+          ('eve09', 'EVE'), ('eve37', 'EVE 百褶裙'), ('eve_nikke06', 'EVE 粉色紧身衣')]
 
 # ---- pictures
 

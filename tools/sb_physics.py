@@ -1,6 +1,9 @@
 """Stellar Blade's own physics for Eve, read out of the game (user 10-05: "物理能用剑星自己的就用自己的，次选项才是用magic cloth2"):
 
-    python tools/sb_physics.py Assets/SB/<id> [--outfit CH_P_EVE_09] [--hair EVE_HR_01]
+    python tools/sb_physics.py Assets/SB/<id> [--outfit CH_P_EVE_09] [--hair EVE_HR_01] [--dlc DLC_2]
+
+(--dlc: an outfit of a DLC lives under SB/Content/<dlc>/Art/Character/PC - the NIKKE collaboration's CH_P_EVE_Nikke_06,
+10-17; her main blueprint and hair stay the base game's.)
 
 Everything comes from the game's cooked packages through the CUE4Parse CLI with the community .usmap (-f json, cached in
 _work/sb/research/json; exported here when missing).  What the game runs on her (docs/stellar-blade-eve.md):
@@ -294,7 +297,9 @@ def main():
     ap.add_argument("folder")
     ap.add_argument("--outfit", default="CH_P_EVE_09")
     ap.add_argument("--hair", default="EVE_HR_01")
+    ap.add_argument("--dlc", default="", help="the outfit's DLC folder (DLC_2: the NIKKE collaboration's outfits)")
     a = ap.parse_args()
+    outfit_pc = f"SB/Content/{a.dlc}/Art/Character/PC" if a.dlc else PC    # where the outfit's own assets are
     # her bones, as tools/sb_fbx.py exported them
     have = {b["name"] for b in json.load(open(os.path.join(a.folder, "bones.json"), encoding="utf-8"))["bones"]}
 
@@ -304,7 +309,7 @@ def main():
     nodes += kawaii_nodes(f"{PC}/CH_P_EVE_01/Blueprints/CH_P_EVE_01_AnimBP_New", "CH_P_EVE_01_AnimBP_New",
                           lambda r: "hair" if "Hair" in r else "ribbon")
     nodes += kawaii_nodes(f"{PC}/00_HR/{a.hair}/{a.hair}_AnimBP", f"{a.hair}_AnimBP", hair_kind, root_alias="Hair_Root")
-    nodes += kawaii_nodes(f"{PC}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP",
+    nodes += kawaii_nodes(f"{outfit_pc}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP",
                           lambda r: "skirt" if "Skirt" in r else "ribbon" if "Neck" in r or "Tie" in r else "chain")
     missing = [n["root"] for n in nodes if n["root"] not in have]
     nodes = [n for n in nodes if n["root"] in have]
@@ -319,9 +324,9 @@ def main():
     tail_root = "(ponytail root)"
     tail_bodies, tail_joints = physics_asset(f"{PC}/00_HR/{a.hair}/{a.hair}_Tail_PhysicsAsset", have, "ponytail",
                                              "Ab-TL-HairB03", root_alias=tail_root)
-    tail_coll, _ = physics_asset(f"{PC}/{a.outfit}/{a.outfit}_PonytailPhysicsAsset", have, "ponytail", "", root_alias=tail_root)
-    body_bodies, body_joints = physics_asset(f"{PC}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeL01")
-    _, cape_r = physics_asset(f"{PC}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeR01")
+    tail_coll, _ = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_PonytailPhysicsAsset", have, "ponytail", "", root_alias=tail_root)
+    body_bodies, body_joints = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeL01")
+    _, cape_r = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeR01")
     capes = {b["bone"] for b in body_bodies if b["bone"].startswith("Ab_Cape")}
     for b in body_bodies:
         b["simulate"] = b["bone"] in capes
@@ -344,7 +349,7 @@ def main():
         "springs": sp,
         "bodies": tail_bodies + tail_coll + cape_bodies,
         "joints": tail_joints + cape_joints,
-        "rigs": control_rigs(f"{PC}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP", have),
+        "rigs": control_rigs(f"{outfit_pc}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP", have),
     }
     json.dump(data, open(os.path.join(a.folder, "sbphysics.json"), "w", encoding="utf-8"), indent=1)
     print(f"kawaii: {len(nodes)} nodes ({', '.join(f'{n['root']} [{n['kind']}]' for n in nodes)}); not on her rig: {missing}")
