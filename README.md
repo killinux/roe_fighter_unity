@@ -63,6 +63,7 @@
 | Kart 最新的一套（b14，白蓝鹤袍，游戏里 2026-09-12 上的）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、选人时的展示动作和台词、爆衣四段到全身；右边拖到膝下的长纱袖交给布料，抬手时垂下来 | 完成（10-11），见"Kart 最新的一套（b14，鹤袍）加入战斗"一节；技能 `out\b14_skills.mp4`，爆衣 `out\clothes_burst_demo_b14.mp4`，电脑对电脑（对 b10）`out\fight_cpu_match_b14.mp4`，检查图 `out\clothes_burst\unity\b14_sheet.png`；exe 已重新打包 |
 | Crane Kart（b14）拿剑打普通攻击：剑一直握在右手（她技能里挥剑时的正手握），四招里三招截自她自己的技能、一招是 Vindictus 的翻身斩；全身那段右肩顶的棱修掉了（右肩照左肩镜像取权重） | 完成（10-17），见"Crane Kart（b14）拿剑打普通攻击；右肩照左肩取权重"一节；四招 `out\b14_sword_strikes.mp4`，候选 `out\b14_sword_candidates.mp4`，电脑对电脑（对 Inase）`out\fight_cpu_match_b14_sword.mp4`，右肩对比 `out\b14_shoulder_fix.jpg`，爆衣演示重录；exe 已重新打包 |
 | Kart 鹤袍的粉白换色款（b14 的 outfit1）做成新角色 PINK CRANE KART：材质、贴图、白发粉梢、粉色技能特效都是游戏里换色款自己的，网格、动作、爆衣规则、握剑、剑招沿用 b14 | 完成（10-17），见"Kart 鹤袍的粉白换色款（b14_outfit1）加入战斗"一节；技能 `out\b14_outfit1_skills.mp4`，剑招 `out\b14_outfit1_sword_strikes.mp4`，爆衣 `out\clothes_burst_demo_b14_outfit1.mp4`，粉白对蓝白 `out\fight_cpu_match_b14_outfit1.mp4`；exe 已重新打包 |
+| Inase 两招之间站她在 ROE 里的战斗站姿（剑尖拄地、手扶剑柄），出招时剑才转进挥砍的握法 | 完成（10-17），见"Inase 站游戏里的姿势"一节；对比视频 `out\a08_roe_stance.mp4`，对比图 `out\a08_roe_stance.jpg`；exe 已重新打包 |
 
 ## 目录
 
@@ -2425,7 +2426,7 @@ python tools\cloth_demo_video.py _work\swing_moves_front out\g04_skirt_swing_fro
     侧步时上半身是站架的，所以现在侧步也是直身的。
   - 身体姿势和游戏的 `idle_01` 一样（对比图第二、三列）。裙子不一样的地方：站着时裙子是"swing"布料模拟的，不是游戏的手 K——
     游戏里左边那条窄裙片的下摆往外翘一点，我们的直着垂下。（当晚改了：站着时直接放游戏的手 K，见下一节。）
-  - 场景构建的开关 `-roeGuard`（默认 `g04=stance`）：`g04=pack` 回到不知火舞的架势；别的角色也能加，例如 `g04=stance,b10=stance`。
+  - 场景构建的开关 `-roeGuard`（默认 `g04=stance`；10-17 起是 `g04=stance,a08=stance`，见"Inase 站游戏里的姿势"一节）：`g04=pack` 回到不知火舞的架势；别的角色也能加，例如 `g04=stance,b10=stance`。
     g05（女神 Luf）没改：她游戏里的战斗站姿浮在半空 23 厘米，`rig.stance` 用的是她的展示待机 `idle_02`。
 - **技能键 1、2、3**：主键盘上的数字键 1、2、3 就是技能 1、技能 2、超必杀（`PlayerInput`），对每个 ROE 角色都是她游戏里的
   `skill_01`、`skill_02`、`skill_03`（技能一直是这三个，见"天野（m02）加入战斗"一节；原来只能按 L、O、P 或搓招）。L、O、P、搓招、手柄肩键照旧能用。
@@ -2773,4 +2774,27 @@ python tools\make_video.py _work\fight_b14_outfit1 out\fight_cpu_match_b14_outfi
 python tools\make_video.py _work\select_demo_1017 out\select_screen_demo_1017.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
 python tools\make_manual.py --shot select=_work\select_demo_1017\frames\00160.jpg
+```
+
+### Inase 站游戏里的姿势（10-17）
+
+用户 10-17："inase的默认动作能换成ROE中的inase的么"。
+
+- 两招之间的站架换成了她在 ROE 里的战斗站姿 `idle_01`：直身站着，右手扶着巨剑，剑尖拄在脚边，左手叉腰。原来是动作包的拳击架势，剑扛在肩上。
+- 做法和 Luf 一样（见"Luf 站游戏里的姿势；技能键 1、2、3"一节）：`-roeGuard` 的默认值加了 `a08=stance`，`a08_guard_stance.anim` 是 `idle_01` 的人体曲线。
+  走路、侧步、四个剑招、三个技能都没变，出招从游戏站姿接过去，收招回到游戏站姿。
+- 剑：
+  - 0 层一直在同步放她游戏的 `idle_01`，里面就有巨剑的关键帧（两把剑重合成一把，剑尖拄地、手握剑柄）。
+  - 以前动捕动作里一直套着挥砍的握法（`RoeGrips`，取自技能 1）。站姿也套的话，剑会按挥砍的角度挂在手上，指向不对。
+  - 现在站在游戏站姿里时不套握法，剑就是游戏站姿里的样子；一出招、往前或往后走，握法随着站架淡出慢慢接管，剑转进挥砍的握法（`FighterRig`）。
+  - 侧步时上半身还是站架的，所以剑也留在站姿里，跟着身体走。
+- 对比视频 `out\a08_roe_stance.mp4`（30 秒，`RoeClothDemo.Guards`，左原来、右现在）：同一套按键——站架、前进、后退、两边侧步、四个普通攻击、三个技能。
+  对比图 `out\a08_roe_stance.jpg`：上排正面、下排左侧。
+- 要换回拳击架势：建场景时加 `-roeGuard g04=stance,a08=pack`（这个参数会替换整张表，Luf 的要一起写上）。
+
+```powershell
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','a08','-roeScript','all','-roeView','front','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_guard_all_front'
+python tools\cloth_demo_video.py _work\a08_guard_all_front out\a08_roe_stance.mp4 --variants guard_pack,guard_stance
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.Guards -Graphics -Extra '-roeChars','a08','-roeScript','stance','-roeView','left','-roeOut','E:\code\othercode\roe_fighter_unity\_work\a08_guard_stance_left'
 ```

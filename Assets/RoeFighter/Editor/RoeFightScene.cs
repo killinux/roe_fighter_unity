@@ -637,11 +637,12 @@ namespace RoeFighter.EditorTools
                     Debug.LogWarning($"[ROE] {c.id}: her strikes ({own}) hold her weapon, but {RoeHumanoid.FighterPath(c.id)} has no RoeGrips - " +
                                      "run RoeFighter.EditorTools.RoeWeaponGrip.Build");
             }
-            // her guard between moves (user 10-11 "luf还原ROE里的姿势吧"): "stance" = her game's battle stance (rig.stance, its
+            // her guard between moves (user 10-11 "luf还原ROE里的姿势吧"; 10-17 "inase的默认动作能换成ROE中的inase的么" - a08 too, her
+            // greatsword planted as there): "stance" = her game's battle stance (rig.stance, its
             // humanoid curves; FighterRig.ownGuard) instead of her strike pack's (Mai Shiranui's crouch) or the motion pack's;
             // -roeGuard g04=stance,g05=stance (g05's battle stance floats: rig.stance is her showcase stand there)
             string guardNote = "guard from the motion pack" + (rig.strikePack != null && rig.strikePack.clips.Any(x => x.role == "guard" && x.clip != null) ? $" / {rig.strikePack.name}" : "");
-            if (Setting(Table("-roeGuard", "g04=stance"), c.id, out var guardArg) && guardArg == "stance" && rig.stance != null)
+            if (Setting(Table("-roeGuard", "g04=stance,a08=stance"), c.id, out var guardArg) && guardArg == "stance" && rig.stance != null)
             {
                 rig.ownGuard = RoeHumanoidClips.HumanOnly(c.id, rig.stance, "guard_stance");
                 guardNote = $"guard = her game stance {rig.stance.name} (humanoid curves, -roeGuard {c.id}=stance)";

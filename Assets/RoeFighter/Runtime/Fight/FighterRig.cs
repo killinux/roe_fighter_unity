@@ -792,9 +792,13 @@ namespace RoeFighter.Fight
             // an Unreal body's twist bones (Vindictus: the humanoid does not move them), on the legs' final pose
             ueRig?.DriveTwists();
             // her weapon in her hand under the motion capture (Holds), before the cloth swings its chain; the game's own
-            // clips key it themselves (thrown, two-handed, the other hand)
+            // clips key it themselves (thrown, two-handed, the other hand).  Standing in her game's stance (ownGuard) it stays
+            // as that stance keys it - layer 0 plays it in step - and the grip she strikes with comes in as she moves out of it
+            // (user 10-17 "inase的默认动作能换成ROE中的inase的么": a08 stands with her greatsword's tip on the floor, her hand on
+            // the pommel; her strikes hold it as she cuts in skill_01).  A side step keeps the stance's upper body, and the sword.
+            float stanceWeapon = ownGuard != null && index.TryGetValue("guard", out int gw) ? weight[gw] : 0f;
             if (Holds && mocap > 0f)
-                Grips.Apply(animator, mocap);
+                Grips.Apply(animator, mocap * (1f - stanceWeapon));
             if (Holds)
                 ShowWeapons(weaponsShown);       // a burst stage may have taken a held weapon's holster off
             // the skirt's animation pose under motion capture (RoeSkirtRig): fitted to follow the legs as the
