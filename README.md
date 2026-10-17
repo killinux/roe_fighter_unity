@@ -66,6 +66,7 @@
 | Inase 两招之间站她在 ROE 里的战斗站姿（剑尖拄地、手扶剑柄），出招时剑才转进挥砍的握法 | 完成（10-17），见"Inase 站游戏里的姿势"一节；对比视频 `out\a08_roe_stance.mp4`，对比图 `out\a08_roe_stance.jpg`；exe 已重新打包 |
 | 剑星 Eve 的粉色紧身衣（NIKKE 联动的 Cooling Suit，`eve_nikke06`）加入战斗：模型、贴图、物理都照游戏读，四段爆衣到全身 | 完成（10-17），见"剑星 Eve 的粉色紧身衣"一节；爆衣 `out\clothes_burst_demo_eve_nikke06.mp4`，电脑对电脑（对 eve09）`out\fight_cpu_match_eve_nikke06.mp4`；exe 已重新打包 |
 | Eve 粉色紧身衣换上 Alice 的发型（粉色双马尾、猫耳耳机，游戏自己的物理），用她自己剑星里的招式：四个普通攻击、三个技能、受击倒地起身开场胜利，手里拿着血刃 | 完成（10-17），见"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节；四招 `out\eve_nikke06_sword_strikes.mp4`，候选 `out\eve_nikke06_sword_candidates.mp4`，电脑对电脑 `out\fight_cpu_match_eve_nikke06_own.mp4`，发型 `out\eve_nikke06_alice_hair.jpg`；exe 已重新打包 |
+| eve09、eve37 也换成她自己剑星里的招式（四招、三个技能、受击倒地起身开场胜利），手里拿血刃 | 完成（10-17），见"eve09、eve37 也用她自己剑星里的招式"一节；电脑对电脑 `out\fight_cpu_match_eve09_eve37_own.mp4`；exe 已重新打包 |
 
 ## 目录
 
@@ -2945,6 +2946,7 @@ python tools\make_video.py _work\fight_eve_nikke06 out\fight_cpu_match_eve_nikke
 - 没选的：重攻击 5（扑倒在地上滑）、重攻击 7 / 8（扑斩、翻滚收尾）、新月斩（起手太慢）、Beta 破盾（翻滚冲 6 米）、原型招式（原地小动作）。
 - 脚：以前是 `"feet": "bind"`（套别的动作时，脚踝固定在绑定角度配她的鞋）。现在是她自己的动作，脚踝跟着游戏走，去掉了。
 - eve09、eve37 还是原来的动作包和 UFE 2 的技能（这次只改了 eve_nikke06）。同一副骨架，要用就把 `tools/sb/eve09.json` 照这个改。
+  同一天后来也换了，见下一节"eve09、eve37 也用她自己剑星里的招式"。
 
 **录像**
 
@@ -2979,5 +2981,33 @@ python tools\takes_sheet.py _work\strike_takes_eve_final out\eve_nikke06_sword_m
 python tools\make_video.py _work\fight_eve_nikke06_own out\fight_cpu_match_eve_nikke06_own.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','eve_nikke06','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_eve_nikke06_own'
 python tools\burst_video.py _work\burst_demo_eve_nikke06_own out\clothes_burst_demo_eve_nikke06.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+```
+
+### eve09、eve37 也用她自己剑星里的招式（10-17）
+
+用户 10-17 看完粉色紧身衣 Eve 的招式后说"换"（接的是"另外两套 Eve 还在用原来的动作包，要的话可以照这套换成她自己的招式"）。
+
+- `tools/sb_own_moves.py eve09 eve37`：把粉色紧身衣那套照搬过去。
+  - 写 `tools/motionpacks/sb_eve09.json`、`sb_eve37.json`：同样的四招、站姿、走、退、跑。
+  - 改 `tools/sb/eve09.json`、`eve37.json`：动作包、站姿（她自己的）、脚（不再固定在绑定角度）、受击倒地起身开场胜利和三个技能。名字、服装、物理照旧。
+- 每套用自己的动画副本：剑的持剑点在动画里是按"从角色根到持剑点"的路径打关键帧的，路径开头是她骨架的名字（就是代号），三套不能共用一份。
+  只导用得上的 17 个（`SbAnims.Import -roeOnly`，命令见下），不是全部 200 多个（全部要 1.4 GB）。
+- 剑：`tools/sb_weapons.py Assets/SB/eve09`（eve37 一样），`SbFighter.Build` 挂上。
+- 百褶裙（eve37）裙子的 Control Rig 和 KawaiiPhysics 照旧，跟着她自己的动作走。
+- 现在三套 Eve 的招式一样，外观、物理、爆衣各是各的。
+- 电脑对电脑（eve09 对 eve37，90 秒）：`out\fight_cpu_match_eve09_eve37_own.mp4`。第一回合打满时间，最后一刻 eve37 的技能把 eve09 打到 0 血，eve37 胜（剩 579 血）；两人都被打倒过、都放了技能。
+
+```powershell
+python tools\sb_own_moves.py eve09 eve37
+python tools\sb_weapons.py Assets\SB\eve09
+python tools\sb_weapons.py Assets\SB\eve37
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve09,eve37'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbAnims.Import -Graphics -Extra '-roeSb','eve09,eve37','-roeOnly','<sb_own_moves.py 打印的那串>'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/sb_eve09.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/sb_eve37.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve09','-roeP2','eve37','-roeSeconds','90','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve09_eve37_own'
+python tools\make_video.py _work\fight_eve09_eve37_own out\fight_cpu_match_eve09_eve37_own.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
 ```

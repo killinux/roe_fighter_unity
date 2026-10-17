@@ -332,3 +332,4 @@ python tools\sb_controlrig.py _work\sb\research\json\SB\Content\Art\Character\PC
 - 剑：`CH_W_Sword_01`，游戏让剑的根骨 `Weapon_Root` 与 `Bip001-Prop1` 重合；Prop1 挂在 Bip001 下，人形动画里没有它，
   所以剑挂在右手下的持剑点 `SB_Sword`，每个动画按游戏里 Prop1 相对右手的位置给持剑点打关键帧（技能里剑离手也照游戏）。
 - 招式、技能、录像、命令见 README"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节。
+- eve09、eve37 同一天也换成了这套招式（`tools/sb_own_moves.py`，每套用自己的动画副本），见 README"eve09、eve37 也用她自己剑星里的招式"一节。
