@@ -58,7 +58,26 @@ namespace RoeFighter.EditorTools
     ///   ownWeights    a regex of the suit's bones: where the suit's skin is not within SkinReach, a vertex the base hangs
     ///                 mostly on such a bone keeps the base's own weights, bones by name (one the suit lacks - b01's ArmTwist_R,
     ///                 toes - its nearest ancestor the suit has).  Only there: all over (tried first) her thighs creased where the
-    ///                 base's own weights (the thigh) met the suit's skin (its twist bones, which hang on the spine).
+    ///                 base's own weights (the thigh) met the suit's skin (its twist bones, which hang on the spine).  At the edge
+    ///                 of the region it blends: by the share of the base's weight on such bones (OwnFrom to OwnTo) the base's
+    ///                 own weights mix with what lies over the vertex - switched there at once (its largest weight on such a
+    ///                 bone or not), the top of her right shoulder showed a small step in the nude stage (10-17).
+    ///   ownOverSkin   ownWeights where the suit's skin lies on the body too.  The step was not that edge: under the robe her
+    ///                 suit's skin reaches her right shoulder joint, hung on the spine and the clavicle only (the game never
+    ///                 shows it), and the body copying it there stayed put while the arm beside it went down - a corner on top
+    ///                 of the shoulder.  Within the region the base's own weights now win over that skin, blended by the same
+    ///                 share at the region's edge.
+    ///   ownMirror     the region's weights are not the base's own but the suit's skin's on her other side, mirrored across
+    ///                 the plane halfway between her clavicles, its bones named for this side (Bip001 L .. / Bip001 R ..,
+    ///                 .._L / .._R): her left shoulder is bare in her game and weighted for it, with the suit's own twist and
+    ///                 shoulder bones, which the fight drives (RoeHelperFit); the base's own shoulder helpers (GeoSphere002,
+    ///                 Muscle Strand ..) are not in the suit, so its own weights fold the top of a lowered arm's shoulder too.
+    ///                 Where the other side has no skin within MirrorReach, a tight piece of the outfit lying there within
+    ///                 MirrorCover (b14's left arm cover: the game cut the skin under it); with neither, or a bone of theirs
+    ///                 not bound on this side, the base's own weights stay.  Then the region's weights are smoothed over the
+    ///                 surface (MirrorSmooth passes, each vertex the mean of itself and its neighbours, the ones at one place
+    ///                 as one): where her left arm's skin meets its cover their weights step - the game hides that edge under
+    ///                 the cover's - and mirrored onto her bare right arm it tore the upper arm across.
     ///
     /// Vindictus' Fiona (10-06): her base is the game's own SM_Fiona_Body01 laid on PCF_005's skin in Blender (tools/vdf_nude.py),
     /// with two textures - body, and hands and feet: "submeshes" + "materials" in place of "submesh" + "material".  All of her
@@ -68,6 +87,11 @@ namespace RoeFighter.EditorTools
     public static class RoeNudeBody
     {
         public const float SkinReach = 0.015f;       // the suit's skin this close is what the body copies
+        const float MirrorReach = 0.02f;             // ownMirror: the suit's skin this close to the mirrored point
+        const float MirrorCover = 0.03f;             // ... or else a tight piece of the outfit this close
+        const int MirrorSmooth = 8;                  // ... and then its weights smoothed over the surface this many times
+        const float OwnFrom = 0.25f, OwnTo = 0.75f;  // ownWeights: a vertex the base hangs on the region's bones by this share
+                                                     // or less copies what lies over it, by OwnTo or more keeps its own
         const float MaxFill = 0.3f;                  // a fill that would add more than this share of a submesh is not one
         const float Cell = 0.02f;
         const float CoverReach = 0.04f;              // reveal: a piece's triangle this far along its normal (either way) covers a vertex
@@ -442,7 +466,7 @@ namespace RoeFighter.EditorTools
             // clearly nearer than any skin (where the game cut the skin away); else the nearest skin
             var weightsOf = new Dictionary<int, (Transform bone, float weight)[]>();
             var under = new HashSet<int>();         // only under pieces that never come off
-            int fromSkin = 0, fromOutfit = 0, lost = 0, unhooked = 0, fromOwn = 0;
+            int fromSkin = 0, fromOutfit = 0, lost = 0, unhooked = 0, fromOwn = 0, ownMixed = 0;
             string ownNote = "";
             var ownOf = !string.IsNullOrEmpty(n.ownWeights)
                 ? OwnWeights(model, prefab, nudeRenderer, nudeToModel, ToModel(target.transform), bindpose, used, new Regex(n.ownWeights), out ownNote)
@@ -467,20 +491,89 @@ namespace RoeFighter.EditorTools
                 float d0 = near.Min(x => x.d);
                 return (d0, near.Where(x => x.d <= d0 + band).OrderBy(x => x.d).Take(8).ToList());
             }
+            // "ownMirror": the region's weights from the suit's skin on her other side
+            Dictionary<int, (Transform bone, float weight)[]> mirrored = null;
+            if (ownOf != null && n.ownMirror)
+            {
+                mirrored = new Dictionary<int, (Transform bone, float weight)[]>();
+                var mirName = new Dictionary<string, Transform>();
+                foreach (var t in model.GetComponentsInChildren<Transform>(true))
+                    if (!mirName.ContainsKey(t.name))
+                        mirName[t.name] = t;
+                if (mirName.TryGetValue("Bip001 L Clavicle", out var mirL) && mirName.TryGetValue("Bip001 R Clavicle", out var mirR))
+                {
+                    Vector3 pL = ToModel(mirL).MultiplyPoint3x4(Vector3.zero), pR = ToModel(mirR).MultiplyPoint3x4(Vector3.zero);
+                    Vector3 mid = (pL + pR) * 0.5f, across = (pR - pL).normalized;
+                    int far = 0, unbound = 0, covered = 0;
+                    foreach (int i in ownOf.Keys)
+                    {
+                        if (!position.TryGetValue(i, out var p))
+                            continue;
+                        var q = p - 2f * Vector3.Dot(p - mid, across) * across;
+                        var (dq, onOther) = Nearest(skinGrid, q, 0.08f, 0.005f);
+                        if (onOther == null || dq > MirrorReach)
+                        {
+                            var (dc, onCover) = Nearest(tightGrid, q, 0.08f, 0.005f);
+                            if (onCover == null || dc > MirrorCover)
+                            {
+                                far++;
+                                continue;
+                            }
+                            onOther = onCover;
+                            covered++;
+                        }
+                        var swapped = new Dictionary<Transform, float>();
+                        bool bound = true;
+                        foreach (var kv in Gather(onOther))
+                        {
+                            if (Loose(kv.Key))
+                                continue;
+                            string other = SideSwap(kv.Key.name);
+                            var bone = other != kv.Key.name && mirName.TryGetValue(other, out var o) ? o : kv.Key;
+                            if (!bindpose.ContainsKey(bone))
+                            {
+                                bound = false;
+                                break;
+                            }
+                            swapped[bone] = (swapped.TryGetValue(bone, out float had) ? had : 0f) + kv.Value;
+                        }
+                        if (!bound || swapped.Count == 0)
+                        {
+                            unbound++;
+                            continue;
+                        }
+                        var top = swapped.OrderByDescending(kv => kv.Value).Take(4).ToArray();
+                        float total = top.Sum(kv => kv.Value);
+                        mirrored[i] = top.Select(kv => (kv.Key, kv.Value / total)).ToArray();
+                    }
+                    ownNote += $"; mirrored from her other side: {mirrored.Count} ({covered} from a piece lying there), {far} with no skin there, " +
+                               $"{unbound} on a bone not bound on this side";
+                }
+                else
+                    ownNote += "; ownMirror: no Bip001 L / R Clavicle to mirror across";
+            }
             foreach (int i in used)
             {
                 var p = position[i];
                 List<(int i, float d)> pick = null;
                 var (ds, onSkin) = Nearest(skinGrid, p, 0.08f, 0.005f);
+                // "ownWeights": no suit skin here (or ownOverSkin) - the base's own weights, not what lies over it, as far
+                // as the base hangs the vertex on the region's bones (blended with that across the region's edge)
+                (Transform bone, float weight)[] mine = null;
+                float ownShare = 0f;
+                if ((ds > SkinReach || n.ownOverSkin) && ownOf != null && ownOf.TryGetValue(i, out var ownEntry))
+                {
+                    mine = mirrored != null && mirrored.TryGetValue(i, out var fromOther) ? fromOther : ownEntry.weights;
+                    ownShare = Mathf.Clamp01((ownEntry.share - OwnFrom) / (OwnTo - OwnFrom));
+                }
                 if (ds <= SkinReach)
                 {
                     skinGap.Add(ds);
                     pick = onSkin;
                     fromSkin++;
                 }
-                else if (ownOf != null && ownOf.TryGetValue(i, out var mine))
+                else if (mine != null && ownShare >= 1f)
                 {
-                    // "ownWeights": no suit skin here - the base's own weights, not the pieces over it
                     weightsOf[i] = mine;
                     fromOwn++;
                     foreverGrid.Near(p, 0.025f, near);
@@ -526,6 +619,12 @@ namespace RoeFighter.EditorTools
                     if (near.Count > 0)
                         under.Add(i);
                 }
+                if (pick == null && mine != null && ownShare > 0f)
+                {
+                    weightsOf[i] = mine;
+                    fromOwn++;
+                    continue;
+                }
                 if (pick == null)
                 {
                     lost++;
@@ -547,6 +646,16 @@ namespace RoeFighter.EditorTools
                     foreach (var bone in sum.Keys.Where(Loose).ToList())
                         sum.Remove(bone);
                 }
+                if (mine != null && ownShare > 0f)
+                {
+                    // across the region's edge: its own weights by the share, what lies over it by the rest
+                    float copiedSum = sum.Values.Sum();
+                    foreach (var bone in sum.Keys.ToList())
+                        sum[bone] *= copiedSum > 0f ? (1f - ownShare) / copiedSum : 0f;
+                    foreach (var (bone, weight) in mine)
+                        sum[bone] = (sum.TryGetValue(bone, out float had) ? had : 0f) + ownShare * weight;
+                    ownMixed++;
+                }
                 if (sum.Count == 0)
                 {
                     lost++;
@@ -555,6 +664,80 @@ namespace RoeFighter.EditorTools
                 var top = sum.OrderByDescending(kv => kv.Value).Take(4).ToArray();
                 float total = top.Sum(kv => kv.Value);
                 weightsOf[i] = top.Select(kv => (kv.Key, kv.Value / total)).ToArray();
+            }
+
+            // ---- ownMirror: the region's weights smoothed over the surface, vertices at one place as one (UV seams split them)
+            if (mirrored != null && mirrored.Count > 0)
+            {
+                var smGroup = new Dictionary<int, int>();
+                var smKey = new Dictionary<Vector3Int, int>();
+                foreach (int i in used)
+                {
+                    var at = position[i];
+                    var cell = new Vector3Int(Mathf.RoundToInt(at.x * 10000f), Mathf.RoundToInt(at.y * 10000f), Mathf.RoundToInt(at.z * 10000f));
+                    if (!smKey.TryGetValue(cell, out int g))
+                        smKey[cell] = g = smKey.Count;
+                    smGroup[i] = g;
+                }
+                var smMembers = new List<int>[smKey.Count];
+                var smNext = new HashSet<int>[smKey.Count];
+                for (int g = 0; g < smKey.Count; g++)
+                {
+                    smMembers[g] = new List<int>();
+                    smNext[g] = new HashSet<int>();
+                }
+                foreach (var kv in smGroup)
+                    smMembers[kv.Value].Add(kv.Key);
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                    for (int e = 0; e < 3; e++)
+                        if (smGroup.TryGetValue(tris[t + e], out int ga) && smGroup.TryGetValue(tris[t + (e + 1) % 3], out int gb) && ga != gb)
+                        {
+                            smNext[ga].Add(gb);
+                            smNext[gb].Add(ga);
+                        }
+                // each group's weights: its members' together
+                var smW = new Dictionary<Transform, float>[smKey.Count];
+                for (int g = 0; g < smKey.Count; g++)
+                {
+                    var sum = new Dictionary<Transform, float>();
+                    foreach (int m in smMembers[g])
+                        if (weightsOf.TryGetValue(m, out var w))
+                            foreach (var (bone, weight) in w)
+                                sum[bone] = (sum.TryGetValue(bone, out float had) ? had : 0f) + weight;
+                    float total = sum.Values.Sum();
+                    smW[g] = total > 0f ? sum.ToDictionary(kv => kv.Key, kv => kv.Value / total) : null;
+                }
+                var smRegion = ownOf.Keys.Where(smGroup.ContainsKey).Select(i => smGroup[i]).Distinct().Where(g => smW[g] != null).ToList();
+                for (int pass = 0; pass < MirrorSmooth; pass++)
+                {
+                    var next = new Dictionary<int, Dictionary<Transform, float>>();
+                    foreach (int g in smRegion)
+                    {
+                        var sum = new Dictionary<Transform, float>(smW[g]);
+                        int count = 1;
+                        foreach (int h in smNext[g])
+                        {
+                            if (smW[h] == null)
+                                continue;
+                            foreach (var kv in smW[h])
+                                sum[kv.Key] = (sum.TryGetValue(kv.Key, out float had) ? had : 0f) + kv.Value;
+                            count++;
+                        }
+                        next[g] = sum.ToDictionary(kv => kv.Key, kv => kv.Value / count);
+                    }
+                    foreach (var kv in next)
+                        smW[kv.Key] = kv.Value;
+                }
+                foreach (int g in smRegion)
+                {
+                    var top = smW[g].OrderByDescending(kv => kv.Value).Take(4).ToArray();
+                    float total = top.Sum(kv => kv.Value);
+                    var smoothed = top.Select(kv => (kv.Key, kv.Value / total)).ToArray();
+                    foreach (int m in smMembers[g])
+                        if (weightsOf.ContainsKey(m))
+                            weightsOf[m] = smoothed;
+                }
+                ownNote += $"; {smRegion.Count} places smoothed {MirrorSmooth} times";
             }
 
             // ---- (reveal) the stage after which each vertex is drawn: the last stage of the opaque pieces over it, 0 none
@@ -810,7 +993,7 @@ namespace RoeFighter.EditorTools
             float Pct(float q) => skinGap.Count > 0 ? skinGap[Mathf.Clamp(Mathf.RoundToInt(q * (skinGap.Count - 1)), 0, skinGap.Count - 1)] * 1000f : -1f;
             log.Append($"\n[ROE]   nude body from {Path.GetFileName(n.prefab)} {n.renderer}[{string.Join(",", bodySubs)}]: {used.Count} vertices, " +
                        $"{fromSkin} take the suit's skin (gap median {Pct(0.5f):F2} mm, p95 {Pct(0.95f):F2} mm), {fromOutfit} the outfit over them, " +
-                       (ownOf != null ? $"{fromOwn} keep their own ({ownNote}), " : "") +
+                       (ownOf != null ? $"{fromOwn} keep their own, {ownMixed} blend theirs in ({ownNote}), " : "") +
                        (fromRound > 0 ? $"{fromRound} the skin round a piece that follows the body, " : "") +
                        (unhooked > 0 ? $"{unhooked} had loose cloth (skirt, sash, hair, chain) among their sources and let it go, " : "") +
                        $"{lost} nothing; {dropped} of {tris.Length / 3} triangles left out (under pieces that never come off); " +
@@ -1011,14 +1194,28 @@ namespace RoeFighter.EditorTools
             }
         }
 
+        /// <summary>The name of the same bone on the other side (ownMirror): "Bip001 L Clavicle" / "Bip001 LUpArmTwist" for R,
+        /// "shoulder_L", "Breast_L02", "Earring_L1_01" for _R; a name with no side comes back as it is.</summary>
+        static string SideSwap(string name)
+        {
+            var m = Regex.Match(name, @"^(Bip001 )([LR])(?=[ A-Z])");
+            if (m.Success)
+                return m.Groups[1].Value + (m.Groups[2].Value == "L" ? "R" : "L") + name.Substring(m.Length);
+            var k = Regex.Match(name, @"_([LR])(?=$|\d|_)");
+            if (k.Success)
+                return name.Substring(0, k.Index) + "_" + (k.Groups[1].Value == "L" ? "R" : "L") + name.Substring(k.Index + k.Length);
+            return name;
+        }
+
         /// <summary>
         /// "ownWeights": the base's own weights of these vertices on the suit's skeleton, bones by name - a bone the suit lacks
         /// gives its weight to its nearest ancestor the suit has; loose cloth gives none; the four largest, normalised; only the
-        /// vertices whose largest such weight is on a bone named like region.  The suit's meshes skin only the twist bones of
-        /// its limbs, not the limbs (b14: no Bip001 R UpperArm in any of them): a bone no suit renderer skins with gets its bind
-        /// pose from the base's (bindpose, in the target renderer's space - the family's skeleton, standing where the suit's does).
+        /// vertices with weight on a bone named like region, with that weight's share of theirs (share).  The suit's meshes skin
+        /// only the twist bones of its limbs, not the limbs (b14: no Bip001 R UpperArm in any of them): a bone no suit renderer
+        /// skins with gets its bind pose from the base's (bindpose, in the target renderer's space - the family's skeleton,
+        /// standing where the suit's does).
         /// </summary>
-        static Dictionary<int, (Transform bone, float weight)[]> OwnWeights(GameObject model, GameObject prefab, SkinnedMeshRenderer nudeRenderer,
+        static Dictionary<int, ((Transform bone, float weight)[] weights, float share)> OwnWeights(GameObject model, GameObject prefab, SkinnedMeshRenderer nudeRenderer,
                                                                             Matrix4x4 nudeToModel, Matrix4x4 targetToModel,
                                                                             Dictionary<Transform, Matrix4x4> bindpose, IEnumerable<int> vertices,
                                                                             Regex region, out string note)
@@ -1064,7 +1261,8 @@ namespace RoeFighter.EditorTools
             var start = new int[mesh.vertexCount + 1];
             for (int i = 0; i < mesh.vertexCount && i < perVertex.Length; i++)
                 start[i + 1] = start[i] + perVertex[i];
-            var result = new Dictionary<int, (Transform bone, float weight)[]>();
+            var result = new Dictionary<int, ((Transform bone, float weight)[] weights, float share)>();
+            int whole = 0;
             foreach (int i in vertices)
             {
                 if (i >= perVertex.Length)
@@ -1081,12 +1279,15 @@ namespace RoeFighter.EditorTools
                 if (sum.Count == 0)
                     continue;
                 var top = sum.OrderByDescending(kv => kv.Value).Take(4).ToArray();
-                if (!region.IsMatch(top[0].Key.name))
-                    continue;
                 float total = top.Sum(kv => kv.Value);
-                result[i] = top.Select(kv => (kv.Key, kv.Value / total)).ToArray();
+                float share = top.Where(kv => region.IsMatch(kv.Key.name)).Sum(kv => kv.Value) / total;
+                if (share <= 0f)
+                    continue;
+                result[i] = (top.Select(kv => (kv.Key, kv.Value / total)).ToArray(), share);
+                if (share >= OwnTo)
+                    whole++;
             }
-            note = $"{result.Count} of the body's vertices on {region}; the base's bones: {direct} by name, {byAncestor} by an ancestor, {none} on nothing of the suit's; " +
+            note = $"{result.Count} of the body's vertices on {region}, {whole} by {OwnTo:P0} or more; the base's bones: {direct} by name, {byAncestor} by an ancestor, {none} on nothing of the suit's; " +
                    $"{posed} the suit skins nothing with, bound where the base has them";
             return result;
         }

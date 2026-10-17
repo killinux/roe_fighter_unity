@@ -2,7 +2,8 @@
 (scripts/riseoferos decode_roe_clip.py), reading the game's bundles only, writing nothing but the JSON (no VMD, nothing in
 the export archive - export_roe_motions.py there does all of that for the outfits it exports).
     python tools/roe_clips.py <id> [<out dir>] [--clips idle_01,skill_01]
-Out: _work/roe_clips/<id>/<clip>.json (30 frames a second).  ROE_RIPPER: the ripper_tpose checkout
+Out: _work/roe_clips/<id>/<clip>.json (30 frames a second); bones only the battle rig has (b14's sword) are copied
+onto the hd skeleton first (graft).  ROE_RIPPER: the ripper_tpose checkout
 (default E:/code/othercode/ripper_tpose); UnityPy needed.
 """
 import argparse
@@ -19,6 +20,27 @@ from roe_motion_common import bundles  # noqa: E402
 PROJECT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
+def graft(skeleton, ld):
+    """The low-detail rig's bones the hd one lacks, appended under their nearest ancestor the hd rig has (by name) with
+    their ld local pose, as RoeFighterBuilder.GraftBone does in Unity - b14's sword hangs on Wp_01 under Bip001 Prop1, its
+    tassel on Wp_02..04, bones only the battle rig has, so her clips' keys on them were dropped.  They keep their ld path's
+    CRC: the battle clips find them by it."""
+    have = {}
+    for i, b in enumerate(skeleton):
+        have.setdefault(b["name"], i)
+    added = []
+    for b in ld:                                       # parents come before their children (read_skeleton walks down)
+        if b["name"] in have or b["parent"] < 0 or ld[b["parent"]]["name"] not in have:
+            continue
+        bone = {k: v for k, v in b.items() if k not in ("bind", "tf")}
+        bone["parent"] = have[ld[b["parent"]]["name"]]
+        bone["tf"] = -1
+        have[b["name"]] = len(skeleton)
+        skeleton.append(bone)
+        added.append(bone)
+    return added
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("id")
@@ -33,6 +55,9 @@ def main():
     if found.get("battle"):
         envs["battle"] = UnityPy.load(found["battle"])
     skeleton = dec.read_skeleton(envs["showcase"])     # the hd prefab's skeleton (the battle clips live with the low-detail one)
+    if "battle" in envs:
+        for b in graft(skeleton, dec.read_skeleton(envs["battle"])):
+            print("bone %s copied from the ld rig under %s" % (b["name"], skeleton[b["parent"]]["name"]))
     os.makedirs(out, exist_ok=True)
     wanted = set(a.clips.split(",")) if a.clips else None
     for group, env in envs.items():

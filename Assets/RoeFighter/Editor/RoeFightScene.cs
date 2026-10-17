@@ -612,7 +612,8 @@ namespace RoeFighter.EditorTools
                 .Where(r => r.sharedMaterials.Any(m => m != null && m.name.StartsWith("wp_"))).ToArray();
             // her own strikes instead of the motion pack's (user 10-03: g04 strikes like Mai Shiranui, from DOA6; 10-05 "inase用
             // mecanim bot的动作": a08 strikes like UFE 2's Mecanim Bot - a08=ufe_bot_inase; since 10-06 "给inase拿着长剑的找一些普通
-            // 攻击" her greatsword's, a08_sword; 10-06 "一个拿斧子和枪的上衣是红色的卡地亚": b10 with her axe, b10_axe;
+            // 攻击" her greatsword's, a08_sword; 10-06 "一个拿斧子和枪的上衣是红色的卡地亚": b10 with her axe, b10_axe; 10-17 b14 with
+            // her long sword, b14_sword;
             // -roeOwnStrikes g04=doa6_mai,a08=...), and the size of her weapon (user 10-03: a smaller fan; -roeWeaponScale g04=0.7)
             // her planted thighs turned in or out against the pelvis no further than her skin was weighted for (FighterRig.rollFrom
             // : rollKeep : rollFoot; user 10-06 "大腿根的权重还是不对呀": Kart's axe strikes turn her bent thigh in 45-60 degrees,
@@ -624,7 +625,7 @@ namespace RoeFighter.EditorTools
                 rig.rollKeep = p.Length > 1 ? float.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture) : 0.3f;
                 rig.rollFoot = p.Length > 2 ? int.Parse(p[2]) : 0;
             }
-            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=a08_sword,b10=b10_axe").TryGetValue(c.id, out var own))
+            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=a08_sword,b10=b10_axe,b14=b14_sword").TryGetValue(c.id, out var own))
             {
                 rig.strikePack = OwnStrikes(own);
                 // strikes with the weapon in her hand need her grip on the fighter prefab (RoeWeaponGrip)

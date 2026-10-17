@@ -70,6 +70,10 @@ namespace RoeFighter.EditorTools
             public string ownWeights;               // regex: where the suit's skin does not lie on it, a vertex the base hangs mostly on
                                                     // such a bone (the suit's, by name) keeps the base's own weights (b14's right upper
                                                     // arm: no skin there under the robe, and the sleeve over it hangs on the forearm)
+            public bool ownOverSkin;                // ... where the suit's skin lies on it too (b14's right shoulder: the skin under the
+                                                    // robe reaches the joint but hangs on the spine and the clavicle only)
+            public bool ownMirror;                  // ... with the suit's skin's weights from her other side, mirrored, in place of
+                                                    // the base's own (b14's left shoulder is bare in her game and weighted with care)
         }
 
         /// <summary>

@@ -61,6 +61,7 @@
 | Luf 的裙子重新从 ROE 导出核对（原始数据和游戏动作都没改乱）；照 ROE 自己的物理做了方案 `roe`；默认改成站在游戏站姿里时直接放 ROE 的手 K，动起来再交给布料 | 完成（10-11），见"Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看"一节；视频 `out\g04_skirt_roe.mp4`，图 `out\g04_skirt_roe.jpg`；exe 已重新打包 |
 | 游戏说明：操作、规则、技能、爆衣、功能键、12 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
 | Kart 最新的一套（b14，白蓝鹤袍，游戏里 2026-09-12 上的）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、选人时的展示动作和台词、爆衣四段到全身；右边拖到膝下的长纱袖交给布料，抬手时垂下来 | 完成（10-11），见"Kart 最新的一套（b14，鹤袍）加入战斗"一节；技能 `out\b14_skills.mp4`，爆衣 `out\clothes_burst_demo_b14.mp4`，电脑对电脑（对 b10）`out\fight_cpu_match_b14.mp4`，检查图 `out\clothes_burst\unity\b14_sheet.png`；exe 已重新打包 |
+| Crane Kart（b14）拿剑打普通攻击：剑一直握在右手（她技能里挥剑时的正手握），四招里三招截自她自己的技能、一招是 Vindictus 的翻身斩；全身那段右肩顶的棱修掉了（右肩照左肩镜像取权重） | 完成（10-17），见"Crane Kart（b14）拿剑打普通攻击；右肩照左肩取权重"一节；四招 `out\b14_sword_strikes.mp4`，候选 `out\b14_sword_candidates.mp4`，电脑对电脑（对 Inase）`out\fight_cpu_match_b14_sword.mp4`，右肩对比 `out\b14_shoulder_fix.jpg`，爆衣演示重录；exe 已重新打包 |
 
 ## 目录
 
@@ -1962,6 +1963,7 @@ python tools\make_video.py _work\fight_mai out\fight_cpu_match_mai.mp4
 - Unity 6000.4.12f1，装在 `E:\tools\Unity\Hub\Editor\6000.4.12f1`；Unity Hub 3.22（winget 装的）。选 6000.4 是因为 UFE 2.7.3 在 Asset Store 上要求不低于 6000.4.1。
 - 这台电脑直连 Unity 的下载服务器会被转到中国站（国际版安装包 404），只能走环境变量里的代理，而代理单连接只有约 30 KB/s。`tools\fetch_parallel.py` 用 64 个连接分段下载（约 1.8 MB/s），`fetch_fill.py` 补最后几个慢块。
 - Git Bash 里的 curl 访问 127.0.0.1 也会走代理而失败，本机服务用 Python（`ar.py` 里关掉了代理）或 PowerShell 访问。
+- 环境变量里的代理也会让 Unity 批处理卡在编译：日志一直重复 "Connectivity with IL Post Processor runner cannot be established yet. Retrying."，CPU 是 0，`Unity.ILPP.Trigger.exe` 每十几秒崩溃一次（0xc0000409，`%LOCALAPPDATA%\CrashDumps` 里有转储）。它找本机的编译后处理器，请求被转去了代理。`tools\unity_batch.ps1` 现在启动 Unity 前去掉 `HTTP_PROXY`、`HTTPS_PROXY`，设 `NO_PROXY=localhost,127.0.0.1,::1`（10-17 重启后第一次跑就是这样卡住的）。
 
 ### Eve 的百褶裙（eve37）和裙子的 Control Rig（10-05）
 
@@ -2586,4 +2588,108 @@ python tools\burst_video.py _work\burst_demo_b14 out\clothes_burst_demo_b14.mp4
 python tools\make_video.py _work\fight_b14 out\fight_cpu_match_b14.mp4
 # 她每个顶点的权重（_work\weights\b14.tsv），右上臂的问题就是这样查出来的
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeightProbe.SkirtLegs -Graphics -Extra '-roeChar','b14'
+```
+
+### Crane Kart（b14）拿剑打普通攻击；右肩照左肩取权重（10-17）
+
+用户 10-17："继续"。接着做 10-11 留下的两件事：b14 平时拿剑打普通攻击（以前用动作包的拳脚，剑只在技能里出现），全裸那段右肩顶的小台阶。
+
+**她的剑**
+
+- 一把长剑，全长 1.43 米，从手到剑尖 1.16 米，剑柄末端挂一条短穗。
+- 剑身挂在 `Wp_01` 上，`Wp_01` 在 `Bip001 Prop1` 下面，穗子是 `Wp_02..04`。这几根骨只有战斗低模有，10-11 已经接到高模上。
+- 她游戏的站架 `idle_01` 是反手握：剑身贴着右前臂朝上，剑尖高过头顶。
+- 三个技能里每次挥剑前，剑都在手里翻转约 160°，换成正手握（剑从虎口一侧伸出）。
+- 所以握法取她技能 1 第 18–48 帧（两下挥砍）里的正手握。这段里剑在右手中最多晃 1.5 厘米、14°，结果在 `tools/roe/b14_grip.json`。
+- 检查图 `out\weapon_grip\b14_0..2.png`：游戏站架原样、换成正手握、抬起手臂。
+- `tools/roe_clips.py` 顺带改了：解码时先把战斗低模独有的骨（她的 `Bip001 Prop1`、`Wp_01..04`）接到高模骨架上，做法和 Unity 里的 `RoeFighterBuilder.GraftBone` 一样。以前这几根骨的关键帧被丢掉，量不了握法。
+
+**挑招**：16 个候选（`tools/motionpacks/b14_sword_candidates.json`）
+
+- 她自己三个技能里截的 7 段，加上 Fiona、Inase、b10 都还没用过的 9 个 Vindictus 单手剑招。
+- 视频 `out\b14_sword_candidates.mp4`：每招先实速、再半速。
+- 总览图 `out\b14_sword_candidates_sheet.jpg`：对战里按键后每 0.1 秒一格，红条是能打中的时间。
+- 影棚检查图 `out\b14_sword_candidates_moves_sheet.jpg`：每招从头到尾 8 格。
+
+**默认四招**：`tools/motionpacks/b14_sword.json`（`strikesOnly` + `grip`）
+
+| 键 | 招式 | 出处 | 出手 | 够到 | 段 |
+|---|---|---|---|---|---|
+| A | 两连斩 | 她技能 1 的 0.6–1.3 秒 | 0.05 秒 | 2.15 米 | 中段 |
+| B | 跃起斩 | 她技能 1 的 0.2–0.8 秒 | 0.05 秒 | 2.23 米 | 下段 |
+| C | 回身刺 | 她技能 2 的 1.15–2.0 秒 | 0.53 秒 | 1.82 米 | 上段 |
+| D | 翻身斩（击倒） | Vindictus 重击 3b（Attack_Strong03b），1.2 倍速 | 0.77 秒 | 2.22 米 | 中段 |
+
+- 三招用她自己的动作：她是一身鹤袍、拖着长纱袖的剑舞，Vindictus 的重剑招大多是深蹲、弓步、往前冲好几米，放在她身上不像她。
+- A 是技能 1 冲到对手面前之后的两刀，判定取第一刀（剑尖在身前 2.15 米、每秒 76 米），最快。
+- B 是技能 1 起跳的那一段：起跳时剑尖贴着地面往前扫，所以是下段，要蹲着防。
+- C 是技能 2 里转身、剑从头顶挥过去接一记前刺，剑尖停在胸口的高度：上段，蹲下能躲过去。
+- D 是 Vindictus 的重击 3b：腾空横着翻一圈，落地横斩。三个人都没用过这招。1.2 倍速，出手 0.77 秒，是四招里最慢的。
+- 能打中的时间（`hit`）按剑尖定（`RoeMotionPacks.Import -roeTips` 写出的每帧剑尖位置）：取剑尖往前扫得最远、最快的那几帧。整段自动量不准：1.2 米的剑，几乎每帧剑尖都超过每秒 5 米。
+- 没选的：
+  - 她技能 1 的劈下接低扫：剑在身侧、身后挥，只够到 0.53 米。
+  - 技能 2 收尾的低扫：其实是慢慢收剑。
+  - 超必杀开头的升空斩：停在半空。
+  - Vindictus 的技能 4、5：十几米的冲刺、11 秒的长连段。
+  - 重击 1b、2b、技能 2b：往前冲出去 3–5 米。
+- 建场景时默认给 b14 这套（`-roeOwnStrikes` 的默认值加了 `b14=b14_sword`）；换回拳脚就在表里去掉这一项。
+
+- 视频 `out\b14_sword_strikes.mp4`：四招，每招先实速再半速。
+- 总览图 `out\b14_sword_moves_sheet.jpg`：对战里拍的，按键后每 0.1 秒一格。
+- 检查图 `out\b14_sword_check_sheet.jpg`：影棚里每招 10 格。
+- 电脑对电脑（对 Inase，120 秒）：`out\fight_cpu_match_b14_sword.mp4`。
+
+**右肩顶的台阶**
+
+- 样子：全身那一段，她右肩顶有一道棱。手臂放下时，三角肌跟着手臂往下走，肩顶那一圈不动，挤出一个折角（对比图 `out\b14_shoulder_fix.jpg`）。
+- 不是右上臂权重的问题（10-11 那次修的是上臂）。按"底模挂在上臂上的比例"让两套权重平滑过渡、把锁骨也算进去，都没有用。
+- 原因：
+  - 她的套装皮肤在右肩被长袍盖着，游戏看不见，这块皮肤一直延伸到肩关节，却只挂在 Spine2 和锁骨上，没挂上臂。
+  - 裸体离套装皮肤 1.5 厘米内就照抄它的权重，所以肩关节旁的皮肤不跟手臂走。
+  - 再往外没有套装皮肤的地方，裸体以前抄的是金色肩饰的权重：肩饰挂在它自己的一根骨上，像一块硬甲。
+- 修法：她左肩在游戏里是露出来的，权重做得认真，还用到了套装自己的扭转骨、肩部辅助骨（战斗里由 `RoeHelperFit` 驱动）。右肩就照左肩镜像取权重。
+- 新加的规则词（`RoeNudeBody`，b14 的 `Editor\Burst\b14.json`）：
+  - `ownOverSkin`：`ownWeights` 的区域里，有套装皮肤的地方也不照抄套装皮肤。
+  - `ownMirror`：这个区域的权重不用底模自己的，用对面套装皮肤上的，骨头名左右对调（`Bip001 L ..` 换成 `Bip001 R ..`，`.._L` 换成 `.._R`）。
+    - 镜像面是两根锁骨正中间、垂直于两根锁骨连线的平面。
+    - 对面 2 厘米内没有皮肤时（左臂袖套底下游戏裁掉了皮肤），取贴在那里的衣物（袖套）的权重。都没有就用底模自己的。
+  - 区域边缘按底模挂在这些骨上的比例过渡：25% 以下照旧，75% 以上全用新的，中间按比例混合。以前是一刀切：最大的那份权重在不在这些骨上。
+  - b14 现在写的是 `"ownWeights": "^Bip001 R (UpperArm|Clavicle)$"`、`"ownOverSkin": true`、`"ownMirror": true`。
+  - 别的角色不受影响：只有写了 `ownWeights` 的角色才走这些规则，现在只有 b14。
+- 对比图 `out\b14_shoulder_fix.jpg`（全身那段的胸口特写，左边改之前，右边现在）。爆衣演示重录了：`out\clothes_burst_demo_b14.mp4`。
+- 日志里这一行写着各有多少顶点：`mirrored from her other side: 752 (268 from a piece lying there) ... 811 places smoothed 8 times`。
+- 检查的办法：`RoeBurstBuilder.Check` 加 `-roeFaces 1`，每一段另拍一张胸口特写（`<id>_stage<n>_chest.png`）。这次看不清时就是靠它看出来的：
+  不是缺了一块（三角面正反图里肩顶全是正面），是皮肤折出来的棱。
+
+```powershell
+# 握法：她的游戏动作（低模独有的剑骨接到高模上）→ 量技能 1 第 18–48 帧的正手握 → 装到预制体上
+python tools\roe_clips.py b14
+python tools\roe_grip.py _work\roe_clips\b14\skill_01.json b14 --bones Wp_01 --frames 18-48 --slack 0.02 --turn 15
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeaponGrip.Build -Graphics -Extra '-roeChars','b14'
+# 候选：导入、拍、视频、总览图、检查图
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/b14_sword_candidates.json','-roeTips','E:\code\othercode\roe_fighter_unity\_work\sword_tips_b14'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','b14_sword_candidates','-roeChars','b14','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_b14_cand'
+python tools\strike_demo_video.py _work\strike_takes_b14_cand out\b14_sword_candidates.mp4 --pack tools/motionpacks/b14_sword_candidates.json --id b14
+python tools\takes_sheet.py _work\strike_takes_b14_cand out\b14_sword_candidates_sheet.jpg --pack tools\motionpacks\b14_sword_candidates.json
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','b14_sword_candidates','-roeChars','b14'
+python tools\strike_sheet.py out\motion_sheets\b14_sword_candidates out\b14_sword_candidates_moves_sheet.jpg --pack tools\motionpacks\b14_sword_candidates.json
+# 定下的四招
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/b14_sword.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','b14_sword','-roeChars','b14','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_b14_sword'
+python tools\strike_demo_video.py _work\strike_takes_b14_sword out\b14_sword_strikes.mp4 --pack tools/motionpacks/b14_sword.json --id b14
+python tools\takes_sheet.py _work\strike_takes_b14_sword out\b14_sword_moves_sheet.jpg --pack tools\motionpacks\b14_sword.json --cols 12 --tile 200
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Sheet -Graphics -Extra '-roePack','b14_sword','-roeChars','b14','-roeShots','10'
+python tools\strike_sheet.py out\motion_sheets\b14_sword out\b14_sword_check_sheet.jpg --pack tools\motionpacks\b14_sword.json --cols 10
+# 右肩：重建裸体（-roeFaces 1 另拍胸口特写和三角面正反，放进 _work 不动 out），检查图，场景，录像
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','b14','-roeFaces','1','-roeOut','E:\code\othercode\roe_fighter_unity\_work\b14_faces'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','b14'
+python tools\burst_sheet.py --chars b14
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','b14','-roeP2','a08','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_b14_sword'
+python tools\make_video.py _work\fight_b14_sword out\fight_cpu_match_b14_sword.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','b14','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_b14'
+python tools\burst_video.py _work\burst_demo_b14 out\clothes_burst_demo_b14.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
 ```

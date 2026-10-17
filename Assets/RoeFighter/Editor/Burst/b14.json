@@ -46,7 +46,9 @@
         ]
       }
     ],
-    "ownWeights": "^Bip001 R UpperArm$"
+    "ownWeights": "^Bip001 R (UpperArm|Clavicle)$",
+    "ownOverSkin": true,
+    "ownMirror": true
   },
   "groups": [
     {

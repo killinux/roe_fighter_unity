@@ -26,6 +26,12 @@ if (Test-Path -LiteralPath $lock) {
     if ($running) { Write-Output "Unity is already running (pid $($running.Id -join ', ')) - the project may be open; aborting."; exit 3 }
 }
 
+# No proxy for the editor (10-17): with HTTP_PROXY / HTTPS_PROXY set, the IL post processor's trigger sends its call to the
+# local runner through the proxy and crashes (Unity.ILPP.Trigger.exe 0xc0000409 every ~16 s) - the compile then waits
+# forever ("Connectivity with IL Post Processor runner cannot be established yet. Retrying.", CPU 0)
+Remove-Item Env:HTTP_PROXY, Env:HTTPS_PROXY -ErrorAction SilentlyContinue
+$env:NO_PROXY = 'localhost,127.0.0.1,::1'
+
 $unityArgs = @('-batchmode', '-projectPath', $project, '-executeMethod', $Method)
 if (-not $NoQuit) { $unityArgs += '-quit' }
 $unityArgs += @('-logFile', $log)

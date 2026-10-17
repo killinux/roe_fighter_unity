@@ -102,7 +102,7 @@
 | KART（Agent） | ROE | 横扫 / 劈砍 / 冲步斩 / 举斧砸地（击倒） | ROE 里的三个技能（斧子和枪） |
 | GODDESS LUF（Goddess） | ROE | 同 LUF | ROE 里的三个技能 |
 | AMANO（Abyss） | ROE | 动作包的四招（默认：刺拳 / 挥砍 / 直拳 / 回旋踢） | ROE 里的三个技能（漂浮的眼睛、触手） |
-| CRANE KART（Crane） | ROE | 动作包的四招 | ROE 里的三个技能（剑） |
+| CRANE KART（Crane） | ROE | 两连斩 / 跃起斩（下段） / 回身刺（上段） / 翻身斩（击倒） | ROE 里的三个技能（剑） |
 | KASUMI（Kunoichi） | DOA6 | 刺拳 / 侧踢 / 上勾拳 / 高位回旋踢 | DOA6 里她自己的三个动作 |
 | KASUMI（Pirate Dress） | DOA6 | 同上 | 同上 |
 | MAI（Shiranui-ryu） | DOA6 | 冲步刺拳 / 中段肘击 / 扑身冲拳 / 高踢 | DOA6 里她的翻身突进 / 空中翻身 / 冲刺 |
