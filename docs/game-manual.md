@@ -110,9 +110,10 @@
 | FIONA（White Feather） | Vindictus | 突刺 / 反击斩 / 转身斩 / 踢加斩 | Vindictus 里她的主动技能 1、主动技能 3、终结技 |
 | EVE（Planet Diving Suit） | 剑星 | 动作包的四招 | 三段连续技 / 升龙拳 / 百裂踢（UFE 2 示例角色的招式） |
 | EVE（Office Style） | 剑星 | 同上 | 同上 |
-| EVE（Cooling Suit） | 剑星（NIKKE 联动） | 同上 | 同上 |
+| EVE（Cooling Suit） | 剑星（NIKKE 联动） | 冲步横斩 / 回身低斩（下段） / 两段斩 / 挑空斩（击倒）（剑星里她自己的剑招） | 剑星里她的锁链突刺 / 蓄力斩 / Burst 回旋斩 |
 
 - LUF 和 INASE 站着时用的是她们在 ROE 里的战斗站姿（INASE 剑尖拄地、手扶剑柄，出招时才把剑握起来）；其他角色站的是动捕的格斗架势（GODDESS LUF 是不知火舞的）。
+- EVE（Cooling Suit）站的是剑星里她锁定敌人时的战斗站姿（剑压低在身后），头发是 NIKKE 联动的 Alice 粉色双马尾。
 - 开场和胜利时放的是各自游戏里的展示动作。
 
 ## 7. 物理方案（F4）

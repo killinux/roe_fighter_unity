@@ -322,3 +322,13 @@ python tools\sb_controlrig.py _work\sb\research\json\SB\Content\Art\Character\PC
 - 材质实例可以把父材质的混合方式覆盖掉（`BasePropertyOverrides`）。这套腿上的字（`MI_VietaCos004_Decal`）覆盖成了遮罩、裁剪阈值 0.333：
   `sb_textures.py` 现在读这个覆盖，保留颜色图的 alpha、按阈值裁剪，不再是一块黑方块。
 - 爆衣、录像、命令见 README"剑星 Eve 的粉色紧身衣"一节。
+
+## 8. Alice 的发型、她自己的动作和剑（eve_nikke06，10-17）
+
+- 发型换装：`tools/sb_hair.py` 在 `sb_fbx.py` 之前跑（同一个 Blender 会话）。去掉默认发型和只有它用的骨，导入新发型的 .psk，按头骨的静止矩阵对齐后合进骨架。
+  新发型的材质透明度用它自己的 `*_ADIR` 图（红通道）；`sb_physics.py --hair-dlc` 读 DLC 里发型的蓝图；没有马尾组件就没有刚体马尾。
+- 动作：`tools/sb_anims.py` 导出 .psa（CUE4Parse），`SbAnims` 转成人形动画。读法是"Y 镜像 + 子骨共轭"；组件空间 UE (x, y, z) → 她的 (y, z, x)；
+  CUE4Parse 的帧率是帧数 / 时长，间隔取时长 / (帧数 − 1)。ACL 压缩的片段（角色界面、Social）导不出来。
+- 剑：`CH_W_Sword_01`，游戏让剑的根骨 `Weapon_Root` 与 `Bip001-Prop1` 重合；Prop1 挂在 Bip001 下，人形动画里没有它，
+  所以剑挂在右手下的持剑点 `SB_Sword`，每个动画按游戏里 Prop1 相对右手的位置给持剑点打关键帧（技能里剑离手也照游戏）。
+- 招式、技能、录像、命令见 README"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节。

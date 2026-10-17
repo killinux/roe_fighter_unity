@@ -65,6 +65,7 @@
 | Kart 鹤袍的粉白换色款（b14 的 outfit1）做成新角色 PINK CRANE KART：材质、贴图、白发粉梢、粉色技能特效都是游戏里换色款自己的，网格、动作、爆衣规则、握剑、剑招沿用 b14 | 完成（10-17），见"Kart 鹤袍的粉白换色款（b14_outfit1）加入战斗"一节；技能 `out\b14_outfit1_skills.mp4`，剑招 `out\b14_outfit1_sword_strikes.mp4`，爆衣 `out\clothes_burst_demo_b14_outfit1.mp4`，粉白对蓝白 `out\fight_cpu_match_b14_outfit1.mp4`；exe 已重新打包 |
 | Inase 两招之间站她在 ROE 里的战斗站姿（剑尖拄地、手扶剑柄），出招时剑才转进挥砍的握法 | 完成（10-17），见"Inase 站游戏里的姿势"一节；对比视频 `out\a08_roe_stance.mp4`，对比图 `out\a08_roe_stance.jpg`；exe 已重新打包 |
 | 剑星 Eve 的粉色紧身衣（NIKKE 联动的 Cooling Suit，`eve_nikke06`）加入战斗：模型、贴图、物理都照游戏读，四段爆衣到全身 | 完成（10-17），见"剑星 Eve 的粉色紧身衣"一节；爆衣 `out\clothes_burst_demo_eve_nikke06.mp4`，电脑对电脑（对 eve09）`out\fight_cpu_match_eve_nikke06.mp4`；exe 已重新打包 |
+| Eve 粉色紧身衣换上 Alice 的发型（粉色双马尾、猫耳耳机，游戏自己的物理），用她自己剑星里的招式：四个普通攻击、三个技能、受击倒地起身开场胜利，手里拿着血刃 | 完成（10-17），见"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节；四招 `out\eve_nikke06_sword_strikes.mp4`，候选 `out\eve_nikke06_sword_candidates.mp4`，电脑对电脑 `out\fight_cpu_match_eve_nikke06_own.mp4`，发型 `out\eve_nikke06_alice_hair.jpg`；exe 已重新打包 |
 
 ## 目录
 
@@ -2825,7 +2826,9 @@ python tools\cloth_demo_video.py _work\a08_guard_all_front out\a08_roe_stance.mp
   `sb_textures.py` 以前没读这种覆盖，导出成不透明，腿上会是一块黑方块。现在遇到覆盖成遮罩的，保留颜色图的 alpha，按游戏的阈值裁剪。
 - 物理全用剑星自己的（游戏数据读出来）：6 个弹簧骨（胸、臀、大腿扭转骨），17 个 KawaiiPhysics 节点（头发，加上这套衣服自己的颈部褶边、胸前两条带子、背后的飘带和环、肩上的细绳、腋下的挂件），马尾 7 节刚体链。
 - 发型：游戏里还有一个配套的 Alice 发型 `EVE_HR_Nikke_06`，是单独装备的。这次和 eve09、eve37 一样用 Eve 默认的黑马尾。
+  同一天后来换成了 Alice 的发型，见"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节。
 - 格斗定义 `tools/sb/eve_nikke06.json`：照 eve09 的。站架、走、四个普通攻击用动作包；受击、倒地、起身和三个技能用 UFE 2 的。
+  同一天后来全换成了她自己剑星里的动作（同上一节）。
 - 名单默认加在 eve37 后面。选人卡片上是 EVE，名字下面写 Cooling Suit (Alice, NIKKE)。
 
 **爆衣四段**（`Editor\Burst\eve_nikke06.json`，检查图 `out\clothes_burst\unity\eve_nikke06_sheet.png`）
@@ -2862,4 +2865,119 @@ python tools\burst_sheet.py --chars eve_nikke06
 python tools\burst_video.py _work\burst_demo_eve_nikke06 out\clothes_burst_demo_eve_nikke06.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve_nikke06','-roeP2','eve09','-roeSeconds','60','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve_nikke06'
 python tools\make_video.py _work\fight_eve_nikke06 out\fight_cpu_match_eve_nikke06.mp4
+```
+
+### Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式（10-17）
+
+用户 10-17："用 Alice 的专属发型 ，用 eve里自己的招式"。
+
+**Alice 的发型**（`tools/sb_hair.py`，图 `out\eve_nikke06_alice_hair.jpg`）
+
+- 游戏里 Cooling Suit 配套的发型 `EVE_HR_Nikke_06`：NIKKE 里 Alice 的粉色双马尾、刘海、带麦克风的猫耳耳机。它是单独装备的，在 `SB/Content/DLC_2/Art/Character/PC/00_HR/` 下。
+  用 CUE4Parse 命令行导成 ActorX（.psk）：63,076 个顶点，289 根骨，骨架的根是头骨 `Bip001-Head`。
+- `sb_hair.py` 在 Blender 3.6 里先于 `sb_fbx.py` 跑（同一个会话，归档的 .blend 不保存，`sb_fbx.py` 照样找得到它旁边的贴图）：
+  - 去掉 .blend 里 Eve 默认的发帽和两条马尾，以及只有它们用的 38 根骨：`Hair_Root` 和它下面的前额、侧面发束，马尾链 `Ab-TL-HairB*`，后颈短发 `Ab_SHair_*`。
+    新发型有同名的前额、侧面发束骨，但位置不同，所以先删旧的。
+  - 用 PSK 插件导入新发型，按头骨的整个静止矩阵对齐（和 `validate_eve.py` 挂后颈短发一样），合进 `Eve_Armature`，去掉它自己那根头骨（顶点组落到身体的头骨上）。
+  - 核对：同名发束新旧位置只差 2–6 厘米、方向一致，没有前后反。
+- 贴图（`tools/sb_textures.py`）：
+  - `--mi-dir` 现在可以给多个（衣服的材质目录，发型的材质目录）。
+  - 发型材质 `MI_EVE_HR_Nikke_06` 的父材质是 `MA_CH_Hair`。透明度用它自己的 `HairTexture`（`EVE_HR_Nikke_06_ADIR`：红通道是发片透明度，后面是深度、发丝编号、发根渐变）。
+    实例里另外挂的 `Alpha` 是通用的马尾图集，用它后脑勺会透出一道缝（Blender 里两种都渲染对比过）。
+  - 发色是发根 / 发梢颜色 × 亮度 × 2（以前给 Eve 的棕发定的）。浅粉色乘 2 会超过 1，变成近白；现在超过 1 时整体按比例压回，色相不变，棕发不受影响。结果 #FFC2E1。
+  - 耳机和发绳用衣服的 UV2 材质（导入时直接用 .blend 里同名的那个）。
+- 物理（`tools/sb_physics.py --hair EVE_HR_Nikke_06 --hair-dlc DLC_2`）：
+  - 发型自己的动画蓝图里有 65 个 KawaiiPhysics 节点：双马尾按分叉一段一段算，加上刘海和侧发。碰撞胶囊都在头骨上（游戏里双马尾只和头碰）。
+  - 这个发型没有马尾组件，所以没有刚体马尾；主蓝图里管默认马尾的节点也跟着去掉了。现在共 75 个节点（衣服的 10 个照旧）。
+- 爆衣不受影响：发型和耳机不在爆衣里。
+
+**她自己的招式：导出**（`tools/sb_anims.py`）
+
+- 她的动画在 `SB/Content/Art/Character/PC/CH_P_EVE_01/Animation/`（4000 多个）。导了 200 多个：剑技（正式版的轻攻击、重攻击，Beta 技能、Burst 技能、反击，原型招式）、受击、倒地、躺地、起身、战斗待机、锁定走路。
+- `Proto_*` 是每秒 30 帧，`P_Eve_*` 是 60 帧。CUE4Parse 写的帧率是"帧数 / 时长"（91 帧 3 秒写成 30.33），实际间隔是时长 / (帧数 − 1)。
+- 位移在 Root 上（`_Root` 版和 `P_Eve_` 版前冲 1–6 米），这些片段里 Root 不转。
+- 角色界面、Social 目录的动画用 ACL 压缩，这个命令行版本缺 ACL 的原生库，导不出来（没用到）。
+
+**转成人形动画**（`SbAnims`，照 Fiona 的 `VdfAnims`）
+
+- 一帧一帧把游戏的骨骼旋转套到她的骨架上（Biped 和道具骨；Bip001 和道具骨连位置一起；Root 带着整副骨架走），再用她自己的 avatar 读出人形姿势。
+- 关键帧怎么读：Fiona 的办法（片段里不动的骨等于参考姿势）在这里不成立：她握剑的手指整段都不动。改成两步：
+  - 骨骼到父骨的偏移不会变，比一比就知道要不要按 Y 镜像（镜像 0.0 毫米，不镜像 116 毫米）；
+  - 四元数取不取共轭，看哪种读法让她站起来（头比脚高 112 厘米，另一种 −80 厘米）。
+  - 结果是"Y 镜像 + 共轭"，和 Python 里按骨架层级算正向运动学的结论一样。
+- 组件空间：剑星的角色朝 +X，`sb_fbx.py` 把她转成朝 −Y，所以 UE 的 (x, y, z) 是她模型的 (y, z, x)。
+- 回放检查：转出来的动画放回她身上，手、脚、头、剑尖和游戏姿势相差 0.0 厘米（同一副骨架、同一个 avatar，来回没有损失）。
+
+**她的剑**（血刃，`tools/sb_weapons.py`）
+
+- 游戏的 `CH_W_Sword_01`，展开状态，全长 1.4 米，三个材质槽。刃口那个槽在游戏里透明度为 0（技能时才亮），去掉了。贴图是父材质 `CH_W_Sword_02` 自己的：颜色、法线、ORM。
+- 挂在哪：
+  - 每个剑技动画都给 `Bip001-Prop1` 打关键帧。它在 Bip001 下面，不在手下。普通招式里它跟着手走（相对右手转 86°、偏 6 厘米）；Burst 回旋斩、Beta 锁链突刺里剑离手飞出去（最远 1.2 米）。
+  - 用骨架正向运动学核对过：游戏是让剑自己的根骨 `Weapon_Root` 和 Prop1 重合。这样锁定走路时剑尖朝正前方、离地 74 厘米；如果直接把剑的组件放在 Prop1 上，剑会朝下插进地里。
+- 人形动画里没有 Prop1，所以剑挂在她右手下面的持剑点 `SB_Sword` 上（绑定姿势时在 Prop1 的位置）。她自己的每个动画都给持剑点打关键帧：游戏里 Prop1 相对右手在哪，持剑点就在哪。
+  普通招式里剑在手里，技能里剑照游戏飞出去。
+- `VdfFighter.AttachWeapons` 扩展了：武器目录可以在 `Assets/SB/<id>` 下；`holder` / `prop`（持剑点）、`rootTurn`（网格先转到它根骨的坐标系）、`drop`（去掉的材质槽）。
+  `SbFighter.Build` 最后挂剑。打中用剑尖（`RoeBlade`），和 Fiona 一样。
+
+**挑招**：19 个候选（`tools/motionpacks/sb_eve_candidates.json`）
+
+- 视频 `out\eve_nikke06_sword_candidates.mp4`：每招先实速、再半速。总览图 `out\eve_nikke06_sword_candidates_sheet.jpg`：按键后每 0.1 秒一格，红条是能打中的时间。
+- 先把每个剑技整段导进来，量剑尖每帧的位置（`RoeMotionPacks.Import -roeTips`），按剑尖的挥动段落定每招截到哪里。
+
+**默认四招**（`tools/motionpacks/sb_eve.json`）
+
+| 键 | 招式 | 出处 | 能打中 | 够到 | 段 |
+|---|---|---|---|---|---|
+| A | 冲步横斩 | 正式版轻攻击 1（`P_Eve_Sword_Normal_LightAttack1_Connect1_Rfront`）0–0.75 秒 | 0.10–0.25 秒 | 2.51 米 | 中段 |
+| B | 回身低斩 | 轻攻击 2（`LIghtAttack2_2`）0–1.1 秒：转身、深弓步往下斩 | 0.45–0.63 秒 | 3.20 米 | 下段 |
+| C | 两段斩 | 重攻击 4（`StrongAttack4`）0–1.2 秒 | 0.07–0.77 秒 | 4.09 米 | 中段 |
+| D | 挑空斩（击倒） | 地面挑空（`Sword_Ground_Upper`）0–1.0 秒：突进、往上挑 | 0.32–0.47 秒 | 3.00 米 | 中段 |
+
+- 够到的距离包括游戏里的前冲（1–2 米）：动画里的前冲扣掉，对战时按时间加回去（`Move.travel`），总的走位和游戏一样。
+- 站架：锁定敌人时的战斗待机（剑在身后压低）。走、退、跑：锁定时的走路和跑。
+- 受击：站立轻受击（`Result_Hit_Stand_Light_Fw`）。倒地：被打飞仰倒（`Result_Knock_Down_Backward`）。躺地：仰躺循环（`Result_State_KnockDown_L`）。起身：`Getup_Center`。
+- 开场：举剑到脸前（`P_Eve_Sword_Normal_Buff1`）。胜利：跃起转剑、落成 Burst 架势（`P_Eve_Sword_Burst_MeleeCombatBuff1`）。
+- 技能：
+  - 技能 1：Beta 锁链突刺（`P_Eve_Sword_Beta_ChainStab1_Ex`），剑脱手往前射出去，打三下（0.80 / 1.00 / 1.42 秒）。
+  - 技能 2：Beta 蓄力斩（`P_Eve_Sword_Beta_ChargeSlash2_Ex`），腾空两段斩（0.58 / 0.92 秒）。
+  - 超必杀：Burst 回旋斩（`P_Eve_Sword_Burst_SpinAttack1`），空中倒转回旋（0.55 / 1.30 / 1.88 秒）。
+  - 技能是"先滑到对手面前再出招"：`radius` 是停在多远，锁链突刺够得远，给 1.6 米，另外两个 1.0 米。
+- 没选的：重攻击 5（扑倒在地上滑）、重攻击 7 / 8（扑斩、翻滚收尾）、新月斩（起手太慢）、Beta 破盾（翻滚冲 6 米）、原型招式（原地小动作）。
+- 脚：以前是 `"feet": "bind"`（套别的动作时，脚踝固定在绑定角度配她的鞋）。现在是她自己的动作，脚踝跟着游戏走，去掉了。
+- eve09、eve37 还是原来的动作包和 UFE 2 的技能（这次只改了 eve_nikke06）。同一副骨架，要用就把 `tools/sb/eve09.json` 照这个改。
+
+**录像**
+
+- 四招：`out\eve_nikke06_sword_strikes.mp4`（每招先实速再半速）。总览图 `out\eve_nikke06_sword_moves_sheet.jpg`。
+- 电脑对电脑（对 eve09，90 秒）：`out\fight_cpu_match_eve_nikke06_own.mp4`。第一回合她把 eve09 打到 279 血（两次打倒），62 秒时被 eve09 的技能打倒；第二回合录到 90 秒时她 660 血、eve09 581 血。
+- 爆衣演示重录（Inase 打她）：`out\clothes_burst_demo_eve_nikke06.mp4`。
+
+```powershell
+# 1. 发型：导出 Alice 的发型（.psk），装到归档的 .blend 上，再导 FBX（.blend 不保存）
+& 'E:\tools\cue4parse_cli_ff7\cue4parse.exe' -i 'D:\Program Files (x86)\Steam\steamapps\common\StellarBlade\SB\Content\Paks' -g GAME_StellarBlade -m 'E:\game_export\StellarBlade\_meta\mappings\StellarBlade_1.1.0.usmap' -o _work\sb\alice_hair -y -p 'SB/Content/DLC_2/Art/Character/PC/00_HR/EVE_HR_Nikke_06/EVE_HR_Nikke_06.*'
+& 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup 'E:\game_export\StellarBlade\Eve\blend\CH_P_EVE_Nikke_06\Eve_CH_P_EVE_Nikke_06.blend' --python tools\sb_hair.py --python tools\sb_fbx.py -- Assets\SB\eve_nikke06 eve_nikke06 --hair _work\sb\alice_hair\SB\Content\DLC_2\Art\Character\PC\00_HR\EVE_HR_Nikke_06\EVE_HR_Nikke_06.psk
+python tools\sb_textures.py Assets\SB\eve_nikke06 --mi-dir DLC_2/Art/Character/PC/CH_P_EVE_Nikke_06/Mat --mi-dir DLC_2/Art/Character/PC/00_HR/EVE_HR_Nikke_06/Materials
+python tools\sb_physics.py Assets\SB\eve_nikke06 --outfit CH_P_EVE_Nikke_06 --dlc DLC_2 --hair EVE_HR_Nikke_06 --hair-dlc DLC_2
+# 2. 剑和动作：剑的贴图和清单，导出她的动作，建角色（挂剑），转人形动画
+python tools\sb_weapons.py Assets\SB\eve_nikke06
+python tools\sb_anims.py export
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','eve_nikke06'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbAnims.Import -Graphics -Extra '-roeSb','eve_nikke06'
+# 3. 候选、定下的四招、场景
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/sb_eve_candidates.json','-roeTips','E:\code\othercode\roe_fighter_unity\_work\sword_tips_eve_cand'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/sb_eve.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','eve_nikke06'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+# 4. 录像
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','sb_eve_candidates','-roeChars','eve_nikke06','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_eve_cand'
+python tools\strike_demo_video.py _work\strike_takes_eve_cand out\eve_nikke06_sword_candidates.mp4 --pack tools/motionpacks/sb_eve_candidates.json --id eve_nikke06
+python tools\takes_sheet.py _work\strike_takes_eve_cand out\eve_nikke06_sword_candidates_sheet.jpg --pack tools\motionpacks\sb_eve_candidates.json
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','sb_eve','-roeChars','eve_nikke06','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_eve_final'
+python tools\strike_demo_video.py _work\strike_takes_eve_final out\eve_nikke06_sword_strikes.mp4 --pack tools/motionpacks/sb_eve.json --id eve_nikke06
+python tools\takes_sheet.py _work\strike_takes_eve_final out\eve_nikke06_sword_moves_sheet.jpg --pack tools\motionpacks\sb_eve.json --cols 12 --tile 200
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve_nikke06','-roeP2','eve09','-roeSeconds','90','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve_nikke06_own'
+python tools\make_video.py _work\fight_eve_nikke06_own out\fight_cpu_match_eve_nikke06_own.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','eve_nikke06','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_eve_nikke06_own'
+python tools\burst_video.py _work\burst_demo_eve_nikke06_own out\clothes_burst_demo_eve_nikke06.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
 ```

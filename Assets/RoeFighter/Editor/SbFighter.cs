@@ -18,7 +18,9 @@ namespace RoeFighter.EditorTools
     ///   - puts her game's KawaiiPhysics nodes (RoeKawaiiRig) and spring bones and rigid bodies (RoeSbRig) on the fighter
     ///     prefab, for the "stellar" physics (RoeSbPhysics; F4, and "auto" takes it for her);
     ///   - checks where the game's shapes land on her: each capsule against her skin, each rigid body's shapes, each joint's
-    ///     rest (where the game's constraint frames put the child against where her bones have it).
+    ///     rest (where the game's constraint frames put the child against where her bones have it);
+    ///   - hangs her sword in her right hand when tools/sb_weapons.py listed it (VdfFighter.AttachWeapons: a holder where the
+    ///     game's prop bone stands, which her own clips key - SbAnims).
     /// Her fight definition: tools/sb/&lt;id&gt;.json (DoaFighter.Load).
     ///   -executeMethod RoeFighter.EditorTools.SbFighter.Build [-roeSb eve09]
     /// </summary>
@@ -41,6 +43,9 @@ namespace RoeFighter.EditorTools
                 return null;
             VdfFighter.AttachKawaii(id, dir);
             AttachSb(id, dir);
+            // her sword (tools/sb_weapons.py: Assets/SB/<id>/weapons/weapons.json), on a holder in her right hand that her own
+            // clips key (SbAnims); none listed: none
+            VdfFighter.AttachWeapons(id, dir);
             return AssetDatabase.LoadAssetAtPath<GameObject>(RoeHumanoid.FighterPath(id));
         }
 

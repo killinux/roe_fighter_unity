@@ -43,7 +43,7 @@ namespace RoeFighter.EditorTools
         const string Skip = "Interactive|Ladder|Narrow|Campsite|Quick_|Slope|_Jump_|_BIP$|_AS_TEST|Emo_Dance|Emo_Followme|Emo_Rest|Drink_Potion|_Run_[FLR]$";
         const string Loops = "_Loop$|[Ii]dle$|_During$";
 
-        class Psa
+        internal class Psa
         {
             public string name;
             public string[] bones;
@@ -65,7 +65,7 @@ namespace RoeFighter.EditorTools
         }
 
         /// <summary>An ActorX .psa as UE Viewer writes it: BONENAMES (120 bytes each), ANIMINFO (one, 168 bytes), ANIMKEYS (32 bytes).</summary>
-        static Psa Read(string path)
+        internal static Psa Read(string path)
         {
             var data = File.ReadAllBytes(path);
             var psa = new Psa { name = Path.GetFileNameWithoutExtension(path) };
@@ -94,19 +94,19 @@ namespace RoeFighter.EditorTools
 
         // A key read as Unreal's own local rotation: 0 as written, 1 conjugated, 2 mirrored in Y, 3 mirrored and conjugated
         // (ActorX: 3ds Max is right-handed and stores child rotations inverted).  The root is never conjugated.
-        static readonly string[] Readings = { "as written", "conjugated", "mirrored in Y", "mirrored in Y + conjugated" };
+        internal static readonly string[] Readings = { "as written", "conjugated", "mirrored in Y", "mirrored in Y + conjugated" };
 
-        static Quaternion Ue(Quaternion k, int reading) =>
+        internal static Quaternion Ue(Quaternion k, int reading) =>
             reading == 0 ? k :
             reading == 1 ? new Quaternion(-k.x, -k.y, -k.z, k.w) :
             reading == 2 ? new Quaternion(-k.x, k.y, -k.z, k.w) :
                            new Quaternion(k.x, -k.y, k.z, k.w);
 
-        static Vector3 Ue(Vector3 p, int reading) => reading >= 2 ? new Vector3(p.x, -p.y, p.z) : p;
+        internal static Vector3 Ue(Vector3 p, int reading) => reading >= 2 ? new Vector3(p.x, -p.y, p.z) : p;
 
         // Unreal bone space -> the bone's frame in her rig: a half turn about z, (-x, -y, z)
-        static Quaternion Local(Quaternion q) => new Quaternion(-q.x, -q.y, q.z, q.w);
-        static Vector3 Local(Vector3 p) => new Vector3(-p.x, -p.y, p.z) * 0.01f;
+        internal static Quaternion Local(Quaternion q) => new Quaternion(-q.x, -q.y, q.z, q.w);
+        internal static Vector3 Local(Vector3 p) => new Vector3(-p.x, -p.y, p.z) * 0.01f;
 
         // Unreal component space -> her model's: (-x, z, y), a half turn about (0, 1, 1); the bone frame turned as above
         static readonly Quaternion WorldTurn = new Quaternion(0f, 0.70710678f, 0.70710678f, 0f);

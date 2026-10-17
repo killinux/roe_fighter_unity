@@ -14,7 +14,8 @@ textures as PNG into _work/sb/tex - both caches, read again on the next run) and
     its Color;
   - the lace (MA_DitherAlpha): colour cut out by its alpha, its emissive map in its Emissive Color;
   - hair (MA_CH_Hair: root / tip colours x Brightness) and the ponytail (Mat_Hair_V1: the two gradient colours), cut out by
-    their alpha map; brows (BaseColour cut out by the mask's red);
+    their alpha map - a hairstyle with its own cards' map (HairTexture *_ADIR: alpha, depth, ID, root) by that map's red,
+    the "Alpha" its instance also names being the generic ponytail atlas; brows (BaseColour cut out by the mask's red);
   - the eyes: the .blend's own colour (sb_fbx.py bakes the iris into it); teeth: the .blend's maps;
   - the eye's wet film, shadow shell, the teeth's occlusion card and the head's unused "NewMaterial": hidden (alpha 0).
 unity.json is what VdfFighter's builder reads (SbFighter.Build), plus emission (map, colour).
@@ -60,7 +61,7 @@ def cli(*patterns, fmt=None, out=None):
 def mi_json(name, opts):
     """The material instance's exported properties (CUE4Parse JSON) from the first folder that has it; the candidates are
     exported (one CLI run) when none is cached."""
-    dirs = ([opts.mi_dir] if opts.mi_dir else []) + MI_DIRS
+    dirs = list(opts.mi_dir or []) + MI_DIRS
     paths = [os.path.join(JSON_DIR, "SB", "Content", d.replace("/", os.sep), name + ".json") for d in dirs]
     if not any(os.path.exists(p) for p in paths):
         cli(*[f"SB/Content/{d}/{name}.*" for d in dirs], fmt="json", out=JSON_DIR)
@@ -139,7 +140,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("folder")
     ap.add_argument("--size", type=int, default=2048)
-    ap.add_argument("--mi-dir", default="", help="the outfit's material folder first (default: CH_P_EVE_09's)")
+    ap.add_argument("--mi-dir", action="append", default=[],
+                    help="a material folder searched before the defaults (the outfit's, a hairstyle's; repeatable)")
     opts = ap.parse_args()
     side = json.load(open(os.path.join(opts.folder, "materials.json"), encoding="utf-8"))
     tex_out = os.path.join(opts.folder, "textures")
@@ -249,13 +251,22 @@ def main():
             if parent == "MA_CH_Hair":
                 lin = 0.5 * (np.array(vec.get("RootColor", [0.1, 0.07, 0.05, 1])[:3]) + np.array(vec.get("TipColor", [0.1, 0.04, 0.02, 1])[:3]))
                 lin = lin * sca.get("Brightness", 1.0) * 2.0
+                # a light colour (Alice's pink, 10-17) would clip to white: brought down whole, its hue kept
+                lin = lin / max(1.0, float(np.max(lin)))
             else:
                 lin = 0.5 * (np.array(vec.get("Color Gradient A", [0.02, 0.01, 0.01, 1])[:3]) + np.array(vec.get("Color Gradient B", [0.09, 0.07, 0.07, 1])[:3]))
-            a_path = texture(tex.get("Alpha")) or d.get("alpha_map")
-            m = load(a_path, opts.size, "RGBA")
-            arr = np.asarray(m, np.float32) / 255.0
-            # the alpha map's coverage: its alpha when it has one, else its red
-            alpha = arr[..., 3] if float(arr[..., 3].min()) < 0.99 else arr[..., 0]
+            # the coverage: a hairstyle's own cards' map (EVE_HR_Nikke_06_ADIR, 10-17: alpha in red, then depth, strand ID,
+            # root) - its instance's "Alpha" is the generic ponytail atlas, which leaves the back of Alice's head see-through;
+            # else the alpha map's alpha when it has one, else its red
+            hair_tex = tex.get("HairTexture") or ""
+            if hair_tex.split(".")[0].endswith("_ADIR"):
+                arr = np.asarray(load(texture(hair_tex), opts.size, "RGBA"), np.float32) / 255.0
+                alpha = arr[..., 0]
+            else:
+                a_path = texture(tex.get("Alpha")) or d.get("alpha_map")
+                m = load(a_path, opts.size, "RGBA")
+                arr = np.asarray(m, np.float32) / 255.0
+                alpha = arr[..., 3] if float(arr[..., 3].min()) < 0.99 else arr[..., 0]
             rgb = np.broadcast_to(linear_to_srgb(np.array(lin, np.float32)), alpha.shape + (3,)).copy()
             out = os.path.join(tex_out, f"{stem}_albedo.png")
             save_rgba(rgb, alpha, out)

@@ -232,6 +232,14 @@ namespace RoeFighter.EditorTools
         class Weapon
         {
             public string name, socket, psk, albedo, normal, mask;
+            // Eve's sword (tools/sb_weapons.py, 10-17): hung on a holder under the socket (the hand) that stands where the
+            // prop bone (Bip001 Prop1, under Bip001 in her rig) has its bind pose - her clips move the holder as the game
+            // moves the prop bone against the hand (SbAnims); rootTurn: the mesh in its own root bone's frame (the game puts
+            // the sword's Weapon_Root on the prop bone); drop: material slots left out (the blade's edge, see-through
+            // until a skill lights it)
+            public string holder, prop;
+            public bool rootTurn;
+            public int[] drop;
         }
 
         /// <summary>
@@ -250,9 +258,11 @@ namespace RoeFighter.EditorTools
             AssetDatabase.SaveAssets();
         }
 
-        public static void AttachWeapons(string id)
+        public static void AttachWeapons(string id) => AttachWeapons(id, Dir(id));
+
+        public static void AttachWeapons(string id, string root_dir)
         {
-            string dir = $"{Dir(id)}/weapons";
+            string dir = $"{root_dir}/weapons";
             string listPath = $"{dir}/weapons.json";
             if (!File.Exists(listPath))
             {
@@ -308,7 +318,7 @@ namespace RoeFighter.EditorTools
                 BaseShaderGUI.SetMaterialKeywords(mat);
                 EditorUtility.SetDirty(mat);
                 // mesh
-                var mesh = ReadPsk(w.psk, w.name, out string meshNote);
+                var mesh = ReadPsk(w.psk, w.name, out string meshNote, w.rootTurn, w.drop);
                 string meshPath = $"{dir}/{w.name}_mesh.asset";
                 AssetDatabase.DeleteAsset(meshPath);
                 AssetDatabase.CreateAsset(mesh, meshPath);
@@ -319,11 +329,27 @@ namespace RoeFighter.EditorTools
                     notes.Add($"{w.name}: NO socket bone {w.socket} in her rig - left out");
                     continue;
                 }
-                var old = socket.Find(w.name);
+                var parent = socket;
+                if (!string.IsNullOrEmpty(w.holder))
+                {
+                    var prop = root.GetComponentsInChildren<Transform>(true).FirstOrDefault(t => t.name == w.prop);
+                    if (prop == null)
+                    {
+                        notes.Add($"{w.name}: NO prop bone {w.prop} in her rig - left out");
+                        continue;
+                    }
+                    var oldHolder = socket.Find(w.holder);
+                    if (oldHolder != null)
+                        Object.DestroyImmediate(oldHolder.gameObject);
+                    parent = new GameObject(w.holder).transform;
+                    parent.SetParent(socket, false);
+                    parent.SetPositionAndRotation(prop.position, prop.rotation);
+                }
+                var old = parent.Find(w.name);
                 if (old != null)
                     Object.DestroyImmediate(old.gameObject);
                 var go = new GameObject(w.name);
-                go.transform.SetParent(socket, false);
+                go.transform.SetParent(parent, false);
                 go.AddComponent<MeshFilter>().sharedMesh = mesh;
                 go.AddComponent<MeshRenderer>().sharedMaterial = mat;
                 // where it lands on her bind pose: the far end of the mesh from the socket
@@ -336,8 +362,9 @@ namespace RoeFighter.EditorTools
                     blade.hilt = Vector3.zero;
                     blade.tip = far;
                 }
-                notes.Add($"{w.name} on {socket.parent.name}/{w.socket}: {meshNote}; farthest point {100f * far.magnitude:F0} cm from the socket, " +
-                          $"at {go.transform.TransformPoint(far)} (socket at {socket.position})");
+                notes.Add($"{w.name} on {socket.parent.name}/{w.socket}{(parent != socket ? "/" + parent.name : "")}: {meshNote}; farthest point " +
+                          $"{100f * far.magnitude:F0} cm from {(parent != socket ? "the holder" : "the socket")}, at {go.transform.TransformPoint(far)} " +
+                          $"(socket at {socket.position})");
             }
             PrefabUtility.SaveAsPrefabAsset(root, path);
             PrefabUtility.UnloadPrefabContents(root);
@@ -346,9 +373,11 @@ namespace RoeFighter.EditorTools
 
         /// <summary>
         /// A rigid mesh from a UE Viewer .psk (PNTS, VTXW, FACE, VTXNORMS): a vertex per wedge, positions and normals in the
-        /// socket bone's frame in metres, UVs flipped to Unity's origin, tangents recalculated.
+        /// socket bone's frame in metres, UVs flipped to Unity's origin, tangents recalculated.  rootTurn: the points first
+        /// taken into the frame of the mesh's root bone (REFSKELT's first orientation, as written: Eve's sword lies along its
+        /// Weapon_Root's x); drop: the faces of those material slots left out.
         /// </summary>
-        static Mesh ReadPsk(string path, string name, out string note)
+        static Mesh ReadPsk(string path, string name, out string note, bool rootTurn = false, int[] drop = null)
         {
             var data = File.ReadAllBytes(path);
             var chunks = new Dictionary<string, (int at, int size, int count)>();
@@ -360,7 +389,22 @@ namespace RoeFighter.EditorTools
                 off += 32 + size * count;
             }
             float F(int at) => System.BitConverter.ToSingle(data, at);
-            Vector3 Unity(Vector3 v) => new Vector3(-v.x, v.y, v.z);       // mirrored in Y (ActorX) -> Unreal -> her bone frame
+            // the root bone's turn, undone (its rows: the transpose of its matrix)
+            var turn = Matrix4x4.identity;
+            if (rootTurn && chunks.TryGetValue("REFSKELT", out var sk))
+            {
+                float qx = F(sk.at + 76), qy = F(sk.at + 80), qz = F(sk.at + 84), qw = F(sk.at + 88);
+                var m = Matrix4x4.identity;
+                m.m00 = 1 - 2 * (qy * qy + qz * qz); m.m01 = 2 * (qx * qy - qz * qw); m.m02 = 2 * (qx * qz + qy * qw);
+                m.m10 = 2 * (qx * qy + qz * qw); m.m11 = 1 - 2 * (qx * qx + qz * qz); m.m12 = 2 * (qy * qz - qx * qw);
+                m.m20 = 2 * (qx * qz - qy * qw); m.m21 = 2 * (qy * qz + qx * qw); m.m22 = 1 - 2 * (qx * qx + qy * qy);
+                turn = m.transpose;
+            }
+            Vector3 Unity(Vector3 v)                                        // mirrored in Y (ActorX) -> Unreal -> her bone frame
+            {
+                v = turn.MultiplyVector(v);
+                return new Vector3(-v.x, v.y, v.z);
+            }
             var (pa, _, pc) = chunks["PNTS0000"];
             var points = new Vector3[pc];
             for (int i = 0; i < pc; i++)
@@ -387,11 +431,21 @@ namespace RoeFighter.EditorTools
             }
             bool wideFaces = !chunks.ContainsKey("FACE0000");
             var (fa, fs, fc) = wideFaces ? chunks["FACE3200"] : chunks["FACE0000"];
+            // faces of the slots left out are skipped (the material index follows the three wedge indices)
+            var kept = new List<int>(fc);
+            for (int i = 0; i < fc; i++)
+            {
+                int material = data[fa + fs * i + (wideFaces ? 12 : 6)];
+                if (drop == null || !drop.Contains(material))
+                    kept.Add(i);
+            }
+            int dropped = fc - kept.Count;
+            fc = kept.Count;
             var tris = new int[fc * 3];
             int agree = 0;
             for (int i = 0; i < fc; i++)
             {
-                int at = fa + fs * i;
+                int at = fa + fs * kept[i];
                 for (int k = 0; k < 3; k++)
                     tris[3 * i + k] = wideFaces ? System.BitConverter.ToInt32(data, at + 4 * k) : System.BitConverter.ToUInt16(data, at + 2 * k);
                 var a = vertices[tris[3 * i]];
@@ -413,7 +467,8 @@ namespace RoeFighter.EditorTools
             mesh.triangles = tris;
             mesh.RecalculateBounds();
             mesh.RecalculateTangents();
-            note = $"{pc} points, {wc} vertices, {fc} triangles ({(flip ? "wound round" : "as written")}: {Mathf.Max(agree, fc - agree)} of {fc} face the normals' way), " +
+            note = $"{pc} points, {wc} vertices, {fc} triangles{(dropped > 0 ? $" ({dropped} of the slots {string.Join(",", drop)} left out)" : "")} " +
+                   $"({(flip ? "wound round" : "as written")}: {Mathf.Max(agree, fc - agree)} of {fc} face the normals' way), " +
                    $"size {100f * mesh.bounds.size.x:F0} x {100f * mesh.bounds.size.y:F0} x {100f * mesh.bounds.size.z:F0} cm";
             return mesh;
         }

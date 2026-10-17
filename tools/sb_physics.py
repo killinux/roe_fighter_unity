@@ -1,9 +1,10 @@
 """Stellar Blade's own physics for Eve, read out of the game (user 10-05: "物理能用剑星自己的就用自己的，次选项才是用magic cloth2"):
 
-    python tools/sb_physics.py Assets/SB/<id> [--outfit CH_P_EVE_09] [--hair EVE_HR_01] [--dlc DLC_2]
+    python tools/sb_physics.py Assets/SB/<id> [--outfit CH_P_EVE_09] [--hair EVE_HR_01] [--dlc DLC_2] [--hair-dlc DLC_2]
 
 (--dlc: an outfit of a DLC lives under SB/Content/<dlc>/Art/Character/PC - the NIKKE collaboration's CH_P_EVE_Nikke_06,
-10-17; her main blueprint and hair stay the base game's.)
+10-17; her main blueprint stays the base game's.  --hair-dlc: the same for the hairstyle - Alice's EVE_HR_Nikke_06, whose
+twin tails are all KawaiiPhysics (65 nodes in its blueprint) and which has no ponytail component: no rigid ponytail then.)
 
 Everything comes from the game's cooked packages through the CUE4Parse CLI with the community .usmap (-f json, cached in
 _work/sb/research/json; exported here when missing).  What the game runs on her (docs/stellar-blade-eve.md):
@@ -58,6 +59,15 @@ def game_json(package):
     if not os.path.exists(path):
         raise SystemExit(f"could not export {package}")
     return json.load(open(path, encoding="utf-8-sig"))
+
+
+def exists(package):
+    """Whether the game has that package (exported, as game_json does, when not cached)."""
+    path = os.path.join(JSON_DIR, package.replace("/", os.sep) + ".json")
+    if not os.path.exists(path):
+        subprocess.run([CLI, "-i", PAKS, "-g", "GAME_StellarBlade", "-m", USMAP, "-f", "json", "-o", JSON_DIR, "-y",
+                        "-p", package + ".*"], capture_output=True)
+    return os.path.exists(path)
 
 
 def cdo(package):
@@ -298,8 +308,10 @@ def main():
     ap.add_argument("--outfit", default="CH_P_EVE_09")
     ap.add_argument("--hair", default="EVE_HR_01")
     ap.add_argument("--dlc", default="", help="the outfit's DLC folder (DLC_2: the NIKKE collaboration's outfits)")
+    ap.add_argument("--hair-dlc", default="", help="the hairstyle's DLC folder (DLC_2: Alice's EVE_HR_Nikke_06)")
     a = ap.parse_args()
     outfit_pc = f"SB/Content/{a.dlc}/Art/Character/PC" if a.dlc else PC    # where the outfit's own assets are
+    hair_pc = f"SB/Content/{a.hair_dlc}/Art/Character/PC" if a.hair_dlc else PC
     # her bones, as tools/sb_fbx.py exported them
     have = {b["name"] for b in json.load(open(os.path.join(a.folder, "bones.json"), encoding="utf-8"))["bones"]}
 
@@ -308,7 +320,7 @@ def main():
     nodes = []
     nodes += kawaii_nodes(f"{PC}/CH_P_EVE_01/Blueprints/CH_P_EVE_01_AnimBP_New", "CH_P_EVE_01_AnimBP_New",
                           lambda r: "hair" if "Hair" in r else "ribbon")
-    nodes += kawaii_nodes(f"{PC}/00_HR/{a.hair}/{a.hair}_AnimBP", f"{a.hair}_AnimBP", hair_kind, root_alias="Hair_Root")
+    nodes += kawaii_nodes(f"{hair_pc}/00_HR/{a.hair}/{a.hair}_AnimBP", f"{a.hair}_AnimBP", hair_kind, root_alias="Hair_Root")
     nodes += kawaii_nodes(f"{outfit_pc}/{a.outfit}/Blueprints/{a.outfit}_AnimBP", f"{a.outfit}_AnimBP",
                           lambda r: "skirt" if "Skirt" in r else "ribbon" if "Neck" in r or "Tie" in r else "chain")
     missing = [n["root"] for n in nodes if n["root"] not in have]
@@ -322,9 +334,14 @@ def main():
     # the ponytail component's skeleton has its own "Root" (where it hangs on the head socket): not a bone of hers, so its
     # bodies there (a head capsule; the outfit set's big flat box behind the head) are left out
     tail_root = "(ponytail root)"
-    tail_bodies, tail_joints = physics_asset(f"{PC}/00_HR/{a.hair}/{a.hair}_Tail_PhysicsAsset", have, "ponytail",
-                                             "Ab-TL-HairB03", root_alias=tail_root)
-    tail_coll, _ = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_PonytailPhysicsAsset", have, "ponytail", "", root_alias=tail_root)
+    tail_asset = f"{hair_pc}/00_HR/{a.hair}/{a.hair}_Tail_PhysicsAsset"
+    if exists(tail_asset):
+        tail_bodies, tail_joints = physics_asset(tail_asset, have, "ponytail", "Ab-TL-HairB03", root_alias=tail_root)
+        tail_coll, _ = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_PonytailPhysicsAsset", have, "ponytail", "", root_alias=tail_root)
+    else:
+        # a hairstyle without a ponytail component (Alice's): nothing rigid, nor the outfit's colliders for it
+        print(f"{a.hair}: no ponytail physics asset ({tail_asset}) - no rigid ponytail")
+        tail_bodies, tail_joints, tail_coll = [], [], []
     body_bodies, body_joints = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeL01")
     _, cape_r = physics_asset(f"{outfit_pc}/{a.outfit}/{a.outfit}_Physics", have, "cape", "Ab_CapeR01")
     capes = {b["bone"] for b in body_bodies if b["bone"].startswith("Ab_Cape")}
@@ -343,7 +360,7 @@ def main():
         b["chain"] = "ponytail"
     tail_joints = [j for j in tail_joints if j["child"] in {b["bone"] for b in tail_bodies if b["simulate"]}]
     data = {
-        "source": f"Stellar Blade (1.4.1): springs from CH_P_EVE_01_AnimBP_New, rigid bodies from {a.hair}_Tail_PhysicsAsset + "
+        "source": f"Stellar Blade (1.4.1): springs from CH_P_EVE_01_AnimBP_New, rigid bodies from {a.hair}_Tail_PhysicsAsset (when it has one) + "
                   f"{a.outfit}_PonytailPhysicsAsset (ponytail) and {a.outfit}_Physics (back panels); UE units (cm, kg, degrees), "
                   "UE bone space; simulated in the fighter's local space as the game's components do (bLocalSpaceSimulation)",
         "springs": sp,
