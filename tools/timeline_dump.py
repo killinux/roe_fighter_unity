@@ -13,6 +13,15 @@ import UnityPy
 HERE = os.path.dirname(os.path.abspath(__file__))
 PROJECT = os.path.dirname(HERE)
 AB = r'D:\Program Files (x86)\Steam\steamapps\common\Rise of Eros\RiseOfEros_Data\StreamingAssets\AssetBundles'
+# the game's hot updates: newer copies of some bundles, which the game loads instead (10-17: b14's outfit1 unit there moves
+# the hits of her super by 0.1 s against the one in the install)
+LOCAL = os.path.expandvars(r'%USERPROFILE%\AppData\LocalLow\Pinkcore\Rise of Eros\AssetBundles')
+
+
+def bundle_path(name):
+    """A bundle as the game loads it: the hot-updated copy if there is one."""
+    local = os.path.join(LOCAL, name)
+    return local if os.path.exists(local) else os.path.join(AB, name)
 
 
 class Game:
@@ -24,7 +33,7 @@ class Game:
         self.bundle_of = {}     # cab name -> bundle file name
 
     def load_bundle(self, name):
-        env = UnityPy.load(os.path.join(AB, name))
+        env = UnityPy.load(bundle_path(name))
         for bundle in env.files.values():
             for cab, sf in getattr(bundle, 'files', {}).items():
                 if hasattr(sf, 'objects'):
@@ -36,7 +45,7 @@ class Game:
         cab = cab.lower()
         if cab not in self.files:
             bundle = self.index.get(cab)
-            if bundle is None or not os.path.exists(os.path.join(AB, bundle)):
+            if bundle is None or not os.path.exists(bundle_path(bundle)):
                 self.files[cab] = None
             else:
                 self.load_bundle(bundle)

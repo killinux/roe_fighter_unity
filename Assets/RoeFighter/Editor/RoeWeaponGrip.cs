@@ -68,9 +68,14 @@ namespace RoeFighter.EditorTools
 
         static string GripJson(string id) => $"tools/roe/{id}_grip.json";
 
-        static GripFile GameGrips(string id)
+        static GripFile GameGrips(string id) => GameGrips(id, out _);
+
+        static GripFile GameGrips(string id, out string file)
         {
-            string path = Path.Combine(Path.GetDirectoryName(Application.dataPath), GripJson(id));
+            file = GripJson(id);
+            if (!File.Exists(Path.Combine(Path.GetDirectoryName(Application.dataPath), file)))
+                file = GripJson(RoeManifest.SuitOf(id));        // a recolour holds its weapon as its suit does (b14_outfit1: b14's)
+            string path = Path.Combine(Path.GetDirectoryName(Application.dataPath), file);
             return File.Exists(path) ? JsonUtility.FromJson<GripFile>(File.ReadAllText(path)) : null;
         }
 
@@ -147,10 +152,10 @@ namespace RoeFighter.EditorTools
                 }
                 // the game's own grip, when tools/roe_grip.py measured it on her decoded animation (tools/roe/<id>_grip.json):
                 // sampled here, the imported rig turns the hand a few degrees otherwise than the game does
-                var fromGame = GameGrips(id);
+                var fromGame = GameGrips(id, out string gripFile);
                 if (fromGame != null)
                 {
-                    log.Append($" from {GripJson(id)}:");
+                    log.Append($" from {gripFile}:");
                     foreach (var r in roots)
                     {
                         var e = fromGame.grips.FirstOrDefault(x => x.bone == r.name);

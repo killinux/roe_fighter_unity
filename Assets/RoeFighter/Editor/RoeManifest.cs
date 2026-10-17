@@ -37,6 +37,7 @@ namespace RoeFighter.EditorTools
             public string hdAvatar;
             public string metaPrefab;
             public string ldPrefab;
+            public string outfitOf;         // a recolour of this suit (tools/roe_outfit.py: b14_outfit1 of b14)
             public List<Clip> clips = new List<Clip>();
             public List<string> weapons = new List<string>();
             public List<string> sfx = new List<string>();
@@ -70,6 +71,17 @@ namespace RoeFighter.EditorTools
         }
 
         public IEnumerable<Character> WithModels => characters.Where(c => c.HasModel);
+
+        /// <summary>The suit a recolour is of (b14_outfit1 -> b14), else the id itself: what it shares with its suit - the
+        /// clothes burst's rules, the grip on its weapon - is read under that.  Not a ROE fighter (no manifest, or not in
+        /// it): the id.</summary>
+        public static string SuitOf(string id)
+        {
+            if (!File.Exists(Path))
+                return id;
+            var c = Load().characters.FirstOrDefault(x => x.id == id);
+            return c != null && !string.IsNullOrEmpty(c.outfitOf) ? c.outfitOf : id;
+        }
 
         /// <summary>The characters named by -roeChars b10,g05 (batch argument), else every one with a model.</summary>
         public IEnumerable<Character> Chosen()

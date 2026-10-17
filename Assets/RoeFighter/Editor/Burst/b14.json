@@ -4,23 +4,23 @@
   "outfit": [
     {
       "renderer": "pc_b14_hd_Body01",
-      "material": "^pc_b14_hd_body1$"
+      "material": "^pc_b14_hd_(outfit1_)?body1$"
     },
     {
       "renderer": "pc_b14_hd_Body02",
-      "material": "^pc_b14_hd_body2$"
+      "material": "^pc_b14_hd_(outfit1_)?body2$"
     },
     {
       "renderer": "pc_b14_hd_Body02",
-      "material": "^pc_b14_hd_body2_Transparency$"
+      "material": "^pc_b14_hd_(outfit1_)?body2_Transparency$"
     },
     {
       "renderer": "pc_b14_hd_Body02",
-      "material": "^pc_b14_hd_body3$"
+      "material": "^pc_b14_hd_(outfit1_)?body3$"
     },
     {
       "renderer": "pc_b14_hd_head",
-      "material": "^pc_b14_hd_body1$"
+      "material": "^pc_b14_hd_(outfit1_)?body1$"
     }
   ],
   "nude": {
@@ -32,7 +32,7 @@
     "replace": [
       {
         "renderer": "pc_b14_hd_Body01",
-        "material": "^pc_b14_hd_skin$"
+        "material": "^pc_b14_hd_(outfit1_)?skin$"
       }
     ],
     "fill": [

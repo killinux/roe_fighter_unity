@@ -152,6 +152,14 @@ namespace RoeFighter.Fight
                 var band = Box("band", new Color(0f, 0f, 0f, 0.6f), new Vector2(0f, 0f), new Vector2(1f, 0.2f), inner);
                 var name = Label($"cardName{k}", rig != null ? rig.displayName : "?", 22, TextAnchor.MiddleCenter, Vector2.zero, Vector2.one);
                 name.transform.SetParent(band.transform, false);
+                // a long name shrinks into its card, on two lines if that is bigger (13 cards since 10-17: CRANE KART and PINK
+                // CRANE KART ran into each other at 22)
+                name.horizontalOverflow = HorizontalWrapMode.Wrap;
+                name.verticalOverflow = VerticalWrapMode.Truncate;
+                name.resizeTextForBestFit = true;
+                name.resizeTextMinSize = 10;
+                name.resizeTextMaxSize = 22;
+                name.lineSpacing = 0.85f;
                 cardTag[k] = Label($"cardTag{k}", "", 28, TextAnchor.LowerCenter, new Vector2(x - 0.02f, y1 + 0.01f), new Vector2(x + w + 0.02f, y1 + 0.06f));
             }
             for (int i = 0; i < 2; i++)

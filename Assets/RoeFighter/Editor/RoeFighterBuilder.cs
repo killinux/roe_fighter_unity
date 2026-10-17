@@ -214,15 +214,19 @@ namespace RoeFighter.EditorTools
 
         /// <summary>
         /// wp_a08_l (outfit a08) -> material "wp_a_08_hd".  A suit with several weapons has one material each, named
-        /// after the weapon: b10's wp_ax -> "wp_b_10_axe_hd" (the renderer's word starts the material's).
+        /// after the weapon: b10's wp_ax -> "wp_b_10_axe_hd" (the renderer's word starts the material's).  A recolour
+        /// (tools/roe_outfit.py) is named as the game names it, b14_outfit1 -> "wp_b_14_outfit1"; its weapon has only the
+        /// battle model's material, "wp_b_14_outfit1_ld": with no _hd one, the _ld one.
         /// </summary>
         static Material FindWeaponMaterial(RoeManifest.Character c, string rendererName)
         {
             string prefix = $"wp_{c.Family}_{c.id.Substring(1)}";
-            var found = AssetDatabase.FindAssets(prefix + " t:Material", new[] { "Assets/ROE" })
+            var all = AssetDatabase.FindAssets(prefix + " t:Material", new[] { "Assets/ROE" })
                 .Select(g => AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(g)))
-                .Where(m => m != null && m.name.StartsWith(prefix) && m.name.EndsWith("_hd")).ToList();
-            var exact = found.FirstOrDefault(m => m.name == prefix + "_hd");
+                .Where(m => m != null && m.name.StartsWith(prefix)).ToList();
+            string end = all.Any(m => m.name.EndsWith("_hd")) ? "_hd" : "_ld";
+            var found = all.Where(m => m.name.EndsWith(end)).ToList();
+            var exact = found.FirstOrDefault(m => m.name == prefix + end);
             if (exact != null)
                 return exact;
             var words = rendererName.Split('_').Skip(1).Where(w => w.Length > 1).Select(w => w.ToLowerInvariant()).ToList();

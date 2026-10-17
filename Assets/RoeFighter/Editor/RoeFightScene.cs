@@ -39,12 +39,15 @@ namespace RoeFighter.EditorTools
         static readonly Dictionary<string, string> DisplayNames = new Dictionary<string, string>
         {
             { "a08", "INASE" }, { "g04", "LUF" }, { "b10", "KART" }, { "g05", "GODDESS LUF" }, { "m02", "AMANO" }, { "b14", "CRANE KART" },
+            { "b14_outfit1", "PINK CRANE KART" },
         };
         // a word on each suit for the select screen (b14: a red-crowned crane sits on her belt; she is CRANE KART on the bars, so
-        // a match of the two Karts tells them apart, as GODDESS LUF and LUF)
+        // a match of the two Karts tells them apart, as GODDESS LUF and LUF; b14_outfit1: the same robe in pink and white, her hair
+        // white with pink ends)
         static readonly Dictionary<string, string> Outfits = new Dictionary<string, string>
         {
             { "a08", "Valkyrie" }, { "g04", "Porcelain" }, { "b10", "Agent" }, { "g05", "Goddess" }, { "m02", "Abyss" }, { "b14", "Crane" },
+            { "b14_outfit1", "Pink Crane" },
         };
 
         /// <summary>Who the scene holds (user 10-03: "b10，G05也把nude补全，加入战斗"; 10-04: "doa6中的 Kasumi也加入一个角色" -
@@ -55,8 +58,9 @@ namespace RoeFighter.EditorTools
         /// mai, Mai Shiranui from DOA6 like Kasumi: her stance and strikes are g04's, her game clips and physics her own; "eve有穿jk的衣服么，
         /// 换成这个角色我看下裙子的物理效果" - eve37, Eve in her pleated-skirt school look, Office Style; 10-11 "把m02也加入战斗，战斗动作也加入进来，作为3个技能使用" -
         /// m02, Amano's second suit (suit_amano_2): her game's three battle skills are her skill 1, skill 2 and super; "把kart
-        /// 最新的模型加入到游戏中" - b14, Kart's newest suit (suit_kart_14, the white and blue crane robe, 2026-09-12)).</summary>
-        public const string DefaultRoster = "a08,g04,b10,g05,m02,b14,kas,kas011,fio005,eve09,eve37,mai";
+        /// 最新的模型加入到游戏中" - b14, Kart's newest suit (suit_kart_14, the white and blue crane robe, 2026-09-12); 10-17 "要"
+        /// (her pink and white recolour as a fighter of its own) - b14_outfit1, tools/roe_outfit.py).</summary>
+        public const string DefaultRoster = "a08,g04,b10,g05,m02,b14,b14_outfit1,kas,kas011,fio005,eve09,eve37,mai";
 
         public static string PortraitPath(string id) => $"{RoeFighterBuilder.OutDir}/{id}/{id}_portrait.png";
         static readonly HashSet<string> Loops = new HashSet<string> { "guard", "walk", "walk_back", "side_left", "side_right", "run", "rip", "idle_01", "idle_02" };
@@ -582,7 +586,7 @@ namespace RoeFighter.EditorTools
             // ...and when the battle stance floats, the game's battle clips float as high (g05 23 cm): the fight brings
             // them down to the floor, the skills rise to the game's height (FighterRig.gameHover).  -roeHover g05=0 leaves
             // every clip as high as the game has it; -roeSkillsHover 0 brings the skills down too.
-            if (Table("-roeHover", "").TryGetValue(c.id, out var hoverArg))
+            if (Setting(Table("-roeHover", ""), c.id, out var hoverArg))
                 hover = float.Parse(hoverArg, CultureInfo.InvariantCulture);
             rig.gameHover = hover;
             bool skillsHover = RoeCapture.Arg("-roeSkillsHover", "1") != "0";
@@ -618,14 +622,14 @@ namespace RoeFighter.EditorTools
             // her planted thighs turned in or out against the pelvis no further than her skin was weighted for (FighterRig.rollFrom
             // : rollKeep : rollFoot; user 10-06 "大腿根的权重还是不对呀": Kart's axe strikes turn her bent thigh in 45-60 degrees,
             // her own game clips at most 36, and her leg stood like a W with the buttock hanging onto it; -roeLegRoll b10=15:0.3:0)
-            if (Table("-roeLegRoll", "b10=15:0.3:0").TryGetValue(c.id, out var legRoll))
+            if (Setting(Table("-roeLegRoll", "b10=15:0.3:0"), c.id, out var legRoll))
             {
                 var p = legRoll.Split(':');
                 rig.rollFrom = float.Parse(p[0], System.Globalization.CultureInfo.InvariantCulture);
                 rig.rollKeep = p.Length > 1 ? float.Parse(p[1], System.Globalization.CultureInfo.InvariantCulture) : 0.3f;
                 rig.rollFoot = p.Length > 2 ? int.Parse(p[2]) : 0;
             }
-            if (Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=a08_sword,b10=b10_axe,b14=b14_sword").TryGetValue(c.id, out var own))
+            if (Setting(Table("-roeOwnStrikes", "g04=doa6_mai,g05=doa6_mai,a08=a08_sword,b10=b10_axe,b14=b14_sword"), c.id, out var own))
             {
                 rig.strikePack = OwnStrikes(own);
                 // strikes with the weapon in her hand need her grip on the fighter prefab (RoeWeaponGrip)
@@ -637,17 +641,17 @@ namespace RoeFighter.EditorTools
             // humanoid curves; FighterRig.ownGuard) instead of her strike pack's (Mai Shiranui's crouch) or the motion pack's;
             // -roeGuard g04=stance,g05=stance (g05's battle stance floats: rig.stance is her showcase stand there)
             string guardNote = "guard from the motion pack" + (rig.strikePack != null && rig.strikePack.clips.Any(x => x.role == "guard" && x.clip != null) ? $" / {rig.strikePack.name}" : "");
-            if (Table("-roeGuard", "g04=stance").TryGetValue(c.id, out var guardArg) && guardArg == "stance" && rig.stance != null)
+            if (Setting(Table("-roeGuard", "g04=stance"), c.id, out var guardArg) && guardArg == "stance" && rig.stance != null)
             {
                 rig.ownGuard = RoeHumanoidClips.HumanOnly(c.id, rig.stance, "guard_stance");
                 guardNote = $"guard = her game stance {rig.stance.name} (humanoid curves, -roeGuard {c.id}=stance)";
             }
-            if (Table("-roeWeaponScale", "g04=0.7").TryGetValue(c.id, out var size))
+            if (Setting(Table("-roeWeaponScale", "g04=0.7"), c.id, out var size))
                 rig.weaponScale = float.Parse(size, CultureInfo.InvariantCulture);
             // heels or flat feet (user 10-03: "有的角色是有高跟鞋的，有的角色是没有的，得区分一下"): measured on her own standing
             // clips (RoeFeet); -roeFeet g05=flat,b10=heels overrides
             var feetKind = RoeFeet.Measure(c.id);
-            if (Table("-roeFeet", "").TryGetValue(c.id, out var feetArg))
+            if (Setting(Table("-roeFeet", ""), c.id, out var feetArg))
                 feetKind.heels = feetArg != "flat";
             rig.flatFeet = !feetKind.heels;
             if (rig.flatFeet)
@@ -746,6 +750,11 @@ namespace RoeFighter.EditorTools
             }
             return "showcase " + string.Join(", ", notes);
         }
+
+        /// <summary>A fighter's entry in a per-fighter table, else her suit's when she is a recolour of it (tools/roe_outfit.py:
+        /// b14_outfit1 fights with b14's sword strikes).</summary>
+        static bool Setting(Dictionary<string, string> table, string id, out string value) =>
+            table.TryGetValue(id, out value) || table.TryGetValue(RoeManifest.SuitOf(id), out value);
 
         static Dictionary<string, string> Table(string arg, string fallback) =>
             RoeCapture.Arg(arg, fallback).Split(',').Select(p => p.Split('='))

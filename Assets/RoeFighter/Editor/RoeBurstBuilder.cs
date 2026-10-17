@@ -150,6 +150,8 @@ namespace RoeFighter.EditorTools
         {
             string path = Path.Combine(ProjectDir, RulesPath(id));
             if (!File.Exists(path))
+                path = Path.Combine(ProjectDir, RulesPath(RoeManifest.SuitOf(id)));     // a recolour comes off as its suit does
+            if (!File.Exists(path))
                 return null;
             var rules = JsonUtility.FromJson<Rules>(File.ReadAllText(path));
             if (rules.outfit == null || rules.groups == null)

@@ -15,6 +15,7 @@ tools/roe/<id>_showcase.json (names and timings only) for RoeFightScene.Build.
 import argparse
 import json
 import os
+import re
 
 import UnityPy
 
@@ -46,8 +47,9 @@ def trees(env):
 
 
 def timelines(cid):
-    """The hd bundle's showcase timelines: name -> (react clip, its length, voice placeholder, the voice's start)."""
-    env = UnityPy.load(os.path.join(AB, f'chara_armor_pc_{cid}_hd & ld_hd.ab'))
+    """The hd bundle's showcase timelines: name -> (react clip, its length, voice placeholder, the voice's start).  A recolour
+    (b14_outfit1, tools/roe_outfit.py) has no hd bundle of its own: its suit's (its voice lines are its own, meta_armor_pc_<id>)."""
+    env = UnityPy.load(os.path.join(AB, f'chara_armor_pc_{re.sub(r"_outfit[0-9]+$", "", cid)}_hd & ld_hd.ab'))
     by_id = {o.path_id: o for o in env.objects}
     out = {}
     for _, t in trees(env):

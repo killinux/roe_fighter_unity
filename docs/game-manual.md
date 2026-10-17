@@ -103,6 +103,7 @@
 | GODDESS LUF（Goddess） | ROE | 同 LUF | ROE 里的三个技能 |
 | AMANO（Abyss） | ROE | 动作包的四招（默认：刺拳 / 挥砍 / 直拳 / 回旋踢） | ROE 里的三个技能（漂浮的眼睛、触手） |
 | CRANE KART（Crane） | ROE | 两连斩 / 跃起斩（下段） / 回身刺（上段） / 翻身斩（击倒） | ROE 里的三个技能（剑） |
+| PINK CRANE KART（Pink Crane） | ROE | 同 CRANE KART | ROE 里的三个技能（剑，粉色特效） |
 | KASUMI（Kunoichi） | DOA6 | 刺拳 / 侧踢 / 上勾拳 / 高位回旋踢 | DOA6 里她自己的三个动作 |
 | KASUMI（Pirate Dress） | DOA6 | 同上 | 同上 |
 | MAI（Shiranui-ryu） | DOA6 | 冲步刺拳 / 中段肘击 / 扑身冲拳 / 高踢 | DOA6 里她的翻身突进 / 空中翻身 / 冲刺 |
@@ -147,7 +148,7 @@ ROE 角色放技能、开场、胜利动作时，裙子和头发用游戏原版�
 | `-roeCloth roe` | 用某个物理方案启动（名字见第 7 节） |
 | `-roeCamAvoid 0` | 用旧镜头启动 |
 
-角色代号：a08 INASE、g04 LUF、b10 KART、g05 GODDESS LUF、m02 AMANO、b14 CRANE KART、kas KASUMI、kas011 KASUMI 海盗裙、mai MAI、fio005 FIONA、eve09 EVE、eve37 EVE 百褶裙。
+角色代号：a08 INASE、g04 LUF、b10 KART、g05 GODDESS LUF、m02 AMANO、b14 CRANE KART、b14_outfit1 PINK CRANE KART、kas KASUMI、kas011 KASUMI 海盗裙、mai MAI、fio005 FIONA、eve09 EVE、eve37 EVE 百褶裙。
 
 例：`ROEFighter.exe -roeP1 g04 -roeP2 a08 -roeSelect 0`
 

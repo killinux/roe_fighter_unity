@@ -59,9 +59,10 @@
 | Luf 胯部那一段和游戏一样：每片裙子最上面两根骨用照游戏站姿拟合的形状，不再往下拉、不再被推出皮肤；从第三根骨往下照旧下垂 | 完成（10-11），见"胯部那一段和游戏一样"一节；对比图 `out\g04_hip_segment.jpg`；exe 已重新打包 |
 | Luf 站游戏里的战斗站姿（不再是不知火舞的蹲姿）；数字键 1、2、3 放技能 1、技能 2、超必杀（ROE 角色的就是她游戏里的三个战斗技能） | 完成（10-11），见"Luf 站游戏里的姿势；技能键 1、2、3"一节；对比视频 `out\g04_roe_stance.mp4`，对比图 `out\g04_roe_stance.jpg`；exe 已重新打包 |
 | Luf 的裙子重新从 ROE 导出核对（原始数据和游戏动作都没改乱）；照 ROE 自己的物理做了方案 `roe`；默认改成站在游戏站姿里时直接放 ROE 的手 K，动起来再交给布料 | 完成（10-11），见"Luf 的裙子：重新从 ROE 导出，完全照 ROE 再看"一节；视频 `out\g04_skirt_roe.mp4`，图 `out\g04_skirt_roe.jpg`；exe 已重新打包 |
-| 游戏说明：操作、规则、技能、爆衣、功能键、12 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
+| 游戏说明：操作、规则、技能、爆衣、功能键、13 个角色的招式、物理方案、启动参数、常见问题 | 完成（10-11），`docs\game-manual.md`；带截图的网页 `out\ROEFighter\游戏说明.html`（`tools\make_manual.py` 生成） |
 | Kart 最新的一套（b14，白蓝鹤袍，游戏里 2026-09-12 上的）加入战斗：模型、三个技能（游戏的 skill_01–03，带特效、音效、语音）、选人时的展示动作和台词、爆衣四段到全身；右边拖到膝下的长纱袖交给布料，抬手时垂下来 | 完成（10-11），见"Kart 最新的一套（b14，鹤袍）加入战斗"一节；技能 `out\b14_skills.mp4`，爆衣 `out\clothes_burst_demo_b14.mp4`，电脑对电脑（对 b10）`out\fight_cpu_match_b14.mp4`，检查图 `out\clothes_burst\unity\b14_sheet.png`；exe 已重新打包 |
 | Crane Kart（b14）拿剑打普通攻击：剑一直握在右手（她技能里挥剑时的正手握），四招里三招截自她自己的技能、一招是 Vindictus 的翻身斩；全身那段右肩顶的棱修掉了（右肩照左肩镜像取权重） | 完成（10-17），见"Crane Kart（b14）拿剑打普通攻击；右肩照左肩取权重"一节；四招 `out\b14_sword_strikes.mp4`，候选 `out\b14_sword_candidates.mp4`，电脑对电脑（对 Inase）`out\fight_cpu_match_b14_sword.mp4`，右肩对比 `out\b14_shoulder_fix.jpg`，爆衣演示重录；exe 已重新打包 |
+| Kart 鹤袍的粉白换色款（b14 的 outfit1）做成新角色 PINK CRANE KART：材质、贴图、白发粉梢、粉色技能特效都是游戏里换色款自己的，网格、动作、爆衣规则、握剑、剑招沿用 b14 | 完成（10-17），见"Kart 鹤袍的粉白换色款（b14_outfit1）加入战斗"一节；技能 `out\b14_outfit1_skills.mp4`，剑招 `out\b14_outfit1_sword_strikes.mp4`，爆衣 `out\clothes_burst_demo_b14_outfit1.mp4`，粉白对蓝白 `out\fight_cpu_match_b14_outfit1.mp4`；exe 已重新打包 |
 
 ## 目录
 
@@ -2692,4 +2693,84 @@ python tools\make_video.py _work\fight_b14_sword out\fight_cpu_match_b14_sword.m
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','b14','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_b14'
 python tools\burst_video.py _work\burst_demo_b14 out\clothes_burst_demo_b14.mp4
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+```
+
+### Kart 鹤袍的粉白换色款（b14_outfit1）加入战斗（10-17）
+
+用户 10-17 问"粉白换色款要不要做成新角色"，回答"要"。做成了新角色 PINK CRANE KART（选人卡片上写 Pink Crane），名单里排在 CRANE KART 后面。
+
+**游戏里换色款是怎么做的**
+
+- 网格、骨架、动作全用 b14 的（`chara_armor_pc_b14_*`），没有自己的模型包。
+- 自己的一套：
+  - 材质 `chara_mat_armor_pc_b14_outfit1_*`、贴图 `chara_tex_armor_pc_b14_outfit1_*`：白发粉梢、粉白长袍、红腰带、红宝石，剑也是自己的贴图；
+  - 展示预制体 `meta_armor_pc_b14_outfit1`（渲染器名字和 b14 的一样）；
+  - 玩法单位 `suit_kart_14_outfit1`：三个技能的动作和 b14 相同，特效全是粉色版，技能 1 还多了两段光效。
+- 10-11 导入 b14 时，这些材质、贴图、展示预制体已经跟着进了工程（`Assets/ROE/b14` 里带 outfit1 的文件夹），`import_ripped.py` 也在清单里记下了它的展示预制体，只是没做成角色。
+- 游戏的热更新包在 `%USERPROFILE%\AppData\LocalLow\Pinkcore\Rise of Eros\AssetBundles`，游戏运行时优先用这里的：
+  - 换色款的材质包今天（10-17）刚更新过，逐项比过，参数和工程里那版完全一样；
+  - 它的玩法单位 10-01 更新过，比安装目录里的新，改的是超必杀的命中时间（2.55 → 2.65 秒）和几段特效的时间。
+  - `tools/timeline_dump.py`（技能表读时间轴用的）现在优先读 LocalLow 里的。
+
+**做法**
+
+- 新工具 `tools/roe_outfit.py b14 outfit1`：在角色清单里加一个角色 `b14_outfit1`，内容抄 b14 的条目，只把展示预制体换成换色款的，并记下它是谁的换色款（`outfitOf`）。
+  代号照游戏自己的命名（`pc_b14_outfit1`、`wp_b_14_outfit1`）。以后重新导入 b14，要再跑一次这个工具。
+- 和所属那套共用的东西，找不到自己的就用 b14 的（`RoeManifest.SuitOf`）：
+  - 爆衣规则：`Editor\Burst\b14.json` 里按材质名匹配的地方改成两套都能匹配（`^pc_b14_hd_(outfit1_)?body1$`）；
+  - 握剑：`tools/roe/b14_grip.json`；
+  - 建场景时按角色查的表（普通攻击 `-roeOwnStrikes`、腿 `-roeLegRoll`、站架 `-roeGuard` 等）：换色款没有自己的一项时用 b14 的，所以她也用剑招 `b14_sword`。
+- 换色款的剑只有战斗低模的材质 `wp_b_14_outfit1_ld`。找武器材质的代码以前只找 `_hd`，现在没有 `_hd` 时用 `_ld`。
+- 头发：换色款用的是游戏较新的各向异性头发着色器 `Pinkcore/Heros/AnisoHair`，工程里没有对应的，第一次建出来头发是一整块洋红色。
+  - 现在把它对到我们的 `RoeHair`（`import_ripped.py` 的 `SHADER_MAP`）。高光偏移、收紧、两层高光颜色这些参数两边同名，能直接用。
+  - 用不上的：它的打包贴图（高光 / 遮蔽 / 阴影遮罩）、各向异性强度、透光。看着接近游戏，但不是逐条照游戏重写的；要完全一样，得像别的着色器那样照游戏的反汇编重写一个。
+- `tools/roe_showcase.py`：换色款没有自己的模型包，选人展示的时间轴从 b14 的包里读，台词映射用它自己的（和 b14 是同两句）。
+- 布料、物理：游戏大厅的 Magica Cloth 2 设置和 b14 完全一样（`roe_mc2_dump.py` 读出来逐项相同）。
+- 选人界面成了 13 张卡片，每张窄了，CRANE KART 和 PINK CRANE KART 两个长名字压在一起。
+  现在卡片上的名字放不下时自动缩小字号，必要时折成两行（`FightHud`）。
+
+**效果**
+
+- 三个技能都打中（对 Inase）：技能 1 掉 150，技能 2 掉 190，超必杀掉 360 并打掉一段衣服。视频 `out\b14_outfit1_skills.mp4`。
+- 普通攻击和 b14 一样是剑招四招，视频 `out\b14_outfit1_sword_strikes.mp4`。
+- 爆衣四段，最后是全身。右肩照左肩镜像取权重这一套也跟着 b14 的规则一起生效。
+  - 爆衣演示 `out\clothes_burst_demo_b14_outfit1.mp4`；
+  - 检查图 `out\clothes_burst\unity\b14_outfit1_sheet.png`；
+  - 握剑检查图 `out\weapon_grip\b14_outfit1_0..2.png`。
+- 电脑对电脑：粉白对蓝白（对 b14，60 秒），最后 CRANE KART 用技能把 PINK CRANE KART 打到 K.O.，视频 `out\fight_cpu_match_b14_outfit1.mp4`。
+- 选人界面 `out\select_screen_demo_1017.mp4`。
+
+```powershell
+# 1. 清单里加角色（b14 已经导入过；换色款的材质、贴图、展示预制体那时一起进来了）
+python tools\roe_outfit.py b14 outfit1
+# 2. 技能：玩法单位（用 LocalLow 里热更新过的那份）→ 还原 → 导入 → 技能表；选人展示；大厅物理
+#    （AssetRipper 服务开着，见"从零重做一遍"）
+copy "%USERPROFILE%\AppData\LocalLow\Pinkcore\Rise of Eros\AssetBundles\gameplay_prefab_suit_kart_14_outfit1.ab" _work\bundles_skills_b14_outfit1\
+python tools\rip.py --bundles _work\bundles_skills_b14_outfit1 --out _work\ripped_skills_b14_outfit1 --log _work\assetripper.log
+python tools\import_skills.py suit_kart_14_outfit1 --src _work\ripped_skills_b14_outfit1\ExportedProject\Assets
+python tools\skill_sheet.py suit_kart_14_outfit1 b14_outfit1
+python tools\roe_showcase.py b14_outfit1
+python tools\roe_mc2_dump.py "Assets\ROE\b14\meta_armor_pc_b14_outfit1_hd_ld\pc_b14_outfit1_hd.prefab" --fighter b14_outfit1
+# 3. Unity（爆衣规则、握法、剑招都沿用 b14 的）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFighterBuilder.BuildAll -Extra '-roeChars','b14_outfit1'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHumanoidClips.ConvertAll -Extra '-roeChars','b14_outfit1'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.Run -Extra '-roeChars','b14_outfit1'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeHelperFit.FitSkirt -Extra '-roeChars','b14_outfit1'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeWeaponGrip.Build -Graphics -Extra '-roeChars','b14_outfit1'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','b14_outfit1'
+python tools\burst_sheet.py --chars b14_outfit1
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+# 录像
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.SkillReel -Graphics -Extra '-roeP1','b14_outfit1','-roeP2','a08'
+python tools\skill_reel_video.py out\b14_outfit1_skills.mp4 _work\skills_b14_outfit1
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','b14_sword','-roeChars','b14_outfit1','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_b14_outfit1'
+python tools\strike_demo_video.py _work\strike_takes_b14_outfit1 out\b14_outfit1_sword_strikes.mp4 --pack tools/motionpacks/b14_sword.json --id b14_outfit1
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','b14_outfit1','-roeFoes','a08','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_b14_outfit1'
+python tools\burst_video.py _work\burst_demo_b14_outfit1 out\clothes_burst_demo_b14_outfit1.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','b14_outfit1','-roeP2','b14','-roeSeconds','60','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_b14_outfit1'
+python tools\make_video.py _work\fight_b14_outfit1 out\fight_cpu_match_b14_outfit1.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.SelectDemo -Graphics -Extra '-roeOut','E:\code\othercode\roe_fighter_unity\_work\select_demo_1017'
+python tools\make_video.py _work\select_demo_1017 out\select_screen_demo_1017.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+python tools\make_manual.py --shot select=_work\select_demo_1017\frames\00160.jpg
 ```

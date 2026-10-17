@@ -40,6 +40,9 @@ SHADER_MAP = {
     'Pinkcore/Heros/Skin': 'RoeSkin',
     'Pinkcore/Heros/KajiyaKayHair': 'RoeHair',
     'Pinkcore/Heros/SimpleLit/Hair': 'RoeHair',
+    # b14's outfit1 (10-17): the game's newer anisotropic hair; RoeHair reads its shifts, shrinks and the two highlight colours
+    # by the same names (its packed specular / occlusion / shadow-mask map, _Anisotropy and transmission are not used)
+    'Pinkcore/Heros/AnisoHair': 'RoeHair',
     'Pinkcore/Heros/Eye': 'RoeEye',
     'Pinkcore/Heros/Eyebrow': 'RoeEyebrow',
     'Pinkcore/Heros/ErosLit/Environment': 'RoeEnvironment',
@@ -78,6 +81,25 @@ def group_of(bundle):
 
 def clean(name):
     return name.replace(' & ', '_').replace(' ', '_')
+
+
+def write_manifests(manifest, dst):
+    """roe_manifest.json (by id) and roe_manifest_unity.json (the same as a list: Unity's JsonUtility cannot read
+    dictionaries).  An outfit of another suit (tools/roe_outfit.py) says whose it is (outfitOf)."""
+    os.makedirs(dst, exist_ok=True)
+    json.dump(manifest, open(os.path.join(dst, 'roe_manifest.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    unity = {'characters': []}
+    for cid, e in sorted(manifest.items()):
+        unity['characters'].append({
+            'id': cid,
+            'hdPrefab': e.get('hd_prefab', ''), 'hdAvatar': e.get('hd_avatar', ''),
+            'metaPrefab': e.get('meta_prefab', ''), 'ldPrefab': e.get('ld_prefab', ''),
+            'outfitOf': e.get('outfit_of', ''),
+            'clips': [{'name': k, 'path': v} for k, v in sorted(e['clips'].items())],
+            'weapons': e['weapons'], 'sfx': e['sfx'],
+            'voices': [{'language': k, 'paths': v} for k, v in sorted(e['voice'].items())],
+        })
+    json.dump(unity, open(os.path.join(dst, 'roe_manifest_unity.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
 
 def read_guid(meta):
@@ -242,20 +264,7 @@ def main():
         kept_ids = sorted(k for k in old if k not in manifest)
         manifest = dict(sorted({**old, **manifest}.items()))
         print(f'manifest: {", ".join(kept_ids) or "nothing"} kept from before, {", ".join(sorted(set(manifest) - set(kept_ids)))} from this rip')
-    os.makedirs(a.dst, exist_ok=True)
-    json.dump(manifest, open(os.path.join(a.dst, 'roe_manifest.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
-    # the same data as lists: Unity's JsonUtility cannot read dictionaries
-    unity = {'characters': []}
-    for cid, e in sorted(manifest.items()):
-        unity['characters'].append({
-            'id': cid,
-            'hdPrefab': e.get('hd_prefab', ''), 'hdAvatar': e.get('hd_avatar', ''),
-            'metaPrefab': e.get('meta_prefab', ''), 'ldPrefab': e.get('ld_prefab', ''),
-            'clips': [{'name': k, 'path': v} for k, v in sorted(e['clips'].items())],
-            'weapons': e['weapons'], 'sfx': e['sfx'],
-            'voices': [{'language': k, 'paths': v} for k, v in sorted(e['voice'].items())],
-        })
-    json.dump(unity, open(os.path.join(a.dst, 'roe_manifest_unity.json'), 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    write_manifests(manifest, a.dst)
     print(f'copied {copied}, unchanged {skipped}, materials re-pointed {remapped}')
     for g, mats in unmapped.items():
         print(f'  shader {g} has no project shader: {", ".join(sorted(mats))}')

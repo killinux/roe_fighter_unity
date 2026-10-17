@@ -16,7 +16,8 @@ PROJECT = os.path.dirname(HERE)
 FONT = r'C:\Windows\Fonts\msyh.ttc'
 FONT_BOLD = r'C:\Windows\Fonts\msyhbd.ttc'
 ROSTER = [('a08', 'INASE'), ('g04', 'LUF'), ('b10', 'KART'), ('g05', 'GODDESS LUF'), ('m02', 'AMANO'), ('b14', 'CRANE KART'),
-          ('kas', 'KASUMI'), ('kas011', 'KASUMI 海盗裙'), ('mai', 'MAI'), ('fio005', 'FIONA'), ('eve09', 'EVE'), ('eve37', 'EVE 百褶裙')]
+          ('b14_outfit1', 'PINK CRANE KART'), ('kas', 'KASUMI'), ('kas011', 'KASUMI 海盗裙'), ('mai', 'MAI'), ('fio005', 'FIONA'),
+          ('eve09', 'EVE'), ('eve37', 'EVE 百褶裙')]
 
 # ---- pictures
 
@@ -74,7 +75,6 @@ def draw_keys(path):
 
 def draw_roster(path):
     """The select cards side by side, the name under each."""
-    font = ImageFont.truetype(FONT_BOLD, 22)
     cards = []
     for cid, name in ROSTER:
         p = os.path.join(PROJECT, 'Assets', 'RoeFighter', 'Generated', cid, f'{cid}_portrait.png')
@@ -82,16 +82,20 @@ def draw_roster(path):
             cards.append((Image.open(p).convert('RGB').resize((180, 240)), name))
     if not cards:
         return False
-    cols = 6
-    rows = (len(cards) + cols - 1) // cols
+    rows = (len(cards) + 6) // 7                    # at most 7 a row, the rows as even as they go (13: 7 and 6)
+    cols = (len(cards) + rows - 1) // rows
     w, h = 180, 240 + 40
     im = Image.new('RGB', (cols * w + (cols + 1) * 10, rows * h + (rows + 1) * 10), (24, 24, 30))
     d = ImageDraw.Draw(im)
     for k, (card, name) in enumerate(cards):
         x, y = 10 + (k % cols) * (w + 10), 10 + (k // cols) * (h + 10)
         im.paste(card, (x, y))
-        tw = d.textlength(name, font=font)
-        d.text((x + (w - tw) / 2, y + 246), name, font=font, fill=(255, 225, 120))
+        size = 22                                   # a long name (PINK CRANE KART) smaller, to stay under its card
+        while size > 12 and d.textlength(name, font=ImageFont.truetype(FONT_BOLD, size)) > w - 6:
+            size -= 1
+        f = ImageFont.truetype(FONT_BOLD, size)
+        tw = d.textlength(name, font=f)
+        d.text((x + (w - tw) / 2, y + 246 + (22 - size) / 2), name, font=f, fill=(255, 225, 120))
     im.save(path, quality=90)
     return True
 
