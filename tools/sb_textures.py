@@ -129,7 +129,8 @@ def mod_maps(albedo):
 
 def glow(rgb):
     """An HDR colour scaled so its brightest component is at most GLOW_MAX (sRGB for Unity's colour field)."""
-    c = np.array(rgb[:3], np.float32)
+    # negative components emit nothing (Raven's long ribbons, MI_CH_M_NA_53_Hair02: Emissive Color (-43.4, 3.8, 6.9) - cyan)
+    c = np.maximum(np.array(rgb[:3], np.float32), 0.0)
     peak = float(c.max())
     if peak > GLOW_MAX:
         c = c * GLOW_MAX / peak
@@ -142,6 +143,9 @@ def main():
     ap.add_argument("--size", type=int, default=2048)
     ap.add_argument("--mi-dir", action="append", default=[],
                     help="a material folder searched before the defaults (the outfit's, a hairstyle's; repeatable)")
+    ap.add_argument("--hair-boost", type=float, default=1.0,
+                    help="hair coverage x this before the cut-out (Raven, 10-18: 3 - her cards sit on the sparse half of "
+                         "their atlas, and Unity cuts at 0.35 what the game dithers)")
     opts = ap.parse_args()
     side = json.load(open(os.path.join(opts.folder, "materials.json"), encoding="utf-8"))
     tex_out = os.path.join(opts.folder, "textures")
@@ -194,7 +198,7 @@ def main():
             e["emission"] = os.path.basename(out)
             e["emissionColor"] = glow(color)
 
-        if kind in HIDDEN or (name == "NewMaterial" and float(d.get("alpha", 1)) <= 0.0):
+        if kind in HIDDEN or float(d.get("alpha", 1)) <= 0.0:
             e["surface"] = "transparent"
             e["color"] = [0, 0, 0, 0]
         elif "Basecolor" in tex and "ORM" in tex:
@@ -206,17 +210,29 @@ def main():
             if masked:
                 e["surface"] = "cutout"
                 e["cutoff"] = float(over.get("OpacityMaskClipValue", 0.3333))
-            put_normal(texture(tex.get("Baked NormalMap")))
+            put_normal(texture(tex.get("Baked NormalMap") or tex.get("BakeNormal") or tex.get("BaseNormal")))
             orm = texture(tex["ORM"])
             if orm:
                 out = os.path.join(tex_out, f"{stem}_mask.png")
                 mask_from_orm(orm, opts.size, out)
                 e["mask"] = os.path.basename(out)
                 e["smoothness"] = e["metallic"] = 1.0
+                # Raven's suit (MA_CH_M_NA_53_Costume, 10-18): a clear coat over the latex where its ShadingModelMask's green
+                # is lit (ClearCoatRoughness Min about 0 - a mirror) - URP Lit has none: the smoothness raised there instead,
+                # or her cream latex reads as bare skin
+                if parent == "MA_CH_M_NA_53_Costume" and tex.get("ShadingModelMask") and "ClearCoatRoughness Min" in sca:
+                    floor = min(0.9, 1.0 - max(0.05, sca["ClearCoatRoughness Min"]))
+                    mask = np.asarray(Image.open(out).convert("RGBA"), np.float32) / 255.0
+                    coat = np.asarray(load(texture(tex["ShadingModelMask"]), opts.size, "RGBA").resize(
+                        (mask.shape[1], mask.shape[0])), np.float32)[..., 1] / 255.0
+                    mask[..., 3] = np.maximum(mask[..., 3], floor * coat)
+                    Image.fromarray(np.round(mask * 255).astype(np.uint8), "RGBA").save(out)
+                    e["source"] += f"; clear coat: smoothness >= {floor:.2f} where ShadingModelMask's green is"
             if "ML_GlowEmissive_CH" in vec and "ML_GlowEm_EyeCoreHDRTint" in vec and tex.get("Emissive"):
                 put_emission(texture(tex["Emissive"]), vec["ML_GlowEm_EyeCoreHDRTint"], vec["ML_GlowEmissive_CH"])
             elif tex.get("Emissive") and sca.get("EmissivePower", 0.0) > 0.0 and "EmissiveColor" in vec:
-                put_emission(texture(tex["Emissive"]), [c * sca["EmissivePower"] for c in vec["EmissiveColor"]])
+                # the one channel the instance's Emissive_CH selects, when it sets one (the masters light only that channel)
+                put_emission(texture(tex["Emissive"]), [c * sca["EmissivePower"] for c in vec["EmissiveColor"]], vec.get("Emissive_CH"))
             e["cull"] = "off"
         elif parent == "MA_Skin_EVE":
             put_albedo(texture(tex.get("BaseColor")) or d.get("albedo"))
@@ -267,6 +283,7 @@ def main():
                 m = load(a_path, opts.size, "RGBA")
                 arr = np.asarray(m, np.float32) / 255.0
                 alpha = arr[..., 3] if float(arr[..., 3].min()) < 0.99 else arr[..., 0]
+            alpha = np.clip(alpha * opts.hair_boost, 0.0, 1.0)
             rgb = np.broadcast_to(linear_to_srgb(np.array(lin, np.float32)), alpha.shape + (3,)).copy()
             out = os.path.join(tex_out, f"{stem}_albedo.png")
             save_rgba(rgb, alpha, out)
@@ -286,6 +303,19 @@ def main():
             e["surface"] = "cutout"
             e["cutoff"] = 0.3
             e["cull"] = "off"
+        elif kind == "brow" and d.get("alpha_map") and os.path.exists(d["alpha_map"]) and not d.get("albedo"):
+            m = np.asarray(load(d["alpha_map"], opts.size, "RGBA"), np.float32) / 255.0
+            ch = {"Red": 0, "R": 0, "Green": 1, "G": 1, "Blue": 2, "B": 2}.get(d.get("alpha_channel", "A"), 3)
+            alpha = m[..., ch]
+            col = d.get("color") or [0.02, 0.015, 0.01, 1]
+            rgb = np.broadcast_to(linear_to_srgb(np.array(col[:3], np.float32)), alpha.shape + (3,)).copy()
+            out = os.path.join(tex_out, f"{stem}_albedo.png")
+            save_rgba(rgb, alpha, out)
+            e["albedo"] = os.path.basename(out)
+            e["surface"] = "cutout"
+            e["cutoff"] = 0.3
+            e["cull"] = "off"
+            e["source"] += "; the .blend's mask"
         elif kind == "eye":
             if d.get("albedo") and os.path.exists(d["albedo"]):
                 put_albedo(d["albedo"])

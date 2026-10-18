@@ -33,6 +33,10 @@ namespace RoeFighter.EditorTools
     /// (y, z, x) - forward z.  CUE4Parse writes a .psa's rate as keys / length (91 keys over 3 s: 30.33): the keys are
     /// length / (keys - 1) apart.
     ///   -executeMethod RoeFighter.EditorTools.SbAnims.Import [-roeSb eve_nikke06] [-roeOnly regex]
+    ///       [-roeSrc SB/Content/Art/Character/PC] [-roeCalib Proto_Battle_Idle]
+    /// -roeSrc: the game folder under _work/sb/anim whose clips are hers (10-18: Raven's are
+    /// SB/Content/Art/Character/Monster/CH_M_NA_53/Animation - her Result_* clips have Eve's names); -roeCalib: a clip she
+    /// stands in (Raven: M_Raven_BattleIdle01).
     /// </summary>
     public static class SbAnims
     {
@@ -40,7 +44,7 @@ namespace RoeFighter.EditorTools
         public static string InPlaceDir(string id) => $"{ClipDir(id)}/inplace";
 
         static string SourceDir => Path.Combine(Path.GetDirectoryName(Application.dataPath), "_work", "sb", "anim");
-        const string Loops = "Idle|_Walk_|_Run_|_Loop$|KnockDown_L$";
+        const string Loops = "Idle|_Walk_|_Run_|_Loop$|KnockDown_L$|_Caution_|Groggy_L$";
         public const string Holder = "SB_Sword", Prop = "Bip001 Prop1", Hand = "Bip001 R Hand";
 
         static string Mine(string game) => game.StartsWith("Bip001-") ? game.Replace('-', ' ') : game;
@@ -285,20 +289,25 @@ namespace RoeFighter.EditorTools
         public static void Import()
         {
             foreach (var id in RoeCapture.Arg("-roeSb", "eve_nikke06").Split(','))
-                Import(id.Trim(), RoeCapture.Arg("-roeOnly", ""));
+                Import(id.Trim(), RoeCapture.Arg("-roeOnly", ""), RoeCapture.Arg("-roeSrc", EveSource), RoeCapture.Arg("-roeCalib", "Proto_Battle_Idle"));
             AssetDatabase.SaveAssets();
         }
 
-        public static void Import(string id, string only)
+        const string EveSource = "SB/Content/Art/Character/PC";
+
+        public static void Import(string id, string only) => Import(id, only, EveSource, "Proto_Battle_Idle");
+
+        public static void Import(string id, string only, string src, string calibName)
         {
-            var files = Directory.Exists(SourceDir)
-                ? Directory.GetFiles(SourceDir, "*.psa", SearchOption.AllDirectories).OrderBy(p => Path.GetFileName(p)).ToList()
+            string from = Path.Combine(SourceDir, src.Replace('/', Path.DirectorySeparatorChar));
+            var files = Directory.Exists(from)
+                ? Directory.GetFiles(from, "*.psa", SearchOption.AllDirectories).OrderBy(p => Path.GetFileName(p)).ToList()
                 : new List<string>();
             if (!string.IsNullOrEmpty(only))
                 files = files.Where(p => Regex.IsMatch(Path.GetFileNameWithoutExtension(p), only, RegexOptions.IgnoreCase)).ToList();
             if (files.Count == 0)
             {
-                Debug.LogError($"[ROE] {id}: no .psa under {SourceDir} - run tools/sb_anims.py export first");
+                Debug.LogError($"[ROE] {id}: no .psa under {from} - run tools/sb_anims.py export first");
                 return;
             }
             var definition = File.Exists(DoaFighter.DefinitionPath(id)) ? File.ReadAllText(DoaFighter.DefinitionPath(id)) : "";
@@ -334,8 +343,8 @@ namespace RoeFighter.EditorTools
             Rig rig = null;
             // the reading of the keys, on a clip she stands in
             {
-                string standing = Directory.GetFiles(SourceDir, "*.psa", SearchOption.AllDirectories)
-                    .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p) == "Proto_Battle_Idle") ?? files[0];
+                string standing = Directory.GetFiles(from, "*.psa", SearchOption.AllDirectories)
+                    .FirstOrDefault(p => Path.GetFileNameWithoutExtension(p) == calibName) ?? files[0];
                 var calib = VdfAnims.Read(standing);
                 var calibRig = Bind(source, calib);
                 reading = Calibrate(calibRig, calib, out string note);

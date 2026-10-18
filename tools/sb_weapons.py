@@ -4,6 +4,10 @@ swing it): the maps URP Lit wants and a list for VdfFighter.AttachWeapons (SbFig
 game's .psk itself and hangs it in her right hand.
 
     python tools/sb_weapons.py Assets/SB/<id>
+    python tools/sb_weapons.py Assets/SB/raven --weapon SB/Content/Art/Character/Monster/CH_M_NA_53/CH_M_NA_53_Weapon \
+        --maps SB/Content/Art/Character/Monster/CH_M_NA_53/Textures/CH_M_NA_53_Weapon_{A,N,ORM} --keep-all --socket-rotator -90,180,-180
+        (10-18: Raven's long sword: the game hangs it on her skeleton's socket SC_Weapon - Bip001-Prop1 turned Pitch -90
+        Yaw 180 Roll -180, which lays the blade (its root's z) along the prop bone's x, as Eve's; one slot, nothing dropped)
 
   - the mesh: CH_W_Sword_01.psk (CUE4Parse CLI, ActorX; exported here when missing into _work/sb/weapon), unfolded as the
     game shows it in a fight; its three slots: Blade_Body twice and Blade_Edge, the glowing edge the game keeps cut out
@@ -44,14 +48,25 @@ def cli(pattern, out):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("folder", help="Assets/SB/<id>")
+    ap.add_argument("--weapon", default=f"{SWORD}/CH_W_Sword_01", help="the weapon's mesh package (default Eve's sword)")
+    ap.add_argument("--maps", nargs=3, default=None, metavar=("COLOUR", "NORMAL", "ORM"),
+                    help="its colour, normal and ORM maps' packages (default the sword's CH_W_Sword_02_D/_N/_M)")
+    ap.add_argument("--keep-all", action="store_true", help="drop no material slot (the sword drops its edge, slot 1)")
+    ap.add_argument("--socket-rotator", default="", help="pitch,yaw,roll of the game's socket on the prop bone")
     a = ap.parse_args()
-    psk = os.path.join(WEAPON_DIR, *SWORD.split("/"), "CH_W_Sword_01.psk")
+    psk = os.path.join(WEAPON_DIR, *a.weapon.split("/")) + ".psk"
     if not os.path.exists(psk):
-        cli(f"{SWORD}/CH_W_Sword_01.*", WEAPON_DIR)
-    tex = os.path.join(TEX_DIR, *SWORD.split("/"), "Textures")
-    maps = {k: os.path.join(tex, f"CH_W_Sword_02_{k}.png") for k in ("D", "N", "M")}
-    if not all(os.path.exists(p) for p in maps.values()):
-        cli(f"{SWORD}/Textures/CH_W_Sword_02_*", TEX_DIR)
+        cli(f"{a.weapon}.*", WEAPON_DIR)
+    if a.maps:
+        maps = dict(zip("DNM", (os.path.join(TEX_DIR, *m.split("/")) + ".png" for m in a.maps)))
+        for m, path in zip(a.maps, maps.values()):
+            if not os.path.exists(path):
+                cli(f"{m}.*", TEX_DIR)
+    else:
+        tex = os.path.join(TEX_DIR, *SWORD.split("/"), "Textures")
+        maps = {k: os.path.join(tex, f"CH_W_Sword_02_{k}.png") for k in ("D", "N", "M")}
+        if not all(os.path.exists(p) for p in maps.values()):
+            cli(f"{SWORD}/Textures/CH_W_Sword_02_*", TEX_DIR)
     missing = [p for p in [psk, *maps.values()] if not os.path.exists(p)]
     if missing:
         raise SystemExit(f"not exported: {missing}")
@@ -64,10 +79,13 @@ def main():
     orm = np.asarray(Image.open(maps["M"]).convert("RGB"), np.float32) / 255.0
     mask = np.stack([orm[..., 2], orm[..., 0], np.zeros_like(orm[..., 0]), 1.0 - orm[..., 1]], -1)
     Image.fromarray((mask * 255.0 + 0.5).astype(np.uint8), "RGBA").save(os.path.join(out, "sword_mask.png"))
-    listing = {"weapons": [{
-        "name": "sword", "socket": "Bip001 R Hand", "holder": "SB_Sword", "prop": "Bip001 Prop1", "rootTurn": True,
-        "drop": [1], "psk": psk.replace("\\", "/"),
-        "albedo": "sword_albedo.png", "normal": "sword_normal.png", "mask": "sword_mask.png"}]}
+    entry = {
+        "name": "sword", "socket": "Bip001 R Hand", "holder": "SB_Sword", "prop": "Bip001 Prop1", "rootTurn": not a.socket_rotator,
+        "drop": [] if a.keep_all else [1], "psk": psk.replace("\\", "/"),
+        "albedo": "sword_albedo.png", "normal": "sword_normal.png", "mask": "sword_mask.png"}
+    if a.socket_rotator:
+        entry["socketRotator"] = [float(x) for x in a.socket_rotator.split(",")]
+    listing = {"weapons": [entry]}
     json.dump(listing, open(os.path.join(out, "weapons.json"), "w", encoding="utf-8"), indent=1)
     print(f"sword: roughness {orm[..., 1].mean():.2f}, metallic {orm[..., 2].mean():.2f} -> {out}")
 

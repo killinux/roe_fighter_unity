@@ -1,6 +1,12 @@
 """Stellar Blade's own physics for Eve, read out of the game (user 10-05: "物理能用剑星自己的就用自己的，次选项才是用magic cloth2"):
 
     python tools/sb_physics.py Assets/SB/<id> [--outfit CH_P_EVE_09] [--hair EVE_HR_01] [--dlc DLC_2] [--hair-dlc DLC_2]
+    python tools/sb_physics.py Assets/SB/<id> --abp <package> --physics <package>      # a character of her own (Raven)
+
+(--abp / --physics, 10-18: another character - Raven, Monster/CH_M_NA_53 - has one anim blueprint of her own
+(CH_M_NA_53_AnimBP: spring bones, KawaiiPhysics nodes) and one physics asset (CH_M_NA_53_Physics), whose bodies the game
+leaves non-kinematic simulate - her long hair, 130 bodies on the HBN_* strands - as the "hair" chain, colliding with the
+asset's kinematic bodies.  Her control rigs are not ported.)
 
 (--dlc: an outfit of a DLC lives under SB/Content/<dlc>/Art/Character/PC - the NIKKE collaboration's CH_P_EVE_Nikke_06,
 10-17; her main blueprint stays the base game's.  --hair-dlc: the same for the hairstyle - Alice's EVE_HR_Nikke_06, whose
@@ -288,7 +294,12 @@ def physics_asset(package, have, chain, simulate_from, root_alias=None):
                            "swing1Motion": cone.get("Swing1Motion", "ACM_Free").split("::")[-1],
                            "swing2Motion": cone.get("Swing2Motion", "ACM_Free").split("::")[-1],
                            "twistMotion": twist.get("TwistMotion", "ACM_Free").split("::")[-1]})
-    # simulated: simulate_from and every body below it (by joints)
+    # simulated: every body the game does not make kinematic (simulate_from None: a character's own asset, whose
+    # non-kinematic bodies are what her component simulates), else simulate_from and every body below it (by joints)
+    if simulate_from is None:
+        for b in bodies:
+            b["simulate"] = not b["kinematicInGame"]
+        return bodies, joints
     below = {simulate_from}
     grew = True
     while grew:
@@ -309,7 +320,12 @@ def main():
     ap.add_argument("--hair", default="EVE_HR_01")
     ap.add_argument("--dlc", default="", help="the outfit's DLC folder (DLC_2: the NIKKE collaboration's outfits)")
     ap.add_argument("--hair-dlc", default="", help="the hairstyle's DLC folder (DLC_2: Alice's EVE_HR_Nikke_06)")
+    ap.add_argument("--abp", default="", help="a character of her own: her anim blueprint package (not Eve's)")
+    ap.add_argument("--physics", default="", help="with --abp: her physics asset package")
     a = ap.parse_args()
+    if a.abp:
+        own_character(a)
+        return
     outfit_pc = f"SB/Content/{a.dlc}/Art/Character/PC" if a.dlc else PC    # where the outfit's own assets are
     hair_pc = f"SB/Content/{a.hair_dlc}/Art/Character/PC" if a.hair_dlc else PC
     # her bones, as tools/sb_fbx.py exported them
@@ -375,6 +391,36 @@ def main():
         bs = [b for b in data["bodies"] if b["chain"] == chain]
         print(f"{chain}: {sum(b['simulate'] for b in bs)} simulated ({', '.join(b['bone'] for b in bs if b['simulate'])}), "
               f"{sum(not b['simulate'] for b in bs)} colliders, {len([j for j in data['joints'] if j['chain'] == chain])} joints")
+
+
+def own_character(a):
+    """A character with one blueprint and one physics asset of her own (Raven): her blueprint's Kawaii nodes and spring
+    bones; the asset's simulated bodies (chain "hair") with their joints and its kinematic bodies as their colliders."""
+    have = {b["name"] for b in json.load(open(os.path.join(a.folder, "bones.json"), encoding="utf-8"))["bones"]}
+    abp = a.abp.rsplit("/", 1)[1]
+    nodes = kawaii_nodes(a.abp, abp, lambda r: "skirt" if "Suite" in r else "ribbon")
+    missing = [n["root"] for n in nodes if n["root"] not in have]
+    nodes = [n for n in nodes if n["root"] in have]
+    json.dump({"source": f"Stellar Blade (1.4.1) KawaiiPhysics nodes read from {abp} (tools/sb_physics.py --abp). "
+                         "Units: cm, degrees, UE bone space. Curves multiply the base value over the chain (0 root, 1 tip).",
+               "nodes": nodes}, open(os.path.join(a.folder, "kawaii.json"), "w", encoding="utf-8"), indent=1)
+    sp = springs(a.abp, have)
+    bodies, joints = physics_asset(a.physics, have, "hair", None) if a.physics else ([], [])
+    simulated = {b["bone"] for b in bodies if b["simulate"]}
+    joints = [j for j in joints if j["child"] in simulated]
+    data = {
+        "source": f"Stellar Blade (1.4.1): springs and Kawaii nodes from {abp}, rigid bodies from "
+                  f"{a.physics.rsplit('/', 1)[-1] if a.physics else '-'} (its non-kinematic bodies simulate, its kinematic "
+                  "ones collide); UE units (cm, kg, degrees), UE bone space; simulated in the fighter's local space",
+        "springs": sp,
+        "bodies": bodies,
+        "joints": joints,
+        "rigs": [],
+    }
+    json.dump(data, open(os.path.join(a.folder, "sbphysics.json"), "w", encoding="utf-8"), indent=1)
+    print(f"kawaii: {len(nodes)} nodes ({', '.join(f'{n['root']} [{n['kind']}]' for n in nodes)}); not on her rig: {missing}")
+    print(f"springs: {len(sp)} ({', '.join(x['bone'] for x in sp)})")
+    print(f"hair: {len(simulated)} simulated bodies, {sum(not b['simulate'] for b in bodies)} colliders, {len(joints)} joints")
 
 
 if __name__ == "__main__":

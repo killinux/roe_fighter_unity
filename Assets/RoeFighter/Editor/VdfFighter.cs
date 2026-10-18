@@ -240,6 +240,10 @@ namespace RoeFighter.EditorTools
             public string holder, prop;
             public bool rootTurn;
             public int[] drop;
+            // the game's socket on the prop bone, when the weapon hangs on one with a turn of its own (Raven, 10-18: SC_Weapon
+            // on Bip001-Prop1, Pitch -90 Yaw 180 Roll -180 - her blade, along its root's z, lies along the prop bone's x):
+            // UE pitch, yaw, roll in degrees
+            public float[] socketRotator;
         }
 
         /// <summary>
@@ -318,7 +322,7 @@ namespace RoeFighter.EditorTools
                 BaseShaderGUI.SetMaterialKeywords(mat);
                 EditorUtility.SetDirty(mat);
                 // mesh
-                var mesh = ReadPsk(w.psk, w.name, out string meshNote, w.rootTurn, w.drop);
+                var mesh = ReadPsk(w.psk, w.name, out string meshNote, w.rootTurn, w.drop, w.socketRotator);
                 string meshPath = $"{dir}/{w.name}_mesh.asset";
                 AssetDatabase.DeleteAsset(meshPath);
                 AssetDatabase.CreateAsset(mesh, meshPath);
@@ -377,7 +381,7 @@ namespace RoeFighter.EditorTools
         /// taken into the frame of the mesh's root bone (REFSKELT's first orientation, as written: Eve's sword lies along its
         /// Weapon_Root's x); drop: the faces of those material slots left out.
         /// </summary>
-        static Mesh ReadPsk(string path, string name, out string note, bool rootTurn = false, int[] drop = null)
+        static Mesh ReadPsk(string path, string name, out string note, bool rootTurn = false, int[] drop = null, float[] socketRotator = null)
         {
             var data = File.ReadAllBytes(path);
             var chunks = new Dictionary<string, (int at, int size, int count)>();
@@ -399,6 +403,22 @@ namespace RoeFighter.EditorTools
                 m.m10 = 2 * (qx * qy + qz * qw); m.m11 = 1 - 2 * (qx * qx + qz * qz); m.m12 = 2 * (qy * qz - qx * qw);
                 m.m20 = 2 * (qx * qz - qy * qw); m.m21 = 2 * (qy * qz + qx * qw); m.m22 = 1 - 2 * (qx * qx + qy * qy);
                 turn = m.transpose;
+            }
+            // a socket's turn (UE's FRotationMatrix: its rows are where the socket's x, y, z point in the bone's frame); a
+            // turn about y alone is the same in the .psk's mirrored-Y space, any other is mirrored into it (S A S)
+            if (socketRotator != null && socketRotator.Length == 3)
+            {
+                float d2r = Mathf.Deg2Rad, sp = Mathf.Sin(socketRotator[0] * d2r), cp = Mathf.Cos(socketRotator[0] * d2r),
+                      sy = Mathf.Sin(socketRotator[1] * d2r), cy = Mathf.Cos(socketRotator[1] * d2r),
+                      sr = Mathf.Sin(socketRotator[2] * d2r), cr = Mathf.Cos(socketRotator[2] * d2r);
+                var r0 = new Vector3(cp * cy, cp * sy, sp);
+                var r1 = new Vector3(sr * sp * cy - cr * sy, sr * sp * sy + cr * cy, -sr * cp);
+                var r2 = new Vector3(-(cr * sp * cy + sr * sy), cy * sr - cr * sp * sy, cr * cp);
+                var a = Matrix4x4.identity;
+                a.SetColumn(0, new Vector4(r0.x, -r0.y, r0.z, 0f));
+                a.SetColumn(1, new Vector4(-r1.x, r1.y, -r1.z, 0f));
+                a.SetColumn(2, new Vector4(r2.x, -r2.y, r2.z, 0f));
+                turn = a * turn;
             }
             Vector3 Unity(Vector3 v)                                        // mirrored in Y (ActorX) -> Unreal -> her bone frame
             {

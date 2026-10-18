@@ -38,15 +38,19 @@ def kind_by_name(name):
         return "eye"
     if "eyeshadow" in low or "occlusion" in low or "occulusion" in low or "eyeblend" in low:
         return "eye-occlusion"
-    if "lacrimal" in low or "eyelight" in low:
+    # the other characters' names (ripper_tpose scripts/stellarblade/npc, 10-18): MI_CH_M_NA_53_Tearline, MI_NPC_Enya_fluid,
+    # MI_LacimalFluid; MI_CH_M_NA_53_Eyes, MI_NPC_EnyaEyeball; MI_CH_NPC_Kara_Lashes; MI_CH_NPC_Raven_01_BaseBody
+    if "lacrimal" in low or "eyelight" in low or "tearline" in low or "_fluid" in low or "lacimal" in low:
         return "eye-wet"
-    if "eyebrow" in low or "eyelash" in low:
+    if "eyebrow" in low or "eyelash" in low or "lashes" in low:
         return "brow"
+    if re.search(r"_eyes?$|eyeball", low):
+        return "eye"
     if "hair" in low or "ponytail" in low:
         return "hair"
     if "teeth" in low or "mouthinner" in low:
         return "mouth"
-    if "head" in low or "skin" in low:
+    if "head" in low or "skin" in low or "basebody" in low:
         return "skin"
     return "pbr"
 

@@ -67,6 +67,7 @@
 | 剑星 Eve 的粉色紧身衣（NIKKE 联动的 Cooling Suit，`eve_nikke06`）加入战斗：模型、贴图、物理都照游戏读，四段爆衣到全身 | 完成（10-17），见"剑星 Eve 的粉色紧身衣"一节；爆衣 `out\clothes_burst_demo_eve_nikke06.mp4`，电脑对电脑（对 eve09）`out\fight_cpu_match_eve_nikke06.mp4`；exe 已重新打包 |
 | Eve 粉色紧身衣换上 Alice 的发型（粉色双马尾、猫耳耳机，游戏自己的物理），用她自己剑星里的招式：四个普通攻击、三个技能、受击倒地起身开场胜利，手里拿着血刃 | 完成（10-17），见"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节；四招 `out\eve_nikke06_sword_strikes.mp4`，候选 `out\eve_nikke06_sword_candidates.mp4`，电脑对电脑 `out\fight_cpu_match_eve_nikke06_own.mp4`，发型 `out\eve_nikke06_alice_hair.jpg`；exe 已重新打包 |
 | eve09、eve37 也换成她自己剑星里的招式（四招、三个技能、受击倒地起身开场胜利），手里拿血刃 | 完成（10-17），见"eve09、eve37 也用她自己剑星里的招式"一节；电脑对电脑 `out\fight_cpu_match_eve09_eve37_own.mp4`；exe 已重新打包 |
+| 剑星的渡鸦（Raven）加入战斗：模型、贴图、她游戏里自己的物理（长发是 130 个刚体）、她的长剑、她自己的动作（四个普通攻击、三个技能、受击倒地起身开场胜利），四段爆衣到她战衣下面游戏自带的完整身体；全部角色的爆衣重新检查 | 完成（10-18），见"剑星的渡鸦（Raven）加入战斗"一节；四招 `out\raven_sword_strikes.mp4`，候选 `out\raven_sword_candidates_sheet.jpg`，电脑对电脑 `out\fight_cpu_match_raven.mp4`，爆衣 `out\clothes_burst_demo_raven.mp4`、`out\clothes_burst\unity\raven_sheet.png`；exe 已重新打包 |
 
 ## 目录
 
@@ -3009,5 +3010,140 @@ python tools\sb_weapons.py Assets\SB\eve37
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','eve09','-roeP2','eve37','-roeSeconds','90','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_eve09_eve37_own'
 python tools\make_video.py _work\fight_eve09_eve37_own out\fight_cpu_match_eve09_eve37_own.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
+```
+
+### 剑星的渡鸦（Raven，`raven`）加入战斗（10-18）
+
+用户 10-18："把渡鸦加到角色里，动作用游戏内的，都要检查爆衣效果"。
+
+渡鸦是剑星里的 Boss（`SB/Content/Art/Character/Monster/CH_M_NA_53`）：白色紧身战衣、黑色长发、一把 1.55 米的长剑。
+模型、贴图、物理、武器、动作全部照游戏读；爆衣用的是游戏自带的、她战衣下面完整的裸体网格 `CH_M_NA_53_1`。
+
+**模型**（`tools/sb_parts.py` + `tools/sb_fbx.py`）
+
+- 来源：ripper_tpose 的 `scripts/stellarblade/npc`（10-18 导出的 17 个剑星女角色）存到 E 盘的 `Raven\blend\Raven\Raven.blend`：身体、脸、头发三个网格，各带一副骨架（脸和头发的骨架挂在身体骨架下面）。
+- 新的 `sb_parts.py` 在 `sb_fbx.py` 之前跑（同一个 Blender 会话，.blend 不保存）：脸和头发的骨架并进身体的骨架。同名骨直接用身体的（静止位置相差不到 0.001 厘米），身体没有的 25 根头发骨按原样加进来，三个网格都改由身体骨架驱动。
+- 结果 `Assets/SB/raven`：388 根骨、3 个网格（`CH_M_NA_53.001` 身体、`CH_M_NA_53_Facial.001` 脸、`CH_M_NA_53_Hair.001` 头发）、14 个材质，眼睛烘焙成一张图。
+- `sb_fbx.py` 认得其他角色的材质名了：泪线 / `_fluid` 隐藏，`Lashes` 算睫毛，`_Eyes` / `Eyeball` 算眼睛，`BaseBody` 算皮肤。
+
+**贴图**（`tools/sb_textures.py`）
+
+- 材质实例在三个目录：`Monster/CH_M_NA_53/Materials`（脸、头发、武器）、`PC/CH_P_EVE_11/Materials`（战衣，Eve 的 11 号服装就是渡鸦这套）、`PC/CH_P_EVE_12/Materials`（身体皮肤）。
+- 新增和修改：
+  - `--hair-boost 3`：她的发片落在发片贴图稀疏的细发丝区，Unity 按 0.35 裁剪会稀掉（游戏是多层抖动半透明），覆盖率先乘 3；
+  - .blend 里透明度为 0 的材质一律隐藏（泪线、找不到遮罩的睫毛），不只头上的 `NewMaterial`；
+  - 法线参数还认 `BakeNormal`、`BaseNormal`（她战衣的父材质 `MA_CH_M_NA_53_Costume` 叫 `BakeNormal`）；
+  - 眉毛的遮罩写在父材质里（不是实例参数），用 .blend 里接好的遮罩裁剪；
+  - 自发光颜色的负分量按 0 算：长发飘带 `MI_CH_M_NA_53_Hair02` 在游戏里填的是 (−43.4, 3.8, 6.9)，就是青色；
+  - 布料的自发光按实例的 `Emissive_CH` 只取那一个通道（实例没设就和以前一样）。
+
+**物理**（`tools/sb_physics.py --abp ... --physics ...`）
+
+- 她只有一个动画蓝图 `CH_M_NA_53_AnimBP` 和一个物理资产 `CH_M_NA_53_Physics`，新加的入口直接读这两个：
+  - 6 根弹簧骨（胸、臀、大腿，数值和 Eve 一样）；
+  - 5 个 KawaiiPhysics 节点：背后的尾摆 `Ab-Bk-SuiteA`、前后飘带 `Ab_RV_ACC_*`；
+  - 长发是刚体：物理资产里 130 个非运动学的刚体挂在 134 根发束骨 `HBN_*` 上，130 个关节，身体的 43 个运动学刚体当碰撞体。
+- `RoeSbRig.KindOf` 认 `hair` 这条链（和 Eve 的刚体马尾一样算头发）。
+- 建角色时核对：130 个关节的静止位置和她的骨骼差 0.0 厘米、0 度。
+- 控制 rig（`CH_M_NA_53_CtrlRig`、`_Groggy`）没搬。
+
+**她的剑**（`tools/sb_weapons.py`）
+
+- `CH_M_NA_53_Weapon`：一把长剑，网格沿根骨的 z 方向伸展（刀尖在 z = 155 厘米），一个材质，贴图是颜色、法线、ORM。
+- 挂在哪：蓝图里没有武器组件。骨架资产 `CH_M_NA_53_Skeleton` 里有个插槽 `SC_Weapon`，挂在 `Bip001-Prop1` 上，旋转 Pitch −90、Yaw 180、Roll −180。
+  按 UE 的旋转矩阵算，剑的 z 正好对到 Prop1 的 x，和 Eve 的剑一样，刃沿 Prop1 的 x。
+  用骨架的正向运动学核对（`tools/sb_swings.py` 同样的算法）：战斗待机时剑尖离地 54 厘米、斜向外下方，和游戏图鉴里她的立绘一致。
+  如果剑的组件不转、直接放在 Prop1 上，剑尖会插进地面下 30 厘米。
+- `weapons.json` 新增 `socketRotator`（UE 的 pitch、yaw、roll），`VdfFighter.ReadPsk` 用它把网格转进插槽的方向；`sb_weapons.py` 新增 `--weapon`、`--maps`、`--keep-all`、`--socket-rotator`。
+
+**她的动作**（`tools/sb_anims.py --folder`、`SbAnims -roeSrc -roeCalib`）
+
+- 她自己的动画在 `Monster/CH_M_NA_53/Animation/`，导了 83 个：
+  - 待机、四个方向的警戒步（原地循环）、跑；
+  - 剑招连段 25 个左右（Slash、SlashChain、SlashCombo、MoveCombo、ChaseCombo、BurstSpinCombo、SwordAuraCombo……），连段里 Root 前冲最远 27 米；
+  - 受击 7 种、倒地（开始 / 躺 / 起身）、晕眩、浮空。
+- `sb_anims.py --folder` 导别的目录；`SbAnims.Import` 新增 `-roeSrc`（只读这个目录里的 .psa：她的 `Result_*` 和 Eve 的同名）和 `-roeCalib`（她站着的片段：`M_Raven_BattleIdle01`）。
+  Eve 默认读 `SB/Content/Art/Character/PC`，和以前一样。循环片段新增警戒步和晕眩循环。
+- 读法和 Eve 一样（Y 镜像 + 共轭：镜像后骨骼偏移 0.0 毫米，头比脚高 130 厘米）；83 个片段放回她身上，手、脚、头、剑尖相差 0.0 厘米。
+
+**挑招**：18 个候选（`tools/motionpacks/sb_raven_candidates.json`）
+
+- 每个连段先按剑尖速度分出每一刀（`tools/sb_swings.py`：按游戏关键帧做骨架的正向运动学，算剑尖每帧的速度），每刀截一段当候选。
+- 总览图 `out\raven_sword_candidates_sheet.jpg`。她很多连段带长距离冲刺（劈斩 4 米、连斩 5–6 米、突进斩 7 米），一招冲出好几米，不适合当普通攻击；四招从够到 1.4–2 米的里面挑。
+
+**默认四招**（`tools/motionpacks/sb_raven.json`）
+
+| 键 | 招式 | 出处 | 能打中 | 够到 | 段 |
+|---|---|---|---|---|---|
+| A | 快斩 | 斩击连段的第一刀（`M_Raven_SlashCombo`）0–0.7 秒 | 0.02–0.48 秒 | 1.64 米 | 上段 |
+| B | 低斩 | Beta 蓄力连段的低斩（`M_Raven_BetaChargeCombo`）2.85–3.4 秒 | 0.18–0.33 秒 | 1.65 米 | 下段 |
+| C | 前斩 | Beta 蓄力连段的前斩（`M_Raven_BetaChargeCombo`）1.2–1.9 秒 | 0.32–0.42 秒 | 1.96 米 | 中段 |
+| D | 上挑（击倒） | 移动连斩的上挑（`M_Raven_MoveChainCombo`）1.2–1.95 秒 | 0.23–0.60 秒 | 1.61 米 | 中段 |
+
+- 站架：战斗待机（`M_Raven_BattleIdle01`）。走、退：警戒步（`M_Raven_Caution_Fw` / `_Bw`）。跑：`M_Raven_Run_L`。
+- 受击：`Result_Hit_Stand_Light_Fw_Dw`。倒地：`Result_State_KnockDown_S_Bw`。躺地：`Result_State_KnockDown_L`。起身：`Result_State_KnockDown_E`。
+- 开场：警戒待机（`M_Raven_Caution_Cw`）。胜利：Burst 范围斩的收招（`M_Raven_BurstAreaSlashEnd`）。
+- 技能（命中时间按剑尖挥动的时刻）：
+  - 技能 1：剑气连段（`M_Raven_SwordAuraCombo`），0.57 / 2.10 / 3.65 秒，停在 1.6 米；
+  - 技能 2：蓄力冲斩（`M_Raven_ChaseChargeSlash`），1.18 / 2.00 秒，1.4 米；
+  - 超必杀：Burst 回旋连段（`M_Raven_BurstSpinCombo`），1.55 / 2.50 / 2.87 / 3.87 秒，1.2 米。
+
+**爆衣**（`Editor/Burst/raven.json`）
+
+- 裸体底身：游戏自带的 `CH_M_NA_53_1`，就是她战衣下面的完整身体，和战衣同一副骨架（只多一根骨），`SbFighter.BuildBase -roeSb raven_nude`。
+- 战衣是一个网格四个材质：`Suit01` 白色紧身衣（含领子、前飘带的白色片）、`Suit02` 黑色漆面（肩、袖、背后尾摆、鞋、腰胯上的大量小机械件）、
+  `RavensuitVinyl` 胸前到胯下的黑色漆皮、`BaseBody` 胸口露出来的皮肤（由裸体底身替换）。
+- 四段：
+  1. 胸前漆皮、前后飘带、背后尾摆；
+  2. 黑色机械件和肩部的黑色部件（694 块）；
+  3. 鞋、黑色手套；
+  4. 白色紧身衣。
+- 检查（`RoeBurstBuilder.Check`）：裸体底身 15538 个顶点，996 个接战衣的皮肤（间隙中位数 5.8 毫米），没有三角面被漏掉。检查图 `out\clothes_burst\unity\raven_sheet.png`。
+
+**录像**
+
+- 四招：`out\raven_sword_strikes.mp4`（每招先实速再半速），总览图 `out\raven_sword_moves_sheet.jpg`；候选总览图 `out\raven_sword_candidates_sheet.jpg`。
+- 电脑对电脑（对 EVE 粉色紧身衣，120 秒）：`out\fight_cpu_match_raven.mp4`。第一回合时间到，EVE 555 血对渡鸦 30 血赢；第二回合录到 120 秒时渡鸦 555 血、EVE 340 血。
+  她出招、放技能、被打倒、起身都照游戏的动作。
+- 爆衣演示（eve09 打她，四段掉完）：`out\clothes_burst_demo_raven.mp4`；检查图 `out\clothes_burst\unity\raven_sheet.png`。
+- 战衣的光泽：一开始战衣是哑光的米白色，在沙色场地里看着像皮肤；按游戏的清漆加了光泽以后重录了上面三段。
+- 同一天按"都要检查爆衣效果"把全部角色的爆衣检查图重新跑了一遍（`RoeBurstBuilder.Check`，见下面的命令），其他角色的结果和以前一样。
+
+```powershell
+# 1. 模型：三副骨架并成一副，导 FBX（.blend 不保存）；裸体底身只要身体
+& 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup 'E:\game_export\StellarBlade\Raven\blend\Raven\Raven.blend' --python tools\sb_parts.py --python tools\sb_fbx.py -- Assets\SB\raven raven
+$env:SB_FBX_SKIP = 'Facial|Hair'; & 'D:\Program Files\blender-3.6.15-windows-x64\blender.exe' -b --factory-startup 'E:\game_export\StellarBlade\Raven\blend\Raven_Nude\Raven_Nude.blend' --python tools\sb_parts.py --python tools\sb_fbx.py -- Assets\SB\raven_nude raven_nude; Remove-Item Env:SB_FBX_SKIP
+# 2. 贴图、物理、剑
+python tools\sb_textures.py Assets\SB\raven --hair-boost 3 --mi-dir Art/Character/Monster/CH_M_NA_53/Materials --mi-dir Art/Character/PC/CH_P_EVE_11/Materials --mi-dir Art/Character/PC/CH_P_EVE_12/Materials
+python tools\sb_textures.py Assets\SB\raven_nude --mi-dir Art/Character/PC/CH_P_EVE_12/Materials
+python tools\sb_physics.py Assets\SB\raven --abp SB/Content/Art/Character/Monster/CH_M_NA_53/Blueprints/CH_M_NA_53_AnimBP --physics SB/Content/Art/Character/Monster/CH_M_NA_53/CH_M_NA_53_Physics
+python tools\sb_weapons.py Assets\SB\raven --weapon SB/Content/Art/Character/Monster/CH_M_NA_53/CH_M_NA_53_Weapon --maps SB/Content/Art/Character/Monster/CH_M_NA_53/Textures/CH_M_NA_53_Weapon_A SB/Content/Art/Character/Monster/CH_M_NA_53/Textures/CH_M_NA_53_Weapon_N SB/Content/Art/Character/Monster/CH_M_NA_53/Textures/CH_M_NA_53_Weapon_ORM --keep-all --socket-rotator=-90,180,-180
+# 3. 她的动作（骨架 .pskx 给 tools/sb_swings.py 用）
+& 'E:\tools\cue4parse_cli_ff7\cue4parse.exe' -i 'D:\Program Files (x86)\Steam\steamapps\common\StellarBlade\SB\Content\Paks' -g GAME_StellarBlade -m 'E:\game_export\StellarBlade\_meta\mappings\StellarBlade_1.1.0.usmap' -o _work\sbnim -y -p 'SB/Content/Art/Character/Monster/CH_M_NA_53/CH_M_NA_53_Skeleton.*'
+python tools\sb_anims.py export --folder SB/Content/Art/Character/Monster/CH_M_NA_53/Animation --only .
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.Build -Graphics -Extra '-roeSb','raven'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbFighter.BuildBase -Graphics -Extra '-roeSb','raven_nude'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.SbAnims.Import -Graphics -Extra '-roeSb','raven','-roeSrc','SB/Content/Art/Character/Monster/CH_M_NA_53/Animation','-roeCalib','M_Raven_BattleIdle01'
+# 4. 候选、四招、爆衣检查、场景
+python tools\sb_swings.py --skeleton _work/sb/anim/SB/Content/Art/Character/Monster/CH_M_NA_53/CH_M_NA_53_Skeleton.pskx --folder SB/Content/Art/Character/Monster/CH_M_NA_53/Animation M_Raven_Slash M_Raven_SlashCombo M_Raven_BetaChargeCombo   # 每一刀的时间（剑尖速度）
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/sb_raven_candidates.json','-roeTips','E:\code\othercode\roe_fighter_unity\_work\sword_tips_raven'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeMotionPacks.Import -Extra '-roeSpec','tools/motionpacks/sb_raven.json'
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics -Extra '-roeChars','raven'
+python tools\burst_sheet.py --chars raven
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Build -Graphics
+# 5. 录像
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','sb_raven_candidates','-roeChars','raven','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_raven'
+python tools\takes_sheet.py _work\strike_takes_raven out\raven_sword_candidates_sheet.jpg --pack tools\motionpacks\sb_raven_candidates.json --cols 14 --tile 150
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeClothDemo.StrikeTakes -Graphics -Extra '-roePack','sb_raven','-roeChars','raven','-roeOut','E:\code\othercode\roe_fighter_unity\_work\strike_takes_raven_final'
+python tools\strike_demo_video.py _work\strike_takes_raven_final out\raven_sword_strikes.mp4 --pack tools/motionpacks/sb_raven.json --id raven
+python tools\takes_sheet.py _work\strike_takes_raven_final out\raven_sword_moves_sheet.jpg --pack tools\motionpacks\sb_raven.json --cols 12 --tile 200
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.Record -Graphics -Extra '-roeP1','raven','-roeP2','eve_nikke06','-roeSeconds','120','-roeOut','E:\code\othercode\roe_fighter_unity\_work\fight_raven'
+python tools\make_video.py _work\fight_raven out\fight_cpu_match_raven.mp4
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstDemo.Run -Graphics -Extra '-roeChars','raven','-roeFoes','eve09','-roeOut','E:\code\othercode\roe_fighter_unity\_work\burst_demo_raven'
+python tools\burst_video.py _work\burst_demo_raven out\clothes_burst_demo_raven.mp4
+# 6. 全部角色的爆衣检查、exe
+.\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeBurstBuilder.Check -Graphics
+python tools\burst_sheet.py
 .\tools\unity_batch.ps1 -Method RoeFighter.EditorTools.RoeFightScene.BuildPlayer -Graphics
 ```

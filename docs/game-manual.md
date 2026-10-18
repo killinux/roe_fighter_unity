@@ -111,9 +111,11 @@
 | EVE（Planet Diving Suit） | 剑星 | 冲步横斩 / 回身低斩（下段） / 两段斩 / 挑空斩（击倒）（剑星里她自己的剑招） | 剑星里她的锁链突刺 / 蓄力斩 / Burst 回旋斩 |
 | EVE（Office Style） | 剑星 | 同上 | 同上 |
 | EVE（Cooling Suit） | 剑星（NIKKE 联动） | 同上 | 同上 |
+| RAVEN（Raven） | 剑星 | 快斩 / 低斩（下段） / 前斩 / 上挑（击倒）（剑星里她自己的长剑招式） | 剑星里她的剑气连段 / 蓄力冲斩 / Burst 回旋连段 |
 
 - LUF 和 INASE 站着时用的是她们在 ROE 里的战斗站姿（INASE 剑尖拄地、手扶剑柄，出招时才把剑握起来）；其他角色站的是动捕的格斗架势（GODDESS LUF 是不知火舞的）。
 - 三套 EVE 站的都是剑星里她锁定敌人时的战斗站姿（剑压低在身后）；EVE（Cooling Suit）的头发是 NIKKE 联动的 Alice 粉色双马尾。
+- RAVEN 是剑星里的 Boss 渡鸦：站她的战斗待机，走路是她的警戒步；长发、飘带、尾摆用的是剑星里她自己的物理；爆衣到最后是游戏自带的、她战衣下面的完整身体。
 - 开场和胜利时放的是各自游戏里的展示动作。
 
 ## 7. 物理方案（F4）
@@ -150,7 +152,7 @@ ROE 角色放技能、开场、胜利动作时，裙子和头发用游戏原版�
 | `-roeCloth roe` | 用某个物理方案启动（名字见第 7 节） |
 | `-roeCamAvoid 0` | 用旧镜头启动 |
 
-角色代号：a08 INASE、g04 LUF、b10 KART、g05 GODDESS LUF、m02 AMANO、b14 CRANE KART、b14_outfit1 PINK CRANE KART、kas KASUMI、kas011 KASUMI 海盗裙、mai MAI、fio005 FIONA、eve09 EVE、eve37 EVE 百褶裙、eve_nikke06 EVE 粉色紧身衣。
+角色代号：a08 INASE、g04 LUF、b10 KART、g05 GODDESS LUF、m02 AMANO、b14 CRANE KART、b14_outfit1 PINK CRANE KART、kas KASUMI、kas011 KASUMI 海盗裙、mai MAI、fio005 FIONA、eve09 EVE、eve37 EVE 百褶裙、eve_nikke06 EVE 粉色紧身衣、raven RAVEN。
 
 例：`ROEFighter.exe -roeP1 g04 -roeP2 a08 -roeSelect 0`
 

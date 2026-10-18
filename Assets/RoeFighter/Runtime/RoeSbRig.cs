@@ -64,7 +64,8 @@ namespace RoeFighter
         }
 
         /// <summary>What a chain of rigid bodies is, among the fight's kinds of loose parts (RoeClothScope).</summary>
-        public static string KindOf(string chain) => chain == "ponytail" ? "hair" : chain == "cape" ? "skirt" : "chain";
+        // "hair": a character's own simulated strands (Raven's long hair, tools/sb_physics.py --abp/--physics)
+        public static string KindOf(string chain) => chain == "ponytail" || chain == "hair" ? "hair" : chain == "cape" ? "skirt" : "chain";
 
         Data parsed;
         readonly Dictionary<Transform, (Vector3 position, Quaternion rotation)> rest = new Dictionary<Transform, (Vector3, Quaternion)>();

@@ -6,6 +6,8 @@ Eve's own animations from Stellar Blade (user 10-17: "用 eve里自己的招式"
         community .usmap into _work/sb/anim/<package path>.psa (cached; game data, personal use only, never committed);
     python tools/sb_anims.py list [--only REGEX]
         the exported clips: frames, length, how far Root and Bip001 travel and turn.
+    --folder SB/Content/Art/Character/Monster/CH_M_NA_53/Animation   (10-18: another character's clips - Raven's; with
+        --only "." all of them)
 
 Her clips play on the game's whole PC skeleton (3267 bones: every outfit's and hairstyle's helpers): Root (where the
 game moves her: the _Root versions and the RootMotionData ones carry the travel), Bip001 (3ds Max Biped's centre of
@@ -26,7 +28,8 @@ OUT = os.path.join(ROOT, "_work", "sb", "anim")
 CLI = r"E:\tools\cue4parse_cli_ff7\cue4parse.exe"
 PAKS = r"D:\Program Files (x86)\Steam\steamapps\common\StellarBlade\SB\Content\Paks"
 USMAP = r"E:\game_export\StellarBlade\_meta\mappings\StellarBlade_1.1.0.usmap"
-ANIM = "SB/Content/Art/Character/PC/CH_P_EVE_01/Animation"
+EVE_ANIM = "SB/Content/Art/Character/PC/CH_P_EVE_01/Animation"
+ANIM = EVE_ANIM
 
 # the candidates: her sword combos and finishers, her Beta and Burst skills, the slot skills, getting hit, knocked down,
 # lying, getting up, her battle idles and lock-on walks, and poses for an intro and a win
@@ -77,7 +80,8 @@ def psa_path(name):
 def names(only):
     if not only:
         return CLIPS
-    listing = os.path.join(OUT, "_listing.txt")
+    # one listing per folder (Eve's keeps its old name)
+    listing = os.path.join(OUT, "_listing.txt" if ANIM == EVE_ANIM else f"_listing_{ANIM.replace('/', '_')}.txt")
     if not os.path.exists(listing):
         r = subprocess.run([CLI, "-i", PAKS, "-g", "GAME_StellarBlade", "-m", USMAP, "-l", "-p", f"{ANIM}/*"],
                            capture_output=True, text=True, encoding="utf-8", errors="replace")
@@ -149,7 +153,10 @@ def main():
     ap.add_argument("what", choices=["export", "list"])
     ap.add_argument("--only", default="")
     ap.add_argument("--force", action="store_true")
+    ap.add_argument("--folder", default=EVE_ANIM, help="the clips' folder in the game (default Eve's)")
     a = ap.parse_args()
+    global ANIM
+    ANIM = a.folder
     (export if a.what == "export" else listing)(a)
 
 

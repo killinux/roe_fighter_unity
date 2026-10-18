@@ -333,3 +333,17 @@ python tools\sb_controlrig.py _work\sb\research\json\SB\Content\Art\Character\PC
   所以剑挂在右手下的持剑点 `SB_Sword`，每个动画按游戏里 Prop1 相对右手的位置给持剑点打关键帧（技能里剑离手也照游戏）。
 - 招式、技能、录像、命令见 README"Eve 粉色紧身衣：Alice 的发型、她自己剑星里的招式"一节。
 - eve09、eve37 同一天也换成了这套招式（`tools/sb_own_moves.py`，每套用自己的动画副本），见 README"eve09、eve37 也用她自己剑星里的招式"一节。
+
+## 9. 渡鸦（Raven，`raven`）（10-18）
+
+- 剑星里的 Boss，`SB/Content/Art/Character/Monster/CH_M_NA_53`。模型来自 ripper_tpose 的 `scripts/stellarblade/npc`（身体、脸、头发三个网格各一副骨架）：
+  `tools/sb_parts.py` 在 `sb_fbx.py` 之前把三副骨架并成一副（同名骨用身体的，头发多出的 25 根照加）。
+- 她只有一个动画蓝图和一个物理资产：`sb_physics.py --abp <蓝图> --physics <物理资产>`。6 根弹簧骨、5 个 KawaiiPhysics 节点（背后尾摆、前后飘带），
+  长发是 130 个刚体挂在 `HBN_*` 发束骨上（物理资产里非运动学的那些），身体的 43 个运动学刚体当碰撞体；链名 `hair`，算头发。
+- 武器 `CH_M_NA_53_Weapon`：骨架里的插槽 `SC_Weapon` 挂在 `Bip001-Prop1` 上，转 Pitch −90 / Yaw 180 / Roll −180，刃（网格的 z）落在 Prop1 的 x 上，和 Eve 的剑一样；
+  `weapons.json` 的 `socketRotator` 记这个转角。
+- 动作：她自己的 83 个动画（`sb_anims.py --folder .../CH_M_NA_53/Animation`），`SbAnims -roeSrc <目录> -roeCalib M_Raven_BattleIdle01`；读法同 Eve。
+- 爆衣：游戏自带的 `CH_M_NA_53_1` 就是她战衣下的完整身体，当裸体底身（`SbFighter.BuildBase -roeSb raven_nude`）。
+- 战衣的白色乳胶在游戏里有一层清漆（`ClearCoatRoughness Min` ≈ 0）和薄膜干涉光泽。URP Lit 没有清漆，`sb_textures.py` 在清漆遮罩（`ShadingModelMask` 的绿通道）覆盖的地方把光滑度抬到至少 0.9，
+  不然米白色的乳胶看起来像皮肤。
+- 详细见 README"剑星的渡鸦（Raven）加入战斗"一节。
